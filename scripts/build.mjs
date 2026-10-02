@@ -29,6 +29,20 @@ await build({
   logLevel: 'info',
 })
 
+// Core 策略层:Research 策略(纯数据 + 纯函数),_shared 随 bundle 内联,
+// 独立 ESM 产物供单测直接引用(策略可独立升级/测试,不经过 Host 与 UI)。
+await mkdir('lib/core/strategies', { recursive: true })
+await build({
+  entryPoints: ['src/core/strategies/research.ts'],
+  outfile: 'lib/core/strategies/research.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+
 // Host 半:ESM;@deepseek-ai/* 与 node 内建模块保持外部,由 profile 的 node_modules 解析。
 await build({
   entryPoints: ['src/index.ts'],
@@ -82,4 +96,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js done')
+console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js + lib/core/strategies/research.js done')
