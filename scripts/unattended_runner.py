@@ -66,25 +66,29 @@ KILL_GRACE_SECONDS = 20
 # 无人值守必须显式关闭交互式审批（否则审批在 headless 下无人回答 → 直接失败）
 CHILD_PERMISSION_MODE = "danger-full-access"
 
-START_PROMPT = """你是 Personal AI Brain 项目的一轮无人值守执行 Agent。
+START_PROMPT = """你是 dsh-adaptive-prompt-optimizer 项目的一轮无人值守执行 Agent。
 
-请严格按 AGENTS.md 的开工协议与收尾协议执行 CURRENT_STATE.next_task 指向的那个 Task：
-1. 读 AGENTS.md、CURRENT_STATE.md、ROADMAP.md 与该 Task 文件全文；
-2. 只改该 Task 的 Allowed Files；Forbidden Files 一律不碰；
-3. 跑该 Task 的 Tests（含 Real Acceptance 若有）；然后跑
-   python3 -m pytest tests/ -q
-   python3 scripts/check_control_plane.py
-   python3 scripts/check_write_boundaries.py
-   全部必须 PASS；
-4. 按收尾协议更新 CURRENT_STATE / CHANGELOG / ROADMAP / tasks README；
+请严格按 AGENTS.md 的开工协议与收尾协议执行 CURRENT_STATE 指向的那个 Task（current_task 非空续跑；为空则 next_task）：
+1. 读 AGENTS.md、CURRENT_STATE.md、docs/PLAN-v1.md、docs/PLAN-v1.1.md 与该 Task 文件全文；
+2. 只改该 Task 的 Allowed Scope；Forbidden Scope 一律不碰；
+3. 跑该 Task 的 Tests；再跑仓库门禁：
+   npm test
+   python3 scripts/apo_state.py
+   必须全部 PASS；
+4. 按收尾协议更新 CURRENT_STATE（current_task 置空、next_task 指向下一个 Task）；
 5. 一个 Task = 一个内容提交 + 一个仅 CURRENT_STATE 的状态同步提交；
-6. **禁止**：**未经当前 Task 明确要求就安装 launchd**（P13 Automation 这类以 launchd 交付物的 Task
-   在其 Allowed Files 明确覆盖时可安装/加载，其它情况一律禁止）、自动升格正式
-   20-Knowledge/40-Memory/50-SOP、force push、reset --hard、删除真实数据、自行解决 merge conflict；
+6. **禁止**：触碰正式 DSH desktop profile / ~/.dsh 正式配置 / Personal AI Brain / AI 视频工作流 / 其他项目；
+   force push、reset --hard、删除真实用户数据、自行解决 merge conflict；
+   从 AGPL 项目（linshenkx / zhangjiazhi）复制任何代码（只可借鉴思想，不复制源码/模板文本/测试）；
+   安装 launchd（未获用户明确批准）；
 7. 完成后把 CURRENT_STATE.current_task 置空、next_task 指向下一个 Task；
-8. 若命中 BLOCKING HUMAN GATE，停下并把 stop_reason 写入 CURRENT_STATE，不要硬做。
+8. 若命中 Human Gate（G-1 / G-VS / G-2 / G-3 / G-4 / G-5 / G-6 / G-7），停下：
+   status 置 GATE_PENDING，stop_reason 写明原因但【不得包含】BLOCKING_STOP_REASONS 的标记词
+   （blocking / merge conflict / schema breaking / contract breaking / architecture change /
+   irreversible / transport exhausted / retry exhausted / test failure out of scope / scope expanded），
+   例如：stop_reason: awaiting user confirmation: G-1。
 
-这是无人值守执行：没有人会回答你的提问。需要人工裁决时，写到 CURRENT_STATE.stop_reason 后结束本轮。"""
+这是无人值守执行：没有人会回答你的提问。需要人工裁决时，写到 CURRENT_STATE 后结束本轮。"""
 
 
 def now_iso():
@@ -244,10 +248,11 @@ def resolve_next(root, state, stop_file=None):
     token = nxt.split()[0].strip()
     if not token.startswith("P") or "-T" not in token:
         return {"action": "idle", "reason": "next_task 未指向具体 Task: " + nxt}
-    task_file = Path(root) / "tasks" / (token + ".md")
-    if not task_file.is_file():
+    task_dir = Path(root) / "tasks"
+    matches = list(task_dir.glob(token + "-*.md")) + list(task_dir.glob(token + ".md"))
+    if not matches:
         return {"action": "create_task", "task": token,
-                "reason": "task 文件不存在，需要一轮 Agent 创建: " + str(task_file)}
+                "reason": "task 文件不存在，需要一轮 Agent 创建: " + str(task_dir / token)}
     return {"action": "run", "task": token, "resume": False}
 
 
