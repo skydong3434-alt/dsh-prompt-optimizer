@@ -592,7 +592,7 @@ def run_loop(root, logs_dir, args, command, state):
         task = plan["task"]
         phase = state.get("current_phase")
         prompt = (START_PROMPT + N + "本轮目标 Task：" + task
-                  + N + "（若该 Task 文件不存在，请先按 ROADMAP 创建它，再执行。）")
+                  + N + "（若该 Task 文件不存在：任务契约见 docs/PLAN-v1.md §13，先创建 tasks/<id>-<slug>.md 再执行。）")
         ledger.save_current({"ts": now_iso(), "phase": phase, "task": task, "round": rnd,
                              "attempt": 0, "state": "spawning"})
         reason = None
