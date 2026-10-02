@@ -16,6 +16,19 @@ await build({
   logLevel: 'info',
 })
 
+// Core 契约层:Provenance 机械校验器,独立 ESM 产物供单元测试直接引用(纯函数,零依赖)。
+await mkdir('lib/core', { recursive: true })
+await build({
+  entryPoints: ['src/core/provenance.ts'],
+  outfile: 'lib/core/provenance.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+
 // Host 半:ESM;@deepseek-ai/* 与 node 内建模块保持外部,由 profile 的 node_modules 解析。
 await build({
   entryPoints: ['src/index.ts'],
@@ -69,4 +82,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js done')
+console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js done')
