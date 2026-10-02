@@ -628,7 +628,7 @@ const DONE = {
     suggested_requirements: [{ id: 'r-2', text: '补充时长', source: 'OPTIMIZER_SUGGESTED', evidence: [], confidence: 'medium' }],
     unknowns: [{ id: 'r-3', text: '时长', source: 'UNKNOWN', evidence: [], confidence: 'low' }],
     missing_constraints: [{ id: 'mc-1', label: '期望时长' }],
-    strategy_version: '0.1.0',
+    strategy_version: '0.1.4',
     provenance_ok: true,
   }
   await withFetch(
@@ -646,7 +646,7 @@ const DONE = {
       assert.equal(s.result.suggestedRequirements[0].source, 'OPTIMIZER_SUGGESTED')
       assert.equal(s.result.unknowns.length, 1)
       assert.equal(s.result.missingConstraints[0].label, '期望时长')
-      assert.equal(s.result.strategyVersion, '0.1.0')
+      assert.equal(s.result.strategyVersion, '0.1.4')
     },
   )
   console.log('✓ c22 meta + 四组 provenance 落盘')

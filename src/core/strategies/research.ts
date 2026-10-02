@@ -38,7 +38,7 @@ import {
 } from "./_shared.js";
 
 /** 本策略的独立版本(升级策略不改插件版本,见 PLAN-v1 §4⑤)。 */
-export const RESEARCH_STRATEGY_VERSION = "0.1.0";
+export const RESEARCH_STRATEGY_VERSION = "0.1.4";
 
 /** 「没有案例 ≠ 不可行」的固定表述:system 提示词必须包含,测试据此断言。 */
 export const NO_CASE_IS_NOT_INFEASIBLE = "没有案例 ≠ 不可行";
@@ -361,7 +361,7 @@ const CANDIDATE_CONFIRMED =
 
 /** 凭空量化硬约束(预算 / 金额 / 工期 / 具体时限)。 */
 const INVENTED_QUANTITY =
-  /(预算|万元|人民币|¥|\$\s?\d|工期|截止日期|deadline|\d+\s*(?:天|周|个?月|小时|分钟)(?:内|以内)?|(?:一|两|三|四|五|六|七|八|九|十)\s*(?:天|周|个?月|小时|分钟)(?:内|以内))/i;
+  /(预算(?!\s*(?:边界|取舍|限额))|万元|人民币|¥\s?\d|\$\s?\d|工期(?![^\n。]*待补充)|截止日期|deadline|\d+\s*(?:天|周|个?月|小时|分钟)(?:内|以内)?|(?:一|两|三|四|五|六|七|八|九|十)\s*(?:天|周|个?月|小时|分钟)(?:内|以内))/i;
 
 /** 「没有案例 / 未找到」类前提(允许中间夹少量限定词,如「没有找到 Mac 案例」)。 */
 const ABSENCE =
@@ -372,7 +372,7 @@ const INFEASIBLE = /(不可行|无法实现|行不通|淘汰|放弃|排除|不�
 
 /** 不确定性 / 建议 / 候选等「已降级」标注:命中则视为该行不是结论。 */
 const UNCERTAINTY_MARKER =
-  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题/;
+  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|(?:^|\s)[?？]|不得|禁止|切勿|不允许|不能(?:判定|认定|视为|看作|当作|得)|缺失|缺少|未说明|未提供|未给出|未给定|未提及|未明确/;
 
 function hasEvidenceMarker(text: string): boolean {
   return (
@@ -427,9 +427,18 @@ function scanLines(
   rawInput: string,
   match: (line: string) => string | null,
 ): string | null {
+  // 协议段条目(UNKNOWN / SUGGESTED)本身是「未知/建议」载体,不是断言,整段剔除
+  // 四段协议中的元数据段（诊断/建议/未知）本身不是断言或要求,整段跳过;
+  // EXPLICIT / CONTEXT / OPTIMIZED 段照常扫描(后者即最终交付文本)。
+  let inMetaSection = false;
   for (const rawLine of output.split(/\r?\n/)) {
     const line = rawLine.trim();
-    if (!line || isClaimGuarded(line)) continue;
+    const marker = /^<<<([A-Z]+)>>>$/.exec(line);
+    if (marker) {
+      inMetaSection = ["DIAGNOSIS", "SUGGESTED", "UNKNOWN"].includes(marker[1]);
+      continue;
+    }
+    if (!line || inMetaSection || isClaimGuarded(line)) continue;
     const claim = match(line);
     if (claim && !evidenceBacks(claim, result, rawInput)) return claim;
   }

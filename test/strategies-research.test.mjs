@@ -53,7 +53,7 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
 {
   assert.equal(research.type, 'research')
   assert.equal(research.version, RESEARCH_STRATEGY_VERSION)
-  assert.equal(research.version, '0.1.0', '策略必须带独立版本号 0.1.0')
+  assert.equal(research.version, '0.1.4', '策略必须带独立版本号 0.1.1')
   assert.deepEqual(research.required_sections, EXPECTED_SECTIONS)
   assert.equal(research.required_sections.length, 15)
   assert.deepEqual(research.outputContract.sections, EXPECTED_SECTIONS)
