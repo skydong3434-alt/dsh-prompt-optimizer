@@ -2,15 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T07:34:20+0800
+last_updated: 2026-10-03T07:39:10+0800
 current_phase: P02
 current_task:
 status: RUNNING
 next_task: P02-T06
 machine_gate: PASS
 human_review: PASS_G_VS
-phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（_shared 完整化）e06bf3b、P02-T02（planning 策略）9784dbe、P02-T03（execution 策略）543f737、P02-T04（diagnostic 策略）e0ec912 已完成；P02-T05（review 策略）已完成并提交 11315af：9 段契约（Review Target/Original Goal/Requirements/Evaluation Criteria/Evidence/Deviations/Missing Items/Risks/Suggested Corrections）+ 审查铁律（基于原目标审查 / 只审查不发散 / 先证据后评价 / 偏离对应需求 / 修正不越权）+ 守卫（发散无原目标对照 warn、缺 Original Goal/Requirements error、9 段齐全、无证据验收结论、无证据强断言 + invariant A·B）。next=P02-T06（creative 策略）。
-latest_commit: 11315aff040d6ffece3b0566d8d1f6742abc7193
+phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（_shared 完整化）e06bf3b、P02-T02（planning 策略）9784dbe、P02-T03（execution 策略）543f737、P02-T04（diagnostic 策略）e0ec912、P02-T05（review 策略）11315af 已完成；P02-T06（creative 策略）已完成并提交 7c9bde3：12 段契约（Creative Goal/Audience/Platform/Style/Reference/Assets/Constraints/Structure/Tone/Output Format/Avoidances/Success Criteria；Assets 为任务契约点名 12 段而补）+ 创作铁律（保留给定实体 / 无证据不改设定 / 成功标准必备 / 不发明硬约束）+ 守卫（实体保真 error（标签+标识/括号占位符/@handle 三类）、无证据改设定 warn、12 段齐全、Success Criteria 强制段 error、无证据强断言 + invariant A·B）。next=P02-T07（general fallback + research 正式化整合）。
+latest_commit: 7c9bde34b89438bb244a3423299d11edca07b4e5
 auto_continue: true
 stop_reason: none
 ```
@@ -36,7 +36,8 @@ stop_reason: none
 | P02-T03 execution-strategy | DONE | execution 策略 v0.1：15 段 + 三铁律 + 守卫（543f737） | — |
 | P02-T04 diagnostic-strategy | DONE | diagnostic 策略 v0.1：10 段 + 验证先于修改/假设证伪/修复必带复测 + 守卫（e0ec912） | — |
 | P02-T05 review-strategy | DONE | review 策略 v0.1：9 段 + 基于原目标审查/不发散/偏离对应需求 + 守卫（11315af） | — |
-| P02-T06..T08 | PENDING | 余下三策略/registry（tasks/P02-*） | **G-2** |
+| P02-T06 creative-strategy | DONE | creative 策略 v0.1：12 段（+Assets）+ 实体保真/无证据不改设定 + 守卫（7c9bde3） | — |
+| P02-T07..T08 | PENDING | 余下 general+research 整合/registry（tasks/P02-*） | **G-2** |
 | P03-T01..T03 | PENDING | classifier 纯函数/LLM/防误判 | P04 |
 | P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
 | P05-T01..T02 | PENDING | host pipeline/兼容回归 | P06 |
