@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T15:05:00+08:00
-current_phase: P01
-current_task:
-status: GATE_PENDING
+last_updated: 2026-10-03T15:35:00+08:00
+current_phase: P01.5
+current_task: P01.5-T01
+status: RUNNING
 next_task: P01.5-T01
 machine_gate: PASS
-human_review: BLOCKING_G1
-phase_status: P00 已完成（Fork & Baseline，da52f28）；P01-T01 已完成（src/core/types.ts 核心契约，17f4dee）；**P01-T02 已完成（2026-10-03；内容提交 e32858f）**：src/core/provenance.ts（五源判定 / quote 字面比对 / 记录工厂）+ test/provenance.test.mjs（19 组断言矩阵全绿）+ scripts/build.mjs 追加 lib/core/provenance.js 产物段；验收证据：npm run build 成功（五产物齐全）、node test/provenance.test.mjs all passed、npx tsc --noEmit 中 src/core/ 零新增错误（仅既有 client 基线错误）、npm test 与 python3 scripts/apo_state.py 全 PASS。**下一节点 = Human Gate G-1（核心契约与 Provenance 数据结构定稿）**：status=GATE_PENDING；用户确认后方可进入 P01.5-T01（Research Vertical Slice）。说明：docs/provenance.md 五源语义摘要按任务契约「如时间不足可在 G-1 前补」推迟到 G-1 审阅前补（本次未越出 Allowed Scope）；另以 human_review=BLOCKING_G1 触发 Runner 停止（Runner 的 classify_blocking 只识别 BLOCKED/RECOVERY_REQUIRED 状态与 BLOCKING* 的 human_review；stop_reason 按本轮要求保持非标记词）。
+human_review: PASS_G1
+phase_status: G-1 已通过（2026-10-03 用户确认 7 条定稿原则）；docs/provenance.md 已补（纯整理无新增契约）。next=P01.5-T01（Research Vertical Slice）。
 latest_commit: e32858f239d1b86879ee5a6737d79f4812a1ef58
-auto_continue: false
-stop_reason: awaiting user confirmation: G-1
+auto_continue: true
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
