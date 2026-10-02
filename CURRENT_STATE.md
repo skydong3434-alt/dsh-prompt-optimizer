@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T07:00:00+08:00
-current_phase: P01.5
-current_task:
-status: GATE_PENDING
+last_updated: 2026-10-03T16:40:00+08:00
+current_phase: P02
+current_task: P02-T01
+status: RUNNING
 next_task: P02-T01
 machine_gate: PASS
-human_review: BLOCKING_G_VS
-phase_status: P01.5-T02 完成：AUTO→classify→registry(research/general)→compiler(标记四段协议)→validateProvenance→SSE(meta→delta→done)→ResultDock 四组来源/类型徽章/低置信提示→替换输入框全链路可跑。真实案例断言（识别 research / H3 不确认 / 黑鹤001 不淘汰 / 四组来源区分 / [待补充:] 存在 / provenance_ok=true）与 override 免分类、旧 smoke 零回归全绿。出口 G-VS（用户真实体验验收；通过后 P02-T01）。
+human_review: PASS_G_VS
+phase_status: G-VS 已通过（2026-10-03 用户验收：类型识别/意图保留/四组来源/provenance_ok=true/守卫误报修复确认有效）。新增 cross-strategy invariants A（UNKNOWN≠BLOCKING）/B（OPTIMIZER_SUGGESTED≠USER REQUIREMENT），已纳入 docs/provenance.md §8 + P02-T01/P07-T01 任务契约；Research 0.1.4 保持为已验证基线，不做重设计。next=P02-T01（全 Strategy 扩展，共享规则段起）。
 latest_commit: 3276e1e8d6112a7dc9685cf97e0e7a1812ec44c3
 auto_continue: true
-stop_reason: awaiting user confirmation: G-VS
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词

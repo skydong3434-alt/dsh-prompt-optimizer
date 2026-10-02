@@ -68,3 +68,19 @@
 ## 7. 测试锚点
 
 `test/provenance.test.mjs` pv1–pv19 覆盖：规范化边界、四类匹配去向、explicit/context 空证据与证据缺失的 error、assistant-only warn 语义、三类豁免、记录工厂默认值/唯一 id、组合校验（单 warn 不影响 ok）。
+## 8. Cross-Strategy Invariants（G-VS 通过后追加，2026-10-03 用户确认为全局规则）
+
+以下两条为 **cross-strategy invariant**：所有 Strategy（research/planning/execution/diagnostic/review/creative/general）、Validation 三层（Preservation/Inference·Suggestion/Unknown）与 Behavioral/Effect Regression 语料必须继承，任何策略不得推翻；新增策略必须满足它们的测试。
+
+### A. UNKNOWN ≠ BLOCKING
+- UNKNOWN 只表示"信息当前未知"，**不等于阻塞**；
+- 仅当缺失信息会**实质改变当前任务方向**或导致任务无法继续时，才允许升级为 `NEEDS_USER_INPUT`（阻塞型未知）；
+- 非阻塞 UNKNOWN：保留在结果中（unknowns / [待补充: …]）、**不得强制用户先回答**、下游任务应在合理边界内继续；
+- 目标：避免 Prompt Optimizer 变成"问题制造器"。
+- 测试锚点：大量 UNKNOWN 时 `provenance_ok` 仍为 true；优化稿把未知项写为阻塞问题（如"请先回答 X 才能继续"）→ 守卫触发。
+
+### B. OPTIMIZER_SUGGESTED ≠ USER REQUIREMENT
+- `OPTIMIZER_SUGGESTED` 永远保持"建议增强项"身份；
+- **不得在最终 Prompt 中无痕升级**为：用户明确要求、必须满足的硬约束、已确认路线、Human Decision；
+- 除非用户后续明确采纳（MVP 无采纳机制 ⇒ 恒为建议）；
+- 测试锚点：`suggested_requirements` 的任何条目文本不得以"必须/需保证/要求/用户希望"等强约束句式出现在 optimized_prompt 的要求语境中；suggested 永不进入 explicit/context/human_decision 组（现有四项分组断言继续成立）。

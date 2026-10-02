@@ -32,7 +32,7 @@ JSON/文本编辑/git
 3. docs/regression.md：语义、断言写法、通过阈值语义（DEFERRED_TO_P07_CALIBRATION：先不定数值阈值，跑数据后按人工标注校准）
 
 ## Tests
-fixtures JSON schema 校验（test/regression/schema.test.mjs）
+fixtures JSON schema 校验（test/regression/schema.test.mjs）；语料级 cross-strategy invariants：每例可携带 `invariant_checks`（unknown 不阻断 / suggested 不升级），运行期强制
 
 ## Acceptance Criteria
 六例 + 用户提供的真实历史需求（至少覆盖七类型）全部入库且可加载
