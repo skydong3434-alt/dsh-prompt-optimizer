@@ -108,6 +108,19 @@ await build({
   logLevel: 'info',
 })
 
+// Creative 策略(P02-T06):纯数据 + 纯函数,独立 ESM 产物供单测直接引用;
+// _shared 随 bundle 内联(策略可在不经过 Host / UI 的前提下独立升级与测试)。
+await build({
+  entryPoints: ['src/core/strategies/creative.ts'],
+  outfile: 'lib/core/strategies/creative.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+
 // Core 最小管线:context / classify / registry / compiler —— 各自独立 ESM 产物,
 // 供纯函数单测与 Vertical Slice 端到端冒烟直接引用。
 await build({
@@ -204,4 +217,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/strategies/_shared.js + lib/core/strategies/research.js + lib/core/strategies/planning.js + lib/core/strategies/execution.js + lib/core/strategies/diagnostic.js + lib/core/strategies/review.js done')
+console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/strategies/_shared.js + lib/core/strategies/research.js + lib/core/strategies/planning.js + lib/core/strategies/execution.js + lib/core/strategies/diagnostic.js + lib/core/strategies/review.js + lib/core/strategies/creative.js done')
