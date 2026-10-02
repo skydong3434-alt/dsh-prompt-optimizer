@@ -2,3 +2,7 @@ node_modules/
 lib/
 *.tgz
 .ima-note-id
+
+# macOS
+.DS_Store
+__pycache__/
