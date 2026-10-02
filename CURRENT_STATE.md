@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T16:10:00+08:00
+last_updated: 2026-10-03T07:00:00+08:00
 current_phase: P01.5
 current_task:
-status: RUNNING
-next_task: P01.5-T02
+status: GATE_PENDING
+next_task: P02-T01
 machine_gate: PASS
-human_review: PASS_G1
-phase_status: G-1 已通过（2026-10-03 用户确认 7 条定稿原则）。P01.5-T01 完成：research 策略 v0.1（15 段契约/研究铁律/4 守卫/双语）+ _shared 初版 + rs1-rs13 全绿 + 真实案例 mock 抽查 PASS。next=P01.5-T02（Vertical Slice 端到端；出口 G-VS）。
-latest_commit: bb4c6a42e8a8700c9d68807ecef4d8f386676b91
+human_review: BLOCKING_G_VS
+phase_status: P01.5-T02 完成：AUTO→classify→registry(research/general)→compiler(标记四段协议)→validateProvenance→SSE(meta→delta→done)→ResultDock 四组来源/类型徽章/低置信提示→替换输入框全链路可跑。真实案例断言（识别 research / H3 不确认 / 黑鹤001 不淘汰 / 四组来源区分 / [待补充:] 存在 / provenance_ok=true）与 override 免分类、旧 smoke 零回归全绿。出口 G-VS（用户真实体验验收；通过后 P02-T01）。
+latest_commit: 3276e1e8d6112a7dc9685cf97e0e7a1812ec44c3
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: G-VS
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -30,7 +30,7 @@ stop_reason: none
 | P01-T01 core-contracts | DONE | src/core/types.ts（17f4dee） | — |
 | P01-T02 provenance-validator | DONE | provenance.ts 校验器（e32858f） | **G-1（当前）** |
 | P01.5-T01 research-strategy | DONE | Research 策略 v0.1（15 段 + 守卫矩阵 + _shared 初版，bb4c6a4） | — |
-| P01.5-T02 vertical-slice-e2e | PENDING ← next | 端到端（AUTO→…→Replace） | **G-VS** |
+| P01.5-T02 vertical-slice-e2e | DONE | 端到端（AUTO→…→Replace），3276e1e | **G-VS（当前）** |
 | P02-T01..T08 | PENDING | 共享规则/七策略/registry（tasks/P02-*） | **G-2** |
 | P03-T01..T03 | PENDING | classifier 纯函数/LLM/防误判 | P04 |
 | P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
