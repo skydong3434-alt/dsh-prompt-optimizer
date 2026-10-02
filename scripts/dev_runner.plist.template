@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@@LABEL@@</string>
+
+  <!-- launchd 不能直接 spawn python（EX_CONFIG 78）：/bin/bash -lc 包一层，exec 让信号直达 Runner。
+       关键坑：`bash -lc` 会触发 /etc/profile 的 path_helper，把 /usr/local/bin 提到 PATH 最前，
+       于是 Runner 里的 shutil.which("node") 会选中 /usr/local/bin/node。若该 node 不满足 DSH 的
+       engines（package.json: "^22.19.0 || >=24.0.0"），`dsh headless` 会【静默 exit 0、零输出】，
+       Runner 读到 turn_end_reason=None 并 retry exhausted（2026-09-30 实机踩坑，3 次 attempt 白跑）。
+       所以这里把 renderer 行为验证过的 node 目录（@@NODE_DIR@@）前置到 PATH，不依赖 PATH 顺序。 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>export PATH="@@NODE_DIR@@:$PATH"; exec @@PYTHON@@ @@ROOT@@/scripts/unattended_runner.py --project-root @@ROOT@@ --run --max-rounds @@MAX_ROUNDS@@ --round-timeout @@ROUND_TIMEOUT@@</string>
+  </array>
+
+  <!-- 不能指向受 macOS 保护的目录（~/Desktop、~/Documents）会 getcwd: Operation not permitted -->
+  <key>WorkingDirectory</key>
+  <string>/tmp</string>
+
+  <!-- launchd 的 PATH 很窄：DSH headless 需要能按名字找到 node/worker，否则静默 exit 0。
+       这一项只是兜底；真正生效的是上面 ProgramArguments 里的 PATH 前置。 -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>@@NODE_DIR@@:@@HOME@@/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>@@HOME@@</string>
+  </dict>
+
+  <!-- 是否随登录自启由显式开关决定；默认惰性，需 kickstart 才跑（XML 注释不能含两个连字符） -->
+  <key>RunAtLoad</key>
+  <@@AT_LOAD@@/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>ExitTimeOut</key>
+  <integer>60</integer>
+  <key>StandardOutPath</key>
+  <string>@@LOGS@@/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>@@LOGS@@/launchd.err.log</string>
+</dict>
+</plist>

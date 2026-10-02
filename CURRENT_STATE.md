@@ -24,17 +24,23 @@ stop_reason: none
 
 ## 任务图（Task Graph, 只读快照）
 
-| Task | 状态 | 说明 |
-|---|---|---|
-| P00-T01 fork-and-baseline | DONE | 基线验证（BASELINE.md，da52f28） |
-| P01-T01 core-contracts | DONE | src/core/types.ts（契约层） |
-| **P01-T02 provenance-validator** | **NOT_STARTED ← current** | src/core/provenance.ts + test/provenance.test.mjs + build.mjs 产物段 |
-| GATE:G-1 | PENDING | Human Gate：契约+Provenance 定稿（P01-T02 完成后停止等待） |
-| P01.5-T01 research-strategy | PENDING | Vertical Slice：Research 策略单片 |
-| P01.5-T02 vertical-slice-e2e | PENDING | AUTO→classifier→research→compiler→provenance→host→SSE→ResultDock→replace |
-| GATE:G-VS | PENDING | Human Gate：真实体验验收 |
+| Task | 状态 | 说明 | 出口 |
+|---|---|---|---|
+| P00-T01 fork-and-baseline | DONE | 基线（BASELINE.md, da52f28；tag base-y1x1n-v0.4.0） | — |
+| P01-T01 core-contracts | DONE | src/core/types.ts（17f4dee） | — |
+| **P01-T02 provenance-validator** | **NOT_STARTED ← current** | provenance.ts 校验器；任务文件在 tasks/ | **G-1** |
+| P01.5-T01 research-strategy | PENDING | Vertical Slice：Research 单片 | P01.5-T02 |
+| P01.5-T02 vertical-slice-e2e | PENDING | 端到端（AUTO→…→Replace） | **G-VS** |
+| P02-T01..T08 | PENDING | 共享规则/七策略/registry（tasks/P02-*） | **G-2** |
+| P03-T01..T03 | PENDING | classifier 纯函数/LLM/防误判 | P04 |
+| P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
+| P05-T01..T02 | PENDING | host pipeline/兼容回归 | P06 |
+| P06-T01..T03 | PENDING | 下拉/dock 四组渲染/settings+i18n | **G-4** |
+| P07-T01..T03 | PENDING | 语料（**G-3**，阈值校准 R-2）/runner/首轮 | **G-5** |
+| P08-T01..T02 | PENDING | 隔离冒烟/桌面证据 | **G-6** |
+| P09-T01..T02 | PENDING | 备份演练（**G-7** 安装许可）/发布 | DoD 用户终检 |
 
-之后按 PLAN-v1.1：P02 全策略扩展 → P03/P04/P05/P06 → P07 regression → P08 隔离集成 → P09 release（G-1..G-7 原序，G-3 延后校准）。
+Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ DoD 终检 PASS。
 
 ## 无人值守运行说明（简版，详见 docs/runner-ops.md）
 

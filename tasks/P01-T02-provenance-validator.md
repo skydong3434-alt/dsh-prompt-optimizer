@@ -89,6 +89,9 @@ node/tsc/esbuild/scripts/build.mjs、node:test（assert/strict）、git（分支
 - 比对误报偏高（如 normalize 过度）→ 收紧规范化前先跑矩阵定位；不绕过断言
 - 持续不过 → 按 Runner 重试规则（max-attempts 3）→ retry exhausted = STOP 报告
 
+## Human Gate
+G-1（P01-T02 完成后 Human Gate：核心契约与 Provenance 数据结构定稿，用户确认后继续 P01.5）
+
 ## Stop Conditions
 
 - S-07（Provenance 机制无法防止重要约束被误标）相关用例失败且无法在 3 次 attempt 内修复
