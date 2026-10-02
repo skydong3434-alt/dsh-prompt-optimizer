@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T07:45:58+0800
+last_updated: 2026-10-03T07:52:27+0800
 current_phase: P02
 current_task:
-status: RUNNING
-next_task: P02-T08
+status: GATE_PENDING
+next_task: P03-T01
 machine_gate: PASS
-human_review: PASS_G_VS
-phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（_shared 完整化）e06bf3b、P02-T02（planning 策略）9784dbe、P02-T03（execution 策略）543f737、P02-T04（diagnostic 策略）e0ec912、P02-T05（review 策略）11315af、P02-T06（creative 策略）7c9bde3 已完成；P02-T07（general fallback + research 正式化）已完成并提交 bb37841：general.ts v0.1.0（八板块 Role/Task Goal/Input Materials/Output Format/Content Requirements/Style/Constraints/Success Criteria + template/intent 双模式 + 保真改写/无证据不新增硬约束铁律 + 8 板块/强制板块/无证据硬约束/强断言守卫 + invariant A·B）；research.ts v0.1.4→v0.2.0（provenanceRules 4→7，补挂 invariant A·B，15 段契约与 P01.5 验收线不变）。next=P02-T08（Registry 与版本化：七策略全注册），T08 完成后为 Human Gate G-2（策略内容抽审）。
-latest_commit: bb378418dea9b554279fd716ef379aa930ffc2fe
+human_review: BLOCKING_G2
+phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（_shared 完整化）e06bf3b、P02-T02（planning 策略）9784dbe、P02-T03（execution 策略）543f737、P02-T04（diagnostic 策略）e0ec912、P02-T05（review 策略）11315af、P02-T06（creative 策略）7c9bde3、P02-T07（general fallback + research 正式化）bb37841 已完成；P02-T08（Registry 与版本化）已完成并提交 419f999：registry.ts 完整版——七策略按 PromptType 规范顺序全注册、get() 未知类型→general、list()/types()/getVersion()/getSections() 版本可审计、自定义注册表裁掉 general 自动补回、general 过渡期仍标 legacy（host 编译路径零回归）；新增 test/registry.test.mjs（rg1–rg7），core-pipeline cp3 机械同步 2→7 类型。P02 十任务全部完成，等待 G-2（七策略内容抽审：铁律/措辞/边界）用户确认后进入 P03。
+latest_commit: 419f99997045cb81f20c20682ce554ce86b16f74
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: G-2
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -38,7 +38,7 @@ stop_reason: none
 | P02-T05 review-strategy | DONE | review 策略 v0.1：9 段 + 基于原目标审查/不发散/偏离对应需求 + 守卫（11315af） | — |
 | P02-T06 creative-strategy | DONE | creative 策略 v0.1：12 段（+Assets）+ 实体保真/无证据不改设定 + 守卫（7c9bde3） | — |
 | P02-T07 general-research-integration | DONE | general 策略 v0.1：八板块 + template/intent 双模式；research v0.2.0：provenanceRules 4→7 + invariant A·B（bb37841） | — |
-| P02-T08 registry-versioning | PENDING | registry 七策略全注册/版本暴露/list（tasks/P02-T08-*） | **G-2** |
+| P02-T08 registry-versioning | DONE | registry 七策略全注册/版本暴露/list/getSections；general 过渡期 legacy（419f999） | **G-2** |
 | P03-T01..T03 | PENDING | classifier 纯函数/LLM/防误判 | P04 |
 | P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
 | P05-T01..T02 | PENDING | host pipeline/兼容回归 | P06 |
