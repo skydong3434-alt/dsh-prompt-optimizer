@@ -1,5 +1,10 @@
 /**
- * Research PromptStrategy v0.1 —— Vertical Slice 第一条验收路径。
+ * Research PromptStrategy v0.2 —— Vertical Slice 验收路径,按正式契约整合完成。
+ *
+ * v0.1(P01.5)先打通真实案例;v0.2(P02-T07)在**不改动 15 段契约与 P01.5 验收线**的
+ * 前提下补齐正式版内容:把来源规则(provenanceRules)写全,并挂载 `_shared` 的跨策略
+ * 不变式 A(UNKNOWN ≠ BLOCKING)/ B(OPTIMIZER_SUGGESTED ≠ USER REQUIREMENT)守卫,
+ * 与其余六个策略对齐。
  *
  * 把用户口语化的「研究诉求」编译成可直接交给 Research Agent 执行的研究型 Prompt。
  * 15 个必出段落是测试与校验的断言锚点(见 PLAN-v1 §7 research / §11.2 invariants)。
@@ -33,12 +38,15 @@ import {
   isChineseDominant,
   quoteMarker,
   sharedRules,
+  suggestedNotInExplicit,
+  suggestedNotUpgraded,
   todoPlaceholder,
+  unknownNotBlocking,
   type StrategyLanguage,
 } from "./_shared.js";
 
 /** 本策略的独立版本(升级策略不改插件版本,见 PLAN-v1 §4⑤)。 */
-export const RESEARCH_STRATEGY_VERSION = "0.1.4";
+export const RESEARCH_STRATEGY_VERSION = "0.2.0";
 
 /** 「没有案例 ≠ 不可行」的固定表述:system 提示词必须包含,测试据此断言。 */
 export const NO_CASE_IS_NOT_INFEASIBLE = "没有案例 ≠ 不可行";
@@ -567,6 +575,21 @@ const provenanceRules: ProvenanceRule[] = [
       "「已确认 / 最终 / 采用」类结论必须有逐字 quote;否则降级为假设 / 候选 / 待确认",
   },
   {
+    id: "research-context-user-only",
+    description:
+      "上下文已确认仅限历史中「用户」消息;助手 / Agent 的发言不能作为用户意图证据(只能标为可能相关提示)",
+  },
+  {
+    id: "research-conflicting-evidence-side-by-side",
+    description:
+      "冲突证据必须并列呈现并标出来源,不得擅自裁决、静默择一或隐去一方",
+  },
+  {
+    id: "research-gaps-explicit",
+    description:
+      "证据缺口必须显式落成 [待补充: …] / Evidence Gaps 段,不得用默认值或未标注的假设替代",
+  },
+  {
     id: "research-unknown-placeholder",
     description: "证据不足的约束与事实写入 [待补充: …],不得自行假定",
   },
@@ -606,6 +629,9 @@ export const researchStrategy: PromptStrategy = {
     guardNoInventedQuantities,
     guardNoInfeasibleFromAbsence,
     guardEvidenceGapDisclosure,
+    unknownNotBlocking(),
+    suggestedNotInExplicit(),
+    suggestedNotUpgraded(),
   ],
   provenanceRules,
   buildSystem(language: "zh" | "en"): string {

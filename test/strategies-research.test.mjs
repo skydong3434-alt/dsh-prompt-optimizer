@@ -1,9 +1,10 @@
 /**
- * research 策略单元测试(v0.1 Vertical Slice)。
+ * research 策略单元测试(v0.2 正式版;P01.5 验收线全保留)。
  *
  * 运行:先 `npm run build`,再 `node test/strategies-research.test.mjs`。
  * 覆盖:契约形状 / 15 段锚点 / 双语 buildSystem / buildUser 注入 / 守卫矩阵 /
- * 保真检查 / 真实案例 mock-llm 编译产物抽查(PLAN-v1 §11.2 invariants)。
+ * 保真检查 / 真实案例 mock-llm 编译产物抽查(PLAN-v1 §11.2 invariants) /
+ * v0.2 来源规则完整化 + 跨策略不变式 A·B 挂载。
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -53,14 +54,14 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
 {
   assert.equal(research.type, 'research')
   assert.equal(research.version, RESEARCH_STRATEGY_VERSION)
-  assert.equal(research.version, '0.1.4', '策略必须带独立版本号 0.1.1')
+  assert.equal(research.version, '0.2.0', '策略必须带独立版本号 0.2.0')
   assert.deepEqual(research.required_sections, EXPECTED_SECTIONS)
   assert.equal(research.required_sections.length, 15)
   assert.deepEqual(research.outputContract.sections, EXPECTED_SECTIONS)
   assert.ok(research.purpose.length > 0)
   assert.equal(typeof research.buildSystem, 'function')
   assert.equal(typeof research.buildUser, 'function')
-  console.log('✓ rs1 契约形状:type/version 0.1.0/15 段锚点')
+  console.log('✓ rs1 契约形状:type/version 0.2.0/15 段锚点')
 }
 
 // 2. 零 ctx / UI / Host import(纯数据 + 纯函数,可独立升级)
@@ -304,6 +305,44 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
   assert.ok(buildResearchSystem('zh').length > 0)
   assert.ok(research.buildUser({ raw_input: REAL_CASE, context_turns: [], workspace_metadata: {}, missing_constraints: [] }).includes(REAL_CASE))
   console.log('✓ rs13 真实案例 mock 编译产物:invariants 全过 + 守卫零误报')
+}
+
+// 14. v0.2 正式化:来源规则完整化 + 跨策略不变式 A·B 挂载(P02-T07)
+{
+  const provenanceIds = research.provenanceRules.map((rule) => rule.id)
+  assert.ok(
+    research.provenanceRules.length >= 6,
+    '来源规则应完整化(含上下文仅用户 / 冲突证据并列 / 缺口显式)',
+  )
+  for (const id of [
+    'research-context-user-only',
+    'research-conflicting-evidence-side-by-side',
+    'research-gaps-explicit',
+  ]) {
+    assert.ok(provenanceIds.includes(id), `来源规则缺 ${id}`)
+  }
+
+  const invariantA = guardById('shared-unknown-not-blocking')
+  assert.ok(invariantA, 'invariant A 守卫必须挂到 research')
+  assert.equal(invariantA.check('- [待补充: Mac 实测数据]', emptyResult, ''), null)
+  assert.ok(
+    invariantA.check('- 请先回答目标显存,否则无法继续研究', emptyResult, ''),
+    '阻塞式未知项 → 必须触发',
+  )
+
+  assert.ok(guardById('shared-suggested-not-in-explicit'), 'invariant B 守卫必须挂到 research')
+  const invariantB = guardById('shared-suggested-not-upgraded')
+  assert.ok(invariantB, 'invariant B(升级)守卫必须挂到 research')
+  const suggested = [{ text: '建议(可忽略) 先补目标时长', source: 'OPTIMIZER_SUGGESTED' }]
+  assert.ok(
+    invariantB.check('- 必须先补目标时长', { suggested_requirements: suggested }, ''),
+    '建议升级为强约束 → 必须触发',
+  )
+  assert.equal(
+    invariantB.check('- 计划先补目标时长', { suggested_requirements: suggested }, ''),
+    null,
+  )
+  console.log('✓ rs14 v0.2:来源规则完整化 + invariant A·B 挂载')
 }
 
 console.log('\nstrategies-research: all passed')

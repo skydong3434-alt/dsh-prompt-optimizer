@@ -163,7 +163,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 
   const done = events[doneIndex]
   assert.equal(done.prompt_type, 'research')
-  assert.equal(done.strategy_version, '0.1.4', '策略独立版本必须可审计')
+  assert.equal(done.strategy_version, '0.2.0', '策略独立版本必须可审计')
   assert.equal(done.provenance_ok, true, '机械比对 + 守卫必须通过')
   assert.equal(done.wellFormed, true)
 
