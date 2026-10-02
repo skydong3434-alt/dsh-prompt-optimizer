@@ -43,6 +43,19 @@ await build({
   logLevel: 'info',
 })
 
+// 共享规则段 / 守卫工厂(_shared):独立 ESM 产物,供 test/strategies-shared.test.mjs
+// 单独验证「七策略共用的一份总纲」;research.js 仍各自内联,二者互不影响。
+await build({
+  entryPoints: ['src/core/strategies/_shared.ts'],
+  outfile: 'lib/core/strategies/_shared.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+
 // Core 最小管线:context / classify / registry / compiler —— 各自独立 ESM 产物,
 // 供纯函数单测与 Vertical Slice 端到端冒烟直接引用。
 await build({
