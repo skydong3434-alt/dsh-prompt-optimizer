@@ -2,15 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T15:35:00+08:00
+last_updated: 2026-10-03T16:10:00+08:00
 current_phase: P01.5
-current_task: P01.5-T01
+current_task:
 status: RUNNING
-next_task: P01.5-T01
+next_task: P01.5-T02
 machine_gate: PASS
 human_review: PASS_G1
-phase_status: G-1 已通过（2026-10-03 用户确认 7 条定稿原则）；docs/provenance.md 已补（纯整理无新增契约）。next=P01.5-T01（Research Vertical Slice）。
-latest_commit: e32858f239d1b86879ee5a6737d79f4812a1ef58
+phase_status: G-1 已通过（2026-10-03 用户确认 7 条定稿原则）。P01.5-T01 完成：research 策略 v0.1（15 段契约/研究铁律/4 守卫/双语）+ _shared 初版 + rs1-rs13 全绿 + 真实案例 mock 抽查 PASS。next=P01.5-T02（Vertical Slice 端到端；出口 G-VS）。
+latest_commit: bb4c6a42e8a8700c9d68807ecef4d8f386676b91
 auto_continue: true
 stop_reason: none
 ```
@@ -29,8 +29,8 @@ stop_reason: none
 | P00-T01 fork-and-baseline | DONE | 基线（BASELINE.md, da52f28；tag base-y1x1n-v0.4.0） | — |
 | P01-T01 core-contracts | DONE | src/core/types.ts（17f4dee） | — |
 | P01-T02 provenance-validator | DONE | provenance.ts 校验器（e32858f） | **G-1（当前）** |
-| P01.5-T01 research-strategy | PENDING ← next | Vertical Slice：Research 单片 | P01.5-T02 |
-| P01.5-T02 vertical-slice-e2e | PENDING | 端到端（AUTO→…→Replace） | **G-VS** |
+| P01.5-T01 research-strategy | DONE | Research 策略 v0.1（15 段 + 守卫矩阵 + _shared 初版，bb4c6a4） | — |
+| P01.5-T02 vertical-slice-e2e | PENDING ← next | 端到端（AUTO→…→Replace） | **G-VS** |
 | P02-T01..T08 | PENDING | 共享规则/七策略/registry（tasks/P02-*） | **G-2** |
 | P03-T01..T03 | PENDING | classifier 纯函数/LLM/防误判 | P04 |
 | P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
