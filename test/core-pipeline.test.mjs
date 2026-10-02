@@ -103,20 +103,28 @@ const REAL_CASE =
   console.log('✓ cp2 classify JSON 解析 / 回退 / 手动覆盖')
 }
 
-// cp3. registry:research + general fallback;未知类型兜底 general;版本可审计
+// cp3. registry:七策略全注册;未知类型兜底 general;版本可审计
 {
   // 各核心模块是独立 bundle,策略模块副本之间不保证对象同一性,故比对契约字段。
   const registeredResearch = defaultStrategyRegistry.get('research')
   assert.equal(registeredResearch.type, 'research')
   assert.equal(registeredResearch.version, '0.2.0')
+
+  const registeredPlanning = defaultStrategyRegistry.get('planning')
+  assert.equal(registeredPlanning.type, 'planning', 'P02 七策略必须全注册')
+  assert.equal(registeredPlanning.version, '0.1.0')
+
   assert.equal(defaultStrategyRegistry.get('general'), generalFallbackStrategy)
-  assert.equal(defaultStrategyRegistry.get('planning'), generalFallbackStrategy, '未注册类型必须回退 general')
   assert.equal(defaultStrategyRegistry.get('bogus'), generalFallbackStrategy)
-  assert.equal(defaultStrategyRegistry.has('planning'), false)
+  assert.equal(defaultStrategyRegistry.get('bogus').type, 'general')
+  assert.equal(defaultStrategyRegistry.has('planning'), true)
+  assert.equal(defaultStrategyRegistry.has('bogus'), false)
   const versions = defaultStrategyRegistry.getVersion()
   assert.equal(versions.research, '0.2.0')
   assert.equal(versions.general, '0.1.0')
-  assert.equal(defaultStrategyRegistry.list().length, 2)
+  assert.equal(versions.planning, '0.1.0')
+  assert.equal(Object.keys(versions).length, 7)
+  assert.equal(defaultStrategyRegistry.list().length, 7)
 
   assert.equal(isLegacyGeneral(generalFallbackStrategy), true, 'general 兜底应标记为 legacy')
   assert.equal(isLegacyGeneral(research), false)
@@ -124,7 +132,7 @@ const REAL_CASE =
   // 自定义注册表裁掉 general 时仍保证 fallback 可用
   const custom = createStrategyRegistry([research])
   assert.equal(custom.get('planning'), generalFallbackStrategy)
-  console.log('✓ cp3 registry fallback / 版本可审计')
+  console.log('✓ cp3 registry 七策略全注册 / fallback / 版本可审计')
 }
 
 // cp4. compiler 协议:标记段解析 → 四组记录 / 缺口 / 优化稿;Markdown 回退;垃圾输出降级
