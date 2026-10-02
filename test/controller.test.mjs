@@ -606,4 +606,76 @@ const DONE = {
   console.log('✓ c21 快速模式无标记实时预览')
 }
 
+// c22. 任务类型 / 置信度 / 四组 provenance:meta 先落盘,done 结构化
+{
+  const { ctx } = makeCtx()
+  const c = createOptimizerController(ctx)
+  const META = {
+    type: 'meta',
+    prompt_type: 'research',
+    confidence_level: 'High',
+    missing_constraints: [{ id: 'mc-1', label: '期望时长' }],
+    rationale: '研究诉求',
+    provenance_ok: true,
+  }
+  const DONE_R = {
+    ...DONE,
+    prompt_type: 'research',
+    confidence_level: 'High',
+    diagnosis: '诊断',
+    explicit_requirements: [{ id: 'r-1', text: '研究目标', source: 'USER_EXPLICIT', evidence: ['帮我研究'], confidence: 'high' }],
+    context_requirements: [],
+    suggested_requirements: [{ id: 'r-2', text: '补充时长', source: 'OPTIMIZER_SUGGESTED', evidence: [], confidence: 'medium' }],
+    unknowns: [{ id: 'r-3', text: '时长', source: 'UNKNOWN', evidence: [], confidence: 'low' }],
+    missing_constraints: [{ id: 'mc-1', label: '期望时长' }],
+    strategy_version: '0.1.0',
+    provenance_ok: true,
+  }
+  await withFetch(
+    () => sseResponse([META, { type: 'delta', text: '<<<OPTIMIZED>>>\n优化稿' }, DONE_R]),
+    async () => {
+      await c.optimize('草稿', 's1')
+      const s = c.getSnapshot()
+      assert.equal(s.status, 'done')
+      assert.equal(s.meta.promptType, 'research', 'meta 应落盘类型')
+      assert.equal(s.meta.confidenceLevel, 'High')
+      assert.equal(s.result.promptType, 'research')
+      assert.equal(s.result.confidenceLevel, 'High')
+      assert.equal(s.result.provenanceOk, true)
+      assert.equal(s.result.explicitRequirements.length, 1)
+      assert.equal(s.result.suggestedRequirements[0].source, 'OPTIMIZER_SUGGESTED')
+      assert.equal(s.result.unknowns.length, 1)
+      assert.equal(s.result.missingConstraints[0].label, '期望时长')
+      assert.equal(s.result.strategyVersion, '0.1.0')
+    },
+  )
+  console.log('✓ c22 meta + 四组 provenance 落盘')
+}
+
+// c23. AUTO 下拉:auto 不发 promptType;手动覆盖随请求发出并跨 close 保留
+{
+  const { ctx } = makeCtx()
+  const c = createOptimizerController(ctx)
+  assert.equal(c.getSnapshot().typeSelection, 'auto', '默认应为 AUTO')
+  await withFetch(
+    () => sseResponse([DONE]),
+    async (calls) => {
+      await c.optimize('草稿', 's1')
+      assert.equal(calls[0].body.promptType, undefined, 'auto 不应携带 promptType')
+    },
+  )
+  c.setTypeSelection('research')
+  assert.equal(c.getSnapshot().typeSelection, 'research')
+  await withFetch(
+    () => sseResponse([DONE]),
+    async (calls) => {
+      await c.optimize('草稿', 's1')
+      assert.equal(calls[0].body.promptType, 'research', '手动覆盖应随请求发出')
+      c.close()
+      assert.equal(c.getSnapshot().typeSelection, 'research', 'close 后保留下拉选择')
+    },
+  )
+  console.log('✓ c23 AUTO 下拉 / 手动覆盖')
+}
+
 console.log('\ncontroller: all passed')

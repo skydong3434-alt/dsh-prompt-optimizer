@@ -43,6 +43,49 @@ await build({
   logLevel: 'info',
 })
 
+// Core 最小管线:context / classify / registry / compiler —— 各自独立 ESM 产物,
+// 供纯函数单测与 Vertical Slice 端到端冒烟直接引用。
+await build({
+  entryPoints: ['src/core/context.ts'],
+  outfile: 'lib/core/context.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+await build({
+  entryPoints: ['src/core/classify.ts'],
+  outfile: 'lib/core/classify.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+await build({
+  entryPoints: ['src/core/registry.ts'],
+  outfile: 'lib/core/registry.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+await build({
+  entryPoints: ['src/core/compiler.ts'],
+  outfile: 'lib/core/compiler.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+
 // Host 半:ESM;@deepseek-ai/* 与 node 内建模块保持外部,由 profile 的 node_modules 解析。
 await build({
   entryPoints: ['src/index.ts'],
@@ -96,4 +139,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js + lib/core/strategies/research.js done')
+console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/strategies/research.js done')

@@ -4,9 +4,30 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
 import { useT } from './i18n.js'
-import type { OptimizerController } from './controller.js'
+import type { OptimizerController, TypeSelection } from './controller.js'
 
 export type OptimizeButtonProps = PropsRuntime<'conversation.input.right'>
+
+/** AUTO 下拉:auto = 自动识别;其余为手动覆盖(classifier 完全不调用)。 */
+const TYPE_OPTIONS: { value: TypeSelection; key: 'panel.type.auto' | 'panel.type.research' | 'panel.type.general' }[] = [
+  { value: 'auto', key: 'panel.type.auto' },
+  { value: 'research', key: 'panel.type.research' },
+  { value: 'general', key: 'panel.type.general' },
+]
+
+// 类型下拉:与优化按钮同一行的紧凑选择器;沿用 dsw 设计令牌,零新依赖。
+const selectStyle = {
+  fontSize: 12,
+  lineHeight: '18px',
+  height: 26,
+  maxWidth: 190,
+  borderRadius: 999,
+  border: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.35))',
+  background: 'transparent',
+  color: 'var(--dsw-alias-label-primary, inherit)',
+  padding: '0 8px',
+  cursor: 'pointer',
+} as const
 
 // 发送栏工具行按钮:对齐官方工具胶囊(指令/添加附件)的实测样式 —— 全圆角、
 // 无边框、5% 中性浅底。注意两点:
@@ -51,7 +72,22 @@ export function createOptimizeButton(controller: OptimizerController) {
     const loading = state.status === 'loading'
 
     return (
-      <span style={{ display: 'inline-flex' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <select
+          className="dsh-po-btn dsh-po-type"
+          style={{ ...selectStyle, ...(loading ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}
+          value={state.typeSelection}
+          disabled={loading}
+          title={t('button.typeTitle')}
+          aria-label={t('button.typeTitle')}
+          onChange={(event) => controller.setTypeSelection(event.target.value as TypeSelection)}
+        >
+          {TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {t(option.key)}
+            </option>
+          ))}
+        </select>
         <button className="dsh-po-btn dsh-po-opt"
           type="button"
           style={{ ...buttonStyle, ...(empty || loading ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}

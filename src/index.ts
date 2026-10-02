@@ -4,7 +4,22 @@ import Schema from '@deepseek-ai/schemastery'
 // 插件不再注册命名空间;0.1.x 线的两套 API 由下方运行时探测分派,类型只在本地声明。
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { buildSystemPrompt, buildUserPayload, capConversationContext, createThinkFilter, estimateTokens, parseOptimizerOutput, type ConversationTurn, type OptimizerMode, type OutputLanguage } from './prompt.js'
+import { capConversationContext, createThinkFilter, estimateTokens, type ConversationTurn, type OptimizerMode, type OutputLanguage } from './prompt.js'
+import type { ClassifierResult, CompileVars, MissingConstraint } from './core/types.js'
+import { toConfidenceLevel } from './core/types.js'
+import {
+  CLASSIFIER_MAX_TOKENS,
+  CLASSIFIER_TEMPERATURE,
+  buildClassifierSystem,
+  buildClassifierUser,
+  fallbackClassifierResult,
+  manualClassifierResult,
+  parseClassifierResult,
+  parsePromptTypeInput,
+} from './core/classify.js'
+import { normalizeInput } from './core/context.js'
+import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
+import { buildCompilePayload, finalizeCompile } from './core/compiler.js'
 
 export const name = 'dsh-prompt-optimizer'
 // 硬依赖只有 llm。HTTP 载体服务名在发布版间漂移过(npm 0.0.1-rc.x 类型包叫
@@ -113,6 +128,8 @@ interface OptimizeRequestBody {
   reasoningEffort?: unknown
   context?: unknown
   previous?: unknown
+  /** 手动类型覆盖(可选):缺省 = AUTO(先分类再编译);非法值按 AUTO 处理。 */
+  promptType?: unknown
 }
 
 /** 0.1.2+ settings.installSection 的回调包(仅类型面使用)。 */
@@ -475,17 +492,8 @@ export function apply(ctx: Context, config: Config) {
         // 与 context 一样跟随「携带上下文」开关——关闭后不带任何会话衍生材料。
         const previousRaw = cfg.includeContext === false ? undefined : asOptionalString(body.previous)
         const previous = previousRaw ? (previousRaw.length > 1500 ? `${previousRaw.slice(0, 1500)}…` : previousRaw) : undefined
-        // 0.2.0 把消息源联合收窄为 user/model/tool/system-prompt,但运行时按
-        // merge-extensible 容忍未知源(插件署名仍是最直接的审计信息);保留
-        // kind:'plugin' 形状,以结构断言跨过两代类型定义。
-        const message = {
-          id: `prompt-optimizer-${crypto.randomUUID()}`,
-          role: 'user',
-          content: [{ type: 'text', text: buildUserPayload(text, language, context, previous) }],
-          source: { kind: 'plugin', plugin: name },
-        } as unknown as Message
-        // 策略分叉:有上下文走「提炼目的 + 润色」(不套模板),无上下文走「结构模板」改写。
-        const system = buildSystemPrompt(language, mode, context?.length ? 'intent' : 'template')
+        // 手动类型覆盖:合法值跳过分类(UI 永远最高优先级);缺省 / 非法值 = AUTO。
+        const manualType = parsePromptTypeInput(body.promptType)
         // 输出上限跟随输入长度:优化结果体量与草稿正相关(完整模式还多一段分析),
         // 长草稿撞固定上限会被截断。取配置值与「输入估算 × 模式系数」的较大者,32768 封顶。
         const maxTokens =
@@ -517,72 +525,187 @@ export function apply(ctx: Context, config: Config) {
           abort.abort()
         }, timeoutSec * 1000)
         try {
-          let sentAny = false
-          let used = routes[0]
-          let raw: { text: string; truncated: boolean } | null = null
-          let lastError: unknown = null
-          // O12:主路由零产出失败而启用回退时,把失败原因带给客户端(徽章 tooltip 展示)。
-          let fallbackReason: string | undefined
-          for (const attempt of routes) {
-            used = attempt
+          // ── 阶段一:意图分类(AUTO)──────────────────────────────────────────
+          // 分类是「元任务」的小调用:maxTokens 512 / temperature 0 / lowest reasoning,
+          // JSON 契约;失败或超时按 general 兜底(绝不阻塞编译)。手动 override 完全跳过。
+          const buildOptimizeMessage = (payloadText: string): Message =>
+            ({
+              id: `prompt-optimizer-${crypto.randomUUID()}`,
+              role: 'user',
+              content: [{ type: 'text', text: payloadText }],
+              source: { kind: 'plugin', plugin: name },
+            }) as unknown as Message
+          let classifier: ClassifierResult | null = null
+          let classifyAborted = false
+          if (manualType) {
+            classifier = manualClassifierResult(manualType)
+          } else {
             try {
-              const options: GenerateOptions = {
-                provider: attempt.provider,
-                model: attempt.model,
-                system,
-                messages: [message],
-                maxTokens,
-                temperature: cfg.temperature ?? 0.2,
+              const classifyMessage = buildOptimizeMessage(
+                buildClassifierUser({ raw_input: text, context_turns: context }, language),
+              )
+              const classifyOptions: GenerateOptions = {
+                provider: route.provider,
+                model: route.model,
+                system: buildClassifierSystem(language),
+                messages: [classifyMessage],
+                maxTokens: CLASSIFIER_MAX_TOKENS,
+                temperature: CLASSIFIER_TEMPERATURE,
                 signal: abort.signal,
               }
-              let effort = sessionEffort
+              let classifyEffort = sessionEffort
               if (!preferSessionEffort) {
-                effort = (await resolveLowestEffortCached(ctx.llm, attempt.provider, attempt.model)) ?? sessionEffort
+                classifyEffort = (await resolveLowestEffortCached(ctx.llm, route.provider, route.model)) ?? sessionEffort
               }
-              if (effort) {
-                options.reasoningEffort = effort as GenerateOptions['reasoningEffort']
-              }
-              // 思考块过滤:推理模型把 <think>…</think> 当正文输出(内含复述的
-              // 标记字样),剥掉后客户端的实时预览与最终解析都只见到真实内容。
-              const thinkFilter = createThinkFilter()
-              raw = await collectText(ctx.llm.stream(options), (delta) => {
-                sentAny = true
-                const clean = thinkFilter.push(delta)
-                if (clean) send({ type: 'delta', text: clean })
-              })
-              const thinkTail = thinkFilter.flush()
-              if (thinkTail) send({ type: 'delta', text: thinkTail })
-              lastError = null
-              break
+              if (classifyEffort) classifyOptions.reasoningEffort = classifyEffort as GenerateOptions['reasoningEffort']
+              const classifyRaw = await collectText(ctx.llm.stream(classifyOptions))
+              const parsed = parseClassifierResult(classifyRaw.text)
+              if (!parsed) throw new Error('分类输出不是合法 JSON')
+              classifier = parsed
             } catch (error) {
-              lastError = error
-              if (timedOut || abort.signal.aborted || sentAny) break
-              if (attempt !== routes[routes.length - 1]) {
-                fallbackReason = error instanceof Error ? error.message : String(error)
-                console.error(`[${name}] 主路由 ${attempt.provider}/${attempt.model} 失败,尝试回退路由:`, error)
+              if (timedOut || abort.signal.aborted) {
+                classifyAborted = true
+              } else {
+                const reason = error instanceof Error ? error.message : String(error)
+                console.warn(`[${name}] classify failed, fallback general: ${reason}`)
+                classifier = fallbackClassifierResult('分类调用失败,已回退通用模式;可手动选择任务类型')
               }
             }
           }
-          if (raw) {
-            const parsed = parseOptimizerOutput(raw.text, mode)
+
+          if (classifyAborted) {
+            // 已超时或客户端断连:不进入编译;超时场景统一回 error 事件。
+            if (timedOut) {
+              send({
+                type: 'error',
+                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
+              })
+            }
+          } else if (timedOut || abort.signal.aborted) {
+            if (timedOut) {
+              send({
+                type: 'error',
+                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
+              })
+            }
+          } else if (classifier) {
+            // ── 归一化 + 策略选择 + 编译载荷 ─────────────────────────────────
+            const strategy = defaultStrategyRegistry.get(classifier.prompt_type)
+            const missing: MissingConstraint[] = classifier.missing_constraints.map((label, index) => ({
+              id: `mc-classifier-${index + 1}`,
+              label,
+            }))
+            const normalized = normalizeInput({ raw_input: text, turns: context, workspace_metadata: {} })
+            const compileVars: CompileVars = {
+              raw_input: normalized.raw_input,
+              context_turns: normalized.bounded_turns,
+              workspace_metadata: normalized.workspace_metadata,
+              missing_constraints: missing,
+            }
+            const payload = buildCompilePayload(strategy, compileVars, { language, mode, previous, legacy: isLegacyGeneral(strategy) })
+            const message = buildOptimizeMessage(payload.user)
+            const system = payload.system
+
+            // meta 必须先于任何 delta 下发(客户端据此把阶段切到「正在优化」);
+            // 编译结果尚未产出,provenance_ok 在 meta 里是乐观值——done 携带真实值。
             send({
-              type: 'done',
-              ...parsed,
-              truncated: raw.truncated,
-              provider: used.provider,
-              model: used.model,
-              fallbackUsed: used !== routes[0],
-              ...(fallbackReason ? { fallbackReason } : {}),
+              type: 'meta',
+              prompt_type: strategy.type,
+              confidence_level: toConfidenceLevel(classifier.confidence_internal),
+              missing_constraints: missing,
+              rationale: classifier.rationale,
+              provenance_ok: true,
             })
-          } else if (timedOut) {
-            send({
-              type: 'error',
-              error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
-            })
-          } else if (!abort.signal.aborted && lastError) {
-            const message = lastError instanceof Error ? lastError.message : String(lastError)
-            console.error(`[${name}] optimize failed:`, lastError)
-            send({ type: 'error', error: message })
+
+            // ── 阶段二:编译流式输出 ─────────────────────────────────────────
+            let sentAny = false
+            let used = routes[0]
+            let raw: { text: string; truncated: boolean } | null = null
+            let lastError: unknown = null
+            // O12:主路由零产出失败而启用回退时,把失败原因带给客户端(徽章 tooltip 展示)。
+            let fallbackReason: string | undefined
+            for (const attempt of routes) {
+              used = attempt
+              try {
+                const options: GenerateOptions = {
+                  provider: attempt.provider,
+                  model: attempt.model,
+                  system,
+                  messages: [message],
+                  maxTokens,
+                  temperature: cfg.temperature ?? 0.2,
+                  signal: abort.signal,
+                }
+                let effort = sessionEffort
+                if (!preferSessionEffort) {
+                  effort = (await resolveLowestEffortCached(ctx.llm, attempt.provider, attempt.model)) ?? sessionEffort
+                }
+                if (effort) {
+                  options.reasoningEffort = effort as GenerateOptions['reasoningEffort']
+                }
+                // 思考块过滤:推理模型把 <think>…</think> 当正文输出(内含复述的
+                // 标记字样),剥掉后客户端的实时预览与最终解析都只见到真实内容。
+                const thinkFilter = createThinkFilter()
+                raw = await collectText(ctx.llm.stream(options), (delta) => {
+                  sentAny = true
+                  const clean = thinkFilter.push(delta)
+                  if (clean) send({ type: 'delta', text: clean })
+                })
+                const thinkTail = thinkFilter.flush()
+                if (thinkTail) send({ type: 'delta', text: thinkTail })
+                lastError = null
+                break
+              } catch (error) {
+                lastError = error
+                if (timedOut || abort.signal.aborted || sentAny) break
+                if (attempt !== routes[routes.length - 1]) {
+                  fallbackReason = error instanceof Error ? error.message : String(error)
+                  console.error(`[${name}] 主路由 ${attempt.provider}/${attempt.model} 失败,尝试回退路由:`, error)
+                }
+              }
+            }
+            if (raw) {
+              const outcome = finalizeCompile(strategy, raw.text, {
+                rawInput: text,
+                contextTurns: context ?? [],
+                classifier,
+                missing,
+                mode,
+                legacy: isLegacyGeneral(strategy),
+              })
+              send({
+                type: 'done',
+                // 向后兼容字段:analysis / optimized / wellFormed 语义不变。
+                analysis: outcome.result.diagnosis,
+                optimized: outcome.result.optimized_prompt,
+                wellFormed: outcome.wellFormed,
+                truncated: raw.truncated,
+                provider: used.provider,
+                model: used.model,
+                fallbackUsed: used !== routes[0],
+                ...(fallbackReason ? { fallbackReason } : {}),
+                // 新增字段(可选):类型 / 置信度 / 四组 provenance / 缺口 / 校验。
+                prompt_type: outcome.result.prompt_type,
+                confidence_level: outcome.result.confidence_level,
+                diagnosis: outcome.result.diagnosis,
+                explicit_requirements: outcome.result.explicit_requirements,
+                context_requirements: outcome.result.context_requirements,
+                suggested_requirements: outcome.result.suggested_requirements,
+                unknowns: outcome.result.unknowns,
+                missing_constraints: outcome.result.missing_constraints,
+                strategy_version: outcome.result.strategy_version,
+                provenance_ok: outcome.result.provenance_ok,
+              })
+            } else if (timedOut) {
+              send({
+                type: 'error',
+                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
+              })
+            } else if (!abort.signal.aborted && lastError) {
+              const message2 = lastError instanceof Error ? lastError.message : String(lastError)
+              console.error(`[${name}] optimize failed:`, lastError)
+              send({ type: 'error', error: message2 })
+            }
           }
         } finally {
           clearTimeout(timer)

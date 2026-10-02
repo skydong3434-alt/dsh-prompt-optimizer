@@ -3,10 +3,28 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 类型级引入,激活 'conversation.input.dock' 的 SlotMap 合并声明。
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
-import { shouldAutoClose, type OptimizerController } from './controller.js'
-import { useT } from './i18n.js'
+import { shouldAutoClose, type OptimizerController, type ProvenanceView } from './controller.js'
+import { useT, type MessageKey } from './i18n.js'
 
 export type ResultDockProps = PropsRuntime<'conversation.input.dock'>
+
+/** 任务类型 → i18n key(未登记类型回落 general)。 */
+const TYPE_LABEL_KEY: Record<string, MessageKey> = {
+  research: 'panel.type.research',
+  planning: 'panel.type.planning',
+  execution: 'panel.type.execution',
+  diagnostic: 'panel.type.diagnostic',
+  review: 'panel.type.review',
+  creative: 'panel.type.creative',
+  general: 'panel.type.general',
+}
+
+/** 置信度档位 → i18n key(内部数值一律不展示)。 */
+const CONFIDENCE_KEY: Record<'High' | 'Medium' | 'Low', MessageKey> = {
+  High: 'panel.confidence.high',
+  Medium: 'panel.confidence.medium',
+  Low: 'panel.confidence.low',
+}
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -123,6 +141,53 @@ const styles = {
     borderRadius: 999,
     padding: '0 8px',
     whiteSpace: 'nowrap',
+  } as const,
+  // 类型徽章 + 置信度档位(内部数值一律不展示)。
+  typeBadge: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: 'var(--dsw-alias-label-primary, inherit)',
+    border: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,0.25))',
+    borderRadius: 999,
+    padding: '0 8px',
+    whiteSpace: 'nowrap',
+  } as const,
+  confidenceBadge: {
+    fontSize: 11,
+    color: 'var(--dsw-alias-label-primary-dimmed, rgba(128,128,128,0.9))',
+    border: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,0.25))',
+    borderRadius: 999,
+    padding: '0 8px',
+    whiteSpace: 'nowrap',
+  } as const,
+  // 四组 provenance 各自独立底色/边框:explicit 实线、suggested 虚线、unknown 警示色。
+  groupBox: {
+    border: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,0.2))',
+    borderRadius: 8,
+    padding: '4px 8px',
+    maxHeight: '12vh',
+    overflowY: 'auto',
+  } as const,
+  suggestBox: {
+    border: '1px dashed var(--dsw-alias-border-l2, rgba(128,128,128,0.4))',
+    borderRadius: 8,
+    padding: '4px 8px',
+    maxHeight: '12vh',
+    overflowY: 'auto',
+    color: 'var(--dsw-alias-label-primary-dimmed, rgba(128,128,128,0.9))',
+  } as const,
+  unknownBox: {
+    border: '1px solid var(--dsw-alias-state-warn-primary, #d4a72c)',
+    borderRadius: 8,
+    padding: '4px 8px',
+    maxHeight: '12vh',
+    overflowY: 'auto',
+  } as const,
+  groupItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 4,
+    padding: '1px 0',
   } as const,
   // U10/R5:质量警示(truncated / notWellFormed)从灰色小字升级为描边警示框,
   // 让「替换前请检查」被真正看到;notWellFormed 横幅置于内容区顶部(R5)。
@@ -251,8 +316,15 @@ export function createResultDock(controller: OptimizerController) {
 
     if (!owns) return null
     const { result } = state
-    // 阶段提示:首 token 前(等待响应)→ 分析诊断 → 输出优化稿,跟随流式段落推进。
-    const stage = state.live?.optimized ? t('panel.stage.writing') : state.live?.analysis ? t('panel.stage.analyzing') : t('panel.stage.waiting')
+    // 阶段提示:meta 未到 = 正在识别任务类型(AUTO 两阶段的第一阶段);meta 到达后
+    // 按流式段落推进:等待响应 → 分析诊断 → 输出优化稿。
+    const stage = !state.meta
+      ? t('panel.stage.classifying')
+      : state.live?.optimized
+        ? t('panel.stage.writing')
+        : state.live?.analysis
+          ? t('panel.stage.analyzing')
+          : t('panel.stage.waiting')
 
     // 流式实况段(loading 与 cancelled 共用;U5 限高滚动 + 自动跟随,不遮挡阶段行)。
     const liveBody =
@@ -296,11 +368,48 @@ export function createResultDock(controller: OptimizerController) {
       setUndoneFlash(true)
     }
 
+    // 四组 provenance 渲染:每组独立样式;逐字 quote 证据走 item 级 title tooltip。
+    const renderGroup = (title: string, records: ProvenanceView[], tone: 'explicit' | 'context' | 'suggested' | 'unknown') => {
+      if (!records.length) return null
+      const box = tone === 'suggested' ? styles.suggestBox : tone === 'unknown' ? styles.unknownBox : styles.groupBox
+      return (
+        <div>
+          <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}</div>
+          <div style={box}>
+            {records.map((record) => (
+              <div
+                key={record.id || `${tone}-${record.text}`}
+                style={styles.groupItem}
+                title={record.evidence.length ? `${t('panel.group.evidence')}: ${record.evidence.join(' | ')}` : record.note}
+              >
+                <span aria-hidden>{tone === 'suggested' ? '✎' : tone === 'unknown' ? '?' : '✓'}</span>
+                <span>
+                  {tone === 'suggested' ? `${t('panel.group.suggested')}: ` : ''}
+                  {record.text}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div style={styles.panel} role="dialog" aria-label={t('panel.aria')}>
         <div style={styles.header}>
           <SparkleIcon size={15} />
           <span style={styles.title}>{t('panel.title')}</span>
+          {/* 任务类型徽章 + 把握度(高/中/低):loading 时用 meta,完成后用 result。 */}
+          {(result || state.meta) && (
+            <span style={styles.typeBadge}>
+              {t('panel.type')}: {t(TYPE_LABEL_KEY[(result?.promptType ?? state.meta?.promptType) ?? 'general'] ?? 'panel.type.general')}
+            </span>
+          )}
+          {(result || state.meta) && (
+            <span style={styles.confidenceBadge}>
+              {t(CONFIDENCE_KEY[(result?.confidenceLevel ?? state.meta?.confidenceLevel) ?? 'Low'])}
+            </span>
+          )}
           {result && (
             <span
               style={styles.modelBadge}
@@ -361,6 +470,19 @@ export function createResultDock(controller: OptimizerController) {
 
         {state.status === 'done' && result && (
           <>
+            {/* provenance 校验失败与低置信提示置于最顶部:替换前必须先被看到。 */}
+            {!result.provenanceOk && (
+              <div style={{ ...styles.warnBanner, marginTop: 0, marginBottom: 8 }}>
+                <span aria-hidden>⚠</span>
+                <span>{t('panel.provenanceFail')}</span>
+              </div>
+            )}
+            {result.confidenceLevel === 'Low' && (
+              <div style={{ ...styles.warnBanner, marginTop: 0, marginBottom: 8 }}>
+                <span aria-hidden>⚠</span>
+                <span>{t('panel.lowConfidence')}</span>
+              </div>
+            )}
             {/* R5:格式退化(结果可能混入多余文字)是最需要被看到的质量警示,置于顶部。 */}
             {!result.wellFormed && (
               <div style={{ ...styles.warnBanner, marginTop: 0, marginBottom: 8 }}>
@@ -381,6 +503,23 @@ export function createResultDock(controller: OptimizerController) {
                     </div>
                   )}
                 </>
+              )}
+              {/* 四组 provenance 分开展示:明确要求 / 上下文确认 / 优化器建议 / 待补充。 */}
+              {renderGroup(t('panel.group.explicit'), result.explicitRequirements, 'explicit')}
+              {renderGroup(t('panel.group.context'), result.contextRequirements, 'context')}
+              {renderGroup(t('panel.group.suggested'), result.suggestedRequirements, 'suggested')}
+              {renderGroup(
+                t('panel.group.unknown'),
+                result.unknowns.length
+                  ? result.unknowns
+                  : result.missingConstraints.map((item) => ({
+                      id: item.id,
+                      text: `[待补充: ${item.label}]`,
+                      source: 'UNKNOWN',
+                      evidence: [],
+                      confidence: 'low',
+                    })),
+                'unknown',
               )}
               <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.optimized')}</div>
               <div style={styles.optimizedBox}>

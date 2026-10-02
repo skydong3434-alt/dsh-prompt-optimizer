@@ -433,11 +433,15 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 // 13b. 已向客户端推送过 delta 后失败 → 不回退(避免双模型拼接),直接 error 事件
 {
   let calls = 0
+  // 分类调用(maxTokens 512)与编译调用的尝试次数分开计:本用例只关心编译阶段
+  // 「已产出内容后不得回退重试」,分类失败回退 general 属预期行为。
+  let compileCalls = 0
   const { handler } = await setup({
     config: { fallbackModel: 'good-p/good-m' },
     llmOverrides: {
       async *stream(options) {
         calls++
+        if (options.maxTokens !== 512) compileCalls++
         if (options.provider === 'bad-p') {
           yield { type: 'text-delta', index: 0, text: '<<<ANALYSIS>>>\n半截输出' }
           yield { type: 'finish', reason: { kind: 'error', failure: { code: 'X', message: 'mid-stream boom' } } }
@@ -452,7 +456,8 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const events = sseEvents(res)
   assert.ok(!events.some((e) => e.type === 'done'), '不应有 done')
   assert.match(events.find((e) => e.type === 'error')?.error ?? '', /mid-stream boom/)
-  assert.equal(calls, 1, '已产出内容后不得回退重试')
+  assert.equal(compileCalls, 1, '已产出内容后不得回退重试')
+  assert.equal(calls, 2, 'AUTO = 分类调用 1 次 + 编译调用 1 次')
   console.log('✓ 13b 半截失败后不回退')
 }
 
@@ -593,6 +598,34 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const testCsrf = await call(testHandler, {}, 'POST', { origin: 'https://evil.example', host: '127.0.0.1:3080' })
   assert.equal(testCsrf.status, 403, 'test-model 同样拒绝跨站请求')
   console.log('✓ 19 来源围栏(CSRF / rebinding)')
+}
+
+// 20. AUTO 两阶段编排:SSE 事件序 meta → delta… → done;meta 携带类型 / 置信度 / 理由
+{
+  const { handler } = await setup()
+  const res = await call(handler, { text: '帮我看看这段代码', provider: 'p', model: 'm' })
+  const events = sseEvents(res)
+  const metaIndex = events.findIndex((e) => e.type === 'meta')
+  const firstDelta = events.findIndex((e) => e.type === 'delta')
+  const doneIndex = events.findIndex((e) => e.type === 'done')
+  assert.equal(metaIndex, 0, 'meta 必须是第一个事件')
+  assert.ok(firstDelta > metaIndex, 'delta 必须在 meta 之后')
+  assert.ok(doneIndex > firstDelta, 'done 必须在 delta 之后')
+  const meta = events[metaIndex]
+  assert.equal(meta.prompt_type, 'general', '分类失败应回退 general')
+  assert.equal(meta.confidence_level, 'Low', '回退 general 必须低置信')
+  assert.match(String(meta.rationale), /分类|通用|手动/)
+  assert.ok(Array.isArray(meta.missing_constraints))
+  // done 扩展字段:四组来源结构齐备(此处为空)+ 策略版本 + provenance_ok(向后兼容)
+  const done = events[doneIndex]
+  assert.equal(done.prompt_type, 'general')
+  assert.deepEqual(done.explicit_requirements, [])
+  assert.deepEqual(done.context_requirements, [])
+  assert.deepEqual(done.suggested_requirements, [])
+  assert.deepEqual(done.unknowns, [])
+  assert.equal(done.provenance_ok, true)
+  assert.equal(typeof done.strategy_version, 'string')
+  console.log('✓ 20 AUTO 两阶段:meta→delta→done 事件序')
 }
 
 console.log('\nsmoke: all passed')

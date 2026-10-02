@@ -4,6 +4,36 @@ import type { SessionId } from '@deepseek-ai/dsh-client-connection/client'
 import type { OptimizerHistoryEntry } from './host-faces.js'
 import { legacyQueryFace, type ModelDirectoriesLike } from './host-faces.js'
 import { capConversationContext, compactPartialBuffer, parsePartialOptimizerOutput, type ConversationTurn } from '../prompt.js'
+import type { PromptType } from '../core/types.js'
+
+/** 下拉可选的任务类型:auto = AUTO 自动识别;其余为手动覆盖。 */
+export type TypeSelection = PromptType | 'auto'
+
+/** Provenance 记录在 UI 侧的展示形态(结构化自 done 事件)。 */
+export interface ProvenanceView {
+  id: string
+  text: string
+  source: string
+  evidence: string[]
+  confidence: string
+  note?: string
+}
+
+/** 缺口项(UI 清单展示)。 */
+export interface MissingConstraintView {
+  id: string
+  label: string
+  reason?: string
+}
+
+/** meta 事件(阶段一分类结果):类型 / 置信度 / 缺口 / 理由 / 校验标志。 */
+export interface OptimizerMeta {
+  promptType: string
+  confidenceLevel: 'High' | 'Medium' | 'Low'
+  missingConstraints: MissingConstraintView[]
+  rationale: string
+  provenanceOk: boolean
+}
 
 export interface OptimizeResult {
   analysis: string
@@ -18,6 +48,20 @@ export interface OptimizeResult {
   fallbackReason?: string
   /** 从点击到 done 的客户端实测耗时(毫秒),含会话查询与排队等待。 */
   durationMs?: number
+  /** 任务类型(done 事件;旧版 Host 缺省为空)。 */
+  promptType: string
+  /** 展示档位 High / Medium / Low(内部数值不展示)。 */
+  confidenceLevel: 'High' | 'Medium' | 'Low'
+  /** 需求诊断(done.diagnosis;缺省回落到 analysis)。 */
+  diagnosis: string
+  explicitRequirements: ProvenanceView[]
+  contextRequirements: ProvenanceView[]
+  suggestedRequirements: ProvenanceView[]
+  unknowns: ProvenanceView[]
+  missingConstraints: MissingConstraintView[]
+  strategyVersion: string
+  /** validate 机械比对 + anti-drift 守卫是否通过;false 时 UI 顶部警示。 */
+  provenanceOk: boolean
 }
 
 export interface OptimizerState {
@@ -32,11 +76,67 @@ export interface OptimizerState {
   last: { text: string; sessionId: SessionId; prefix?: string } | null
   /** 「替换输入框」后的撤回依据:替换前的原文 + 替换后的文本(用于检测用户编辑)。 */
   applied: { backup: string; text: string } | null
+  /** UI 下拉选择的任务类型(auto = AUTO 自动识别)。 */
+  typeSelection: TypeSelection
+  /** 阶段一分类结果(meta 事件到达后填充);未到达 = null(仍在识别类型)。 */
+  meta: OptimizerMeta | null
 }
 
 const ROUTE = '/dsh-prompt-optimizer/optimize'
 
-const INITIAL: OptimizerState = { open: false, status: 'idle', error: null, result: null, live: null, last: null, applied: null }
+const INITIAL: OptimizerState = {
+  open: false,
+  status: 'idle',
+  error: null,
+  result: null,
+  live: null,
+  last: null,
+  applied: null,
+  typeSelection: 'auto',
+  meta: null,
+}
+
+/** 结构化 provenance 数组(done 事件字段缺失 / 旧版 Host 时返回空数组)。 */
+function asProvenanceViews(value: unknown): ProvenanceView[] {
+  if (!Array.isArray(value)) return []
+  const out: ProvenanceView[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    out.push({
+      id: String(record.id ?? ''),
+      text: String(record.text ?? ''),
+      source: String(record.source ?? 'UNKNOWN'),
+      evidence: Array.isArray(record.evidence)
+        ? record.evidence.filter((e): e is string => typeof e === 'string').map((e) => e.trim()).filter(Boolean)
+        : [],
+      ...(typeof record.confidence === 'string' ? { confidence: record.confidence } : { confidence: 'medium' }),
+      ...(typeof record.note === 'string' && record.note ? { note: record.note } : {}),
+    })
+  }
+  return out
+}
+
+function asMissingConstraints(value: unknown): MissingConstraintView[] {
+  if (!Array.isArray(value)) return []
+  const out: MissingConstraintView[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const label = String(record.label ?? '').trim()
+    if (!label) continue
+    out.push({
+      id: String(record.id ?? ''),
+      label,
+      ...(typeof record.reason === 'string' && record.reason ? { reason: record.reason } : {}),
+    })
+  }
+  return out
+}
+
+function asConfidenceLevel(value: unknown): 'High' | 'Medium' | 'Low' {
+  return value === 'High' || value === 'Medium' || value === 'Low' ? value : 'Low'
+}
 
 /**
  * 拆斜杠命令前缀:「/goal 帮我……」只优化正文,替换时拼回前缀,避免命令词被改写。
@@ -186,6 +286,7 @@ export function createOptimizerController(
         error: '检测到斜杠命令但没有正文:请先输入要优化的内容。',
         live: null,
         last: { text: draft, sessionId },
+        meta: null,
       })
       return
     }
@@ -230,7 +331,10 @@ export function createOptimizerController(
     }
     // 从点击起计时(含会话查询与首 token 前的等待),done 时记入 result 展示。
     const startedAt = Date.now()
-    set({ open: true, status: 'loading', error: null, live: { analysis: '', optimized: '' }, last: { text: draft, sessionId, prefix }, applied: null })
+    // 下拉选择在 set(loading) 前读取:auto 不发 promptType(走 AUTO 分类),
+    // 其余值作为手动覆盖直达 Host(跳过分类)。
+    const typeSelection = state.typeSelection
+    set({ open: true, status: 'loading', error: null, live: { analysis: '', optimized: '' }, last: { text: draft, sessionId, prefix }, applied: null, meta: null })
     try {
       // 复用当前会话的模型选择(每次点击实时查询,会话里换模型立即生效);
       // 查询失败时交给 Host 端回退解析。设置里固定了模型时跳过:Host 端
@@ -286,7 +390,15 @@ export function createOptimizerController(
       const resp = await fetch(ROUTE, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: draft, provider: selection?.provider, model: selection?.model, reasoningEffort: selection?.reasoningEffort, context, previous }),
+        body: JSON.stringify({
+          text: draft,
+          provider: selection?.provider,
+          model: selection?.model,
+          reasoningEffort: selection?.reasoningEffort,
+          context,
+          previous,
+          ...(typeSelection === 'auto' ? {} : { promptType: typeSelection }),
+        }),
         signal: controller.signal,
       })
       // 预校验失败(400/405/409/413/502)仍是普通 JSON;成功则进入 SSE 流。
@@ -339,9 +451,21 @@ export function createOptimizerController(
                 }
               }, 50)
             }
+          } else if (event.type === 'meta') {
+            // 阶段一分类结果:先于任何 delta 到达,面板据此把阶段文案切到「正在优化」。
+            set({
+              meta: {
+                promptType: String(event.prompt_type ?? 'general'),
+                confidenceLevel: asConfidenceLevel(event.confidence_level),
+                missingConstraints: asMissingConstraints(event.missing_constraints),
+                rationale: String(event.rationale ?? ''),
+                provenanceOk: event.provenance_ok !== false,
+              },
+            })
           } else if (event.type === 'done') {
             terminal = true
             clearLiveTimer()
+            const diagnosis = String(event.diagnosis ?? event.analysis ?? '')
             set({
               status: 'done',
               live: null,
@@ -355,6 +479,16 @@ export function createOptimizerController(
                 fallbackUsed: event.fallbackUsed === true,
                 fallbackReason: typeof event.fallbackReason === 'string' && event.fallbackReason ? event.fallbackReason : undefined,
                 durationMs: Date.now() - startedAt,
+                promptType: String(event.prompt_type ?? 'general'),
+                confidenceLevel: asConfidenceLevel(event.confidence_level),
+                diagnosis,
+                explicitRequirements: asProvenanceViews(event.explicit_requirements),
+                contextRequirements: asProvenanceViews(event.context_requirements),
+                suggestedRequirements: asProvenanceViews(event.suggested_requirements),
+                unknowns: asProvenanceViews(event.unknowns),
+                missingConstraints: asMissingConstraints(event.missing_constraints),
+                strategyVersion: String(event.strategy_version ?? ''),
+                provenanceOk: event.provenance_ok !== false,
               },
             })
           } else if (event.type === 'error') {
@@ -390,6 +524,10 @@ export function createOptimizerController(
     },
     getSnapshot: () => state,
     optimize,
+    /** UI 下拉:设置任务类型(auto = AUTO 自动识别;其余为手动覆盖)。 */
+    setTypeSelection(typeSelection: TypeSelection) {
+      set({ typeSelection })
+    },
     retry() {
       if (state.last) void optimize(state.last.text, state.last.sessionId)
     },
@@ -403,7 +541,8 @@ export function createOptimizerController(
       abort?.abort()
       abort = null
       clearLiveTimer()
-      set({ ...INITIAL })
+      // 关闭只清本次结果;下拉选择属于用户偏好,跨次保留。
+      set({ ...INITIAL, typeSelection: state.typeSelection })
     },
     /**
      * O2:loading 中取消(Esc)。与 close 不同:中止请求但不清空状态,
