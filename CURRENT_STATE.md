@@ -6,7 +6,7 @@ last_updated: 2026-10-03T07:39:10+0800
 current_phase: P02
 current_task:
 status: RUNNING
-next_task: P02-T06
+next_task: P02-T07
 machine_gate: PASS
 human_review: PASS_G_VS
 phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（_shared 完整化）e06bf3b、P02-T02（planning 策略）9784dbe、P02-T03（execution 策略）543f737、P02-T04（diagnostic 策略）e0ec912、P02-T05（review 策略）11315af 已完成；P02-T06（creative 策略）已完成并提交 7c9bde3：12 段契约（Creative Goal/Audience/Platform/Style/Reference/Assets/Constraints/Structure/Tone/Output Format/Avoidances/Success Criteria；Assets 为任务契约点名 12 段而补）+ 创作铁律（保留给定实体 / 无证据不改设定 / 成功标准必备 / 不发明硬约束）+ 守卫（实体保真 error（标签+标识/括号占位符/@handle 三类）、无证据改设定 warn、12 段齐全、Success Criteria 强制段 error、无证据强断言 + invariant A·B）。next=P02-T07（general fallback + research 正式化整合）。
