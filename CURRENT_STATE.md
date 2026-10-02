@@ -2,15 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T16:40:00+08:00
+last_updated: 2026-10-03T07:16:28+0800
 current_phase: P02
-current_task: P02-T01
+current_task:
 status: RUNNING
-next_task: P02-T01
+next_task: P02-T02
 machine_gate: PASS
 human_review: PASS_G_VS
-phase_status: G-VS 已通过（2026-10-03 用户验收：类型识别/意图保留/四组来源/provenance_ok=true/守卫误报修复确认有效）。新增 cross-strategy invariants A（UNKNOWN≠BLOCKING）/B（OPTIMIZER_SUGGESTED≠USER REQUIREMENT），已纳入 docs/provenance.md §8 + P02-T01/P07-T01 任务契约；Research 0.1.4 保持为已验证基线，不做重设计。next=P02-T01（全 Strategy 扩展，共享规则段起）。
-latest_commit: 3276e1e8d6112a7dc9685cf97e0e7a1812ec44c3
+phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（共享规则段 _shared 完整化）已完成并提交 e06bf3b：常量组 + 五个守卫工厂 + cross-strategy invariants A（UNKNOWN≠BLOCKING）/B（OPTIMIZER_SUGGESTED≠USER REQUIREMENT）纳入六段共享规则；Research 0.1.4 保持为已验证基线，不做重设计。next=P02-T02（planning 策略）。
+latest_commit: e06bf3b1e5d77e5cb8633bbf4124e72b4e699ffa
 auto_continue: true
 stop_reason: none
 ```
@@ -31,7 +31,8 @@ stop_reason: none
 | P01-T02 provenance-validator | DONE | provenance.ts 校验器（e32858f） | **G-1（当前）** |
 | P01.5-T01 research-strategy | DONE | Research 策略 v0.1（15 段 + 守卫矩阵 + _shared 初版，bb4c6a4） | — |
 | P01.5-T02 vertical-slice-e2e | DONE | 端到端（AUTO→…→Replace），3276e1e | **G-VS（当前）** |
-| P02-T01..T08 | PENDING | 共享规则/七策略/registry（tasks/P02-*） | **G-2** |
+| P02-T01 shared-rules | DONE | _shared 完整化：六段规则 + 5 守卫工厂 + invariant A·B（e06bf3b） | — |
+| P02-T02..T08 | PENDING | 七策略/registry（tasks/P02-*） | **G-2** |
 | P03-T01..T03 | PENDING | classifier 纯函数/LLM/防误判 | P04 |
 | P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
 | P05-T01..T02 | PENDING | host pipeline/兼容回归 | P06 |
