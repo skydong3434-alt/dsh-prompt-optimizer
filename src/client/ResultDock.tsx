@@ -3,7 +3,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 类型级引入,激活 'conversation.input.dock' 的 SlotMap 合并声明。
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
-import { shouldAutoClose, type OptimizerController, type ProvenanceView } from './controller.js'
+import { shouldAutoClose, type MissingConstraintView, type OptimizerController, type ProvenanceView } from './controller.js'
 import { useT, type MessageKey } from './i18n.js'
 
 export type ResultDockProps = PropsRuntime<'conversation.input.dock'>
@@ -189,6 +189,20 @@ const styles = {
     gap: 4,
     padding: '1px 0',
   } as const,
+  // P06-T02:来源身份小标(WORKSPACE_FACT 等确定性事实)与逐条「缺证据」降级标记。
+  sourceChip: {
+    fontSize: 10,
+    color: 'var(--dsw-alias-label-primary-dimmed, rgba(128,128,128,0.9))',
+    border: '1px solid var(--dsw-alias-border-l3, rgba(128,128,128,0.25))',
+    borderRadius: 999,
+    padding: '0 6px',
+    whiteSpace: 'nowrap',
+  } as const,
+  evidenceWarn: {
+    fontSize: 10,
+    color: 'var(--dsw-alias-state-warn-primary, #d4a72c)',
+    whiteSpace: 'nowrap',
+  } as const,
   // U10/R5:质量警示(truncated / notWellFormed)从灰色小字升级为描边警示框,
   // 让「替换前请检查」被真正看到;notWellFormed 横幅置于内容区顶部(R5)。
   warnBanner: {
@@ -369,24 +383,62 @@ export function createResultDock(controller: OptimizerController) {
     }
 
     // 四组 provenance 渲染:每组独立样式;逐字 quote 证据走 item 级 title tooltip。
-    const renderGroup = (title: string, records: ProvenanceView[], tone: 'explicit' | 'context' | 'suggested' | 'unknown') => {
+    // - suggested 组条目带「建议(可忽略)」前缀(与组标题分离,避免重复);
+    // - context 组默认标出 WORKSPACE_FACT 等确定性来源;
+    // - explicit/context 条目无逐字证据时做「缺证据」降级展示(对应 provenance_ok=false)。
+    const renderGroup = (
+      title: string,
+      records: ProvenanceView[],
+      tone: 'explicit' | 'context' | 'suggested' | 'unknown',
+      opts?: { showSource?: boolean },
+    ) => {
       if (!records.length) return null
       const box = tone === 'suggested' ? styles.suggestBox : tone === 'unknown' ? styles.unknownBox : styles.groupBox
       return (
         <div>
           <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}</div>
           <div style={box}>
-            {records.map((record) => (
-              <div
-                key={record.id || `${tone}-${record.text}`}
-                style={styles.groupItem}
-                title={record.evidence.length ? `${t('panel.group.evidence')}: ${record.evidence.join(' | ')}` : record.note}
-              >
-                <span aria-hidden>{tone === 'suggested' ? '✎' : tone === 'unknown' ? '?' : '✓'}</span>
-                <span>
-                  {tone === 'suggested' ? `${t('panel.group.suggested')}: ` : ''}
-                  {record.text}
-                </span>
+            {records.map((record) => {
+              const lacksEvidence =
+                (tone === 'explicit' || tone === 'context') && record.source !== 'WORKSPACE_FACT' && record.evidence.length === 0
+              return (
+                <div
+                  key={record.id || `${tone}-${record.text}`}
+                  style={styles.groupItem}
+                  title={record.evidence.length ? `${t('panel.group.evidence')}: ${record.evidence.join(' | ')}` : record.note}
+                >
+                  <span aria-hidden>{tone === 'suggested' ? '✎' : tone === 'unknown' ? '?' : '✓'}</span>
+                  <span>
+                    {tone === 'suggested' ? `${t('panel.suggestedPrefix')}: ` : ''}
+                    {record.text}
+                  </span>
+                  {opts?.showSource && record.source === 'WORKSPACE_FACT' && (
+                    <span style={styles.sourceChip}>{t('panel.source.workspace')}</span>
+                  )}
+                  {lacksEvidence && <span style={styles.evidenceWarn}>⚠ {t('panel.group.noEvidence')}</span>}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    // 缺口清单:missing_constraints 独立成段(不再被非空 unknowns 遮蔽);
+    // 已被 unknowns 覆盖的条目不再重复列出。unknowns 的 text 形如 `[待补充: …]`。
+    const missingOnly = result
+      ? result.missingConstraints.filter((item) => !result.unknowns.some((u) => u.text.includes(item.label)))
+      : []
+    const renderMissing = (title: string, items: MissingConstraintView[]) => {
+      if (!items.length) return null
+      return (
+        <div>
+          <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}</div>
+          <div style={styles.unknownBox}>
+            {items.map((item) => (
+              <div key={item.id || item.label} style={styles.groupItem} title={item.reason}>
+                <span aria-hidden>?</span>
+                <span>{`[待补充: ${item.label}]`}</span>
               </div>
             ))}
           </div>
@@ -480,7 +532,11 @@ export function createResultDock(controller: OptimizerController) {
             {result.confidenceLevel === 'Low' && (
               <div style={{ ...styles.warnBanner, marginTop: 0, marginBottom: 8 }}>
                 <span aria-hidden>⚠</span>
-                <span>{t('panel.lowConfidence')}</span>
+                <span>
+                  {t('panel.lowConfidence', {
+                    type: t(TYPE_LABEL_KEY[result.promptType] ?? 'panel.type.general'),
+                  })}
+                </span>
               </div>
             )}
             {/* R5:格式退化(结果可能混入多余文字)是最需要被看到的质量警示,置于顶部。 */}
@@ -506,21 +562,11 @@ export function createResultDock(controller: OptimizerController) {
               )}
               {/* 四组 provenance 分开展示:明确要求 / 上下文确认 / 优化器建议 / 待补充。 */}
               {renderGroup(t('panel.group.explicit'), result.explicitRequirements, 'explicit')}
-              {renderGroup(t('panel.group.context'), result.contextRequirements, 'context')}
+              {renderGroup(t('panel.group.context'), result.contextRequirements, 'context', { showSource: true })}
               {renderGroup(t('panel.group.suggested'), result.suggestedRequirements, 'suggested')}
-              {renderGroup(
-                t('panel.group.unknown'),
-                result.unknowns.length
-                  ? result.unknowns
-                  : result.missingConstraints.map((item) => ({
-                      id: item.id,
-                      text: `[待补充: ${item.label}]`,
-                      source: 'UNKNOWN',
-                      evidence: [],
-                      confidence: 'low',
-                    })),
-                'unknown',
-              )}
+              {renderGroup(t('panel.group.unknown'), result.unknowns, 'unknown')}
+              {/* 缺口清单独立成段:unknowns 非空时 missing_constraints 仍需可见。 */}
+              {renderMissing(t('panel.missing'), missingOnly)}
               <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.optimized')}</div>
               <div style={styles.optimizedBox}>
                 <pre style={styles.pre}>{result.optimized}</pre>

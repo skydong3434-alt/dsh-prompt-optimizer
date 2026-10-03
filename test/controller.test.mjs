@@ -743,4 +743,80 @@ const DONE = {
   console.log('✓ c24 各手动类型 + 重新优化沿用所选')
 }
 
+// c25. P06-T02:ResultDock 四组渲染所依赖的数据面——
+// 诊断 / WORKSPACE_FACT 来源标记 / 无证据条目降级依据 / 缺口清单与 unknowns 分离 /
+// Low 提示触发 / provenance_ok=false 警示 + 替换·撤回状态机不受影响(回归)。
+{
+  const { ctx } = makeCtx()
+  const c = createOptimizerController(ctx)
+  const META_LOW = {
+    type: 'meta',
+    prompt_type: 'planning',
+    confidence_level: 'Low',
+    missing_constraints: [{ id: 'mc-1', label: '输出格式', reason: '决定交付形态' }],
+    rationale: '疑似规划兼执行',
+    provenance_ok: true,
+  }
+  const DONE_LOW = {
+    ...DONE,
+    prompt_type: 'planning',
+    confidence_level: 'Low',
+    // analysis 兼容字段与 diagnosis 同源;诊断段消费 diagnosis(缺省回落 analysis)。
+    diagnosis: '目标清晰,但未给出输出格式',
+    explicit_requirements: [
+      { id: 'r-1', text: '整理一份清单', source: 'USER_EXPLICIT', evidence: ['整理一份清单'], confidence: 'high' },
+      // 无逐字证据的 explicit 条目:UI 需「缺证据」降级展示(provenance_ok=false 的对应物)。
+      { id: 'r-2', text: '顺带补一个无证据要求', source: 'USER_EXPLICIT', evidence: [], confidence: 'low' },
+    ],
+    context_requirements: [
+      // WORKSPACE_FACT 是确定性事实:无 quote 但不算缺证据;UI 需标来源。
+      { id: 'r-3', text: '工作区名为 demo', source: 'WORKSPACE_FACT', evidence: [], confidence: 'high' },
+      { id: 'r-4', text: '上文确认的约束', source: 'CONTEXT_EXPLICIT', evidence: ['之前说的'], confidence: 'medium' },
+    ],
+    suggested_requirements: [
+      { id: 'r-5', text: '补充验收标准', source: 'OPTIMIZER_SUGGESTED', evidence: [], confidence: 'medium' },
+    ],
+    // unknowns 与缺口清单必须能同时存在,互不遮蔽。
+    unknowns: [{ id: 'r-6', text: '[待补充: 检索范围]', source: 'UNKNOWN', evidence: [], confidence: 'low' }],
+    missing_constraints: [{ id: 'mc-1', label: '输出格式', reason: '决定交付形态' }],
+    provenance_ok: false,
+  }
+  await withFetch(
+    () => sseResponse([META_LOW, { type: 'delta', text: '<<<OPTIMIZED>>>\n优化稿' }, DONE_LOW]),
+    async () => {
+      await c.optimize('草稿', 's1')
+      const s = c.getSnapshot()
+      assert.equal(s.status, 'done')
+      // Low 提示:meta(loading 期)与 done 两处都必须能触发黄条。
+      assert.equal(s.meta.confidenceLevel, 'Low', 'meta 低置信度应落盘')
+      assert.equal(s.result.confidenceLevel, 'Low', 'done 低置信度应落盘')
+      // 诊断段:优先取 done.diagnosis。
+      assert.equal(s.result.diagnosis, '目标清晰,但未给出输出格式')
+      // 四组渲染数据齐备且各自独立。
+      assert.equal(s.result.explicitRequirements.length, 2)
+      assert.equal(s.result.contextRequirements.length, 2)
+      assert.equal(s.result.suggestedRequirements.length, 1)
+      assert.equal(s.result.unknowns.length, 1)
+      // 来源标记:WORKSPACE_FACT 必须原样透传到 UI 侧。
+      assert.equal(s.result.contextRequirements[0].source, 'WORKSPACE_FACT')
+      assert.equal(s.result.contextRequirements[1].source, 'CONTEXT_EXPLICIT')
+      // 降级展示依据:explicit 无证据条目 evidence 为空。
+      assert.deepEqual(s.result.explicitRequirements[1].evidence, [])
+      // 缺口清单与 unknowns 分离:unknowns 非空时 missing 仍完整保留。
+      assert.equal(s.result.missingConstraints.length, 1)
+      assert.equal(s.result.missingConstraints[0].label, '输出格式')
+      assert.equal(s.result.missingConstraints[0].reason, '决定交付形态')
+      // provenance_ok=false → UI 顶部警示。
+      assert.equal(s.result.provenanceOk, false)
+      // 替换/撤回回归:provenance 失败不阻塞替换,撤回依据保持纯状态机语义。
+      c.markApplied({ backup: '草稿', text: '优化稿' })
+      assert.deepEqual(c.getSnapshot().applied, { backup: '草稿', text: '优化稿' })
+      c.clearApplied()
+      assert.equal(c.getSnapshot().applied, null)
+      assert.equal(c.getSnapshot().status, 'done', '撤回后结果面板仍在')
+    },
+  )
+  console.log('✓ c25 四组渲染数据 + 缺口清单分离 + Low 提示 + provenance 警示 + 替换/撤回回归')
+}
+
 console.log('\ncontroller: all passed')

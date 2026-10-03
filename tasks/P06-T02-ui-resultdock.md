@@ -1,6 +1,6 @@
 # P06-T02 — UI：ResultDock 四组 Provenance 渲染 + 类型徽章
 
-**Status**: PENDING
+**Status**: DONE
 **Phase**: P06
 ## Executor
 Claude Code + DSH 验收
@@ -50,3 +50,16 @@ node/tsc/controller.test.mjs/git
 P06-T03
 ## Human Gate
 无（该阶段无独立 Human Gate，或见 Next Transition）
+
+## Manual Test Checklist（G-4 阶段出口执行，dev profile）
+> 无头自动化已覆盖数据面（controller.test c25）；下列为需要真实渲染的手测项，
+> 与 P06-T03 settings/i18n 一起在 P06 出口 G-4 的 UI 预览中执行（不装正式 profile）。
+
+1. 输入草稿点 ✨ 优化：meta 到达后顶部出现「任务类型 / 把握（高/中/低）」徽章，且不出现任何小数。
+2. done 后依次核对四组区块：明确要求（✓，hover 显示 quote 证据）/ 上下文确认（✓，WORKSPACE_FACT 条目带「工作区事实」来源小标）/ 优化器建议补充（✎，条目带「建议(可忽略)」前缀）/ 仍需补充·不确定（?）。
+3. 若存在 missing_constraints：缺口清单独立成段，显示 `[待补充: …]`；unknowns 非空时缺口清单仍可见、不重复。
+4. 构造 `confidence_level=Low`：出现黄条，文案含当前识别类型与「可能属于其他类型，请检查任务类型」。
+5. 构造 `provenance_ok=false`：顶部出现警示横幅；无逐字证据的 explicit 条目带「⚠ 缺证据」；结果仍可「替换输入框」。
+6. 替换 → 撤回 → 重新优化 → 关闭：行为与旧版一致（Esc 取消/关闭、发送即关闭、斜杠前缀拼回不变）。
+7. 中英界面语言切换：新增文案全部有译（缺译回退中文不报错）。
+
