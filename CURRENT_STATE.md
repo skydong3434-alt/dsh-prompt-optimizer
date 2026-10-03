@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T00:05:00+08:00
+last_updated: 2026-10-04T00:13:00+08:00
 current_phase: P07
-current_task: P07-T01
-status: RUNNING
-next_task: P07-T01
+current_task:
+status: GATE_PENDING
+next_task: P07-T02
 machine_gate: PASS
-human_review: PASS_G4
-phase_status: G-4 已通过（2026-10-04 用户真人 UI 验收）：AUTO→Research PASS / ResultDock 四组来源 PASS / Suggested「建议（可忽略）」PASS / UNKNOWN 独立 PASS / Replace PASS / Undo PASS / Manual Planning override PASS / Provenance warning 真实渲染 PASS / Re-optimize 与 Esc 待确认。G-4 中 Planning override 暴露的 provenance 校验失败 + 输出格式未完全遵守，经用户裁定为 P07 质量问题（不阻塞 G-4），连同另 4 项已固化入 tasks/P07-T01 与 P07-T03：①partial-quote 过度归因 ②UNKNOWN semantic dedup ③UNKNOWN non-blocking completion ④conflicting evidence 加权判断 ⑤Planning override 格式遵守/provenance（G-4 实测失败，优先级最高）。 处理铁律：先有 regression 证据再改策略/编译器，不预防性调参。next=P07-T01（语料固化，出口 G-3）。
-latest_commit: 3dc97af
+human_review: BLOCKING_G3
+phase_status: P07-T01 完成（DSH 草案，f6f7466）：test/regression/fixtures 12 例（六 golden + general 兜底 + 真实历史需求），覆盖 G-VS 真实案例、G-4 五项（partial-quote/UNKNOWN dedup/non-blocking/conflicting evidence 加权/Planning override 契约）与 G-2 case B/C；schema.test.mjs 做 JSON schema + 语料级 invariant_checks 前置自洽校验（planning 16 段直接对齐 registry）；docs/regression.md 记录语料语义与阈值 DEFERRED_TO_P07_CALIBRATION（R-2）。npm test 全绿 + apo_state PASS。**命中 Human Gate G-3**：语料草案待用户定稿确认（阈值仍延后到 P07-T03 人工标注校准）。next=P07-T02（runner 实现，待 G-3 确认后）。
+latest_commit: f6f7466
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: G-3
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -50,7 +50,8 @@ stop_reason: none
 | P06-T01 | DONE | AUTO 下拉 + 手动覆盖：TYPE_OPTIONS 单一真值源 + 逐类型请求体/重优化沿用（4f515db） | — |
 | P06-T02 | DONE | ResultDock 四组 provenance 定稿 + 缺口清单独立 + 低置信类型黄条（1f3d530） | — |
 | P06-T03 | DONE | settings 新字段（默认类型/分类模型）+ i18n 收尾（3dc97af） | **G-4** |
-| P07-T01..T03 | PENDING | 语料（**G-3**，阈值校准 R-2）/runner/首轮 | **G-5** |
+| P07-T01 | DONE（G-3 待确认） | 语料固化：12 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
+| P07-T02..T03 | PENDING | runner 双通道 + 首轮执行/人工校准 | **G-5** |
 | P08-T01..T02 | PENDING | 隔离冒烟/桌面证据 | **G-6** |
 | P09-T01..T02 | PENDING | 备份演练（**G-7** 安装许可）/发布 | DoD 用户终检 |
 
