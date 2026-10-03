@@ -22,13 +22,22 @@ import type {
   CompileVars,
   ConversationTurn,
   MissingConstraint,
+  NormalizedContext,
   PromptStrategy,
+  PromptType,
   ProvenanceRecord,
   ProvenanceSource,
   ValidationProblem,
 } from "./types.js";
 import { toConfidenceLevel } from "./types.js";
 import { makeProvenanceRecord, validateProvenance } from "./provenance.js";
+import { normalizeInput } from "./context.js";
+import {
+  fallbackClassifierResult,
+  manualClassifierResult,
+  parsePromptTypeInput,
+} from "./classify.js";
+import { defaultStrategyRegistry, type StrategyRegistry } from "./registry.js";
 import {
   buildSystemPrompt,
   buildUserPayload,
@@ -36,7 +45,12 @@ import {
   stripThinkBlocks,
   type OptimizerMode,
 } from "../prompt.js";
-import { SUGGESTION_LABEL_EN, SUGGESTION_LABEL_ZH } from "./strategies/_shared.js";
+import {
+  SUGGESTION_LABEL_EN,
+  SUGGESTION_LABEL_ZH,
+  stripSuggestionLabel,
+  todoPlaceholder,
+} from "./strategies/_shared.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 机器可解析输出协议(标记段)
@@ -51,6 +65,35 @@ export const COMPILE_MARKERS = {
   optimized: "<<<OPTIMIZED>>>",
   end: "<<<END>>>",
 } as const;
+
+/**
+ * Compiler 10 步编排(PLAN-v1 §8)的审计锚点。
+ *
+ * `enforcedBy` 标出该步由谁落实,避免把「提示词约束」当成「机械保证」:
+ *   - orchestration:compilePrompt 机械完成(可单测);
+ *   - protocol:策略 system / 编译协议约束模型完成(由守卫 + 回归断言把关);
+ *   - finalize:finalizeCompile 的容错解析 + provenance 机械校验落实。
+ */
+export const COMPILE_PROMPT_STEPS = [
+  { id: "intent-preservation", zh: "意图保真", enforcedBy: "protocol" },
+  { id: "context-reconstruction", zh: "保守上下文重建", enforcedBy: "orchestration" },
+  { id: "missing-information", zh: "缺失信息检测", enforcedBy: "orchestration" },
+  { id: "hidden-constraint", zh: "隐式约束检测(仅当有证据)", enforcedBy: "protocol" },
+  { id: "risk-ambiguity", zh: "风险 / 歧义检测(写入诊断)", enforcedBy: "protocol" },
+  { id: "strategy-structuring", zh: "策略化结构", enforcedBy: "orchestration" },
+  { id: "output-contract", zh: "输出契约构建", enforcedBy: "orchestration" },
+  { id: "anti-drift", zh: "反漂移约束", enforcedBy: "protocol" },
+  { id: "provenance-preservation", zh: "来源保全(四段协议)", enforcedBy: "orchestration" },
+  { id: "final-compilation", zh: "最终编译(解析 + provenance 校验)", enforcedBy: "finalize" },
+] as const;
+
+/** 10 步编排的稳定步骤 id。 */
+export type CompileStepId = (typeof COMPILE_PROMPT_STEPS)[number]["id"];
+
+/** compilePrompt 实际机械落实的步骤(其余由协议 / finalize 落实)。 */
+const ORCHESTRATION_STEP_IDS: CompileStepId[] = COMPILE_PROMPT_STEPS.filter(
+  (step) => step.enforcedBy === "orchestration",
+).map((step) => step.id);
 
 const MARKER_NAMES = [
   "DIAGNOSIS",
@@ -148,7 +191,8 @@ function contentOf(
 // ─────────────────────────────────────────────────────────────────────────────
 
 const QUOTE_RE = /\[quote:\s*([^\]]*?)\s*\]/g;
-const TODO_RE = /\[待补充:\s*([^\]]*?)\s*\]/g;
+/** 中英两种占位符(`[待补充: …]` / `[TODO: …]`),与 _shared 的 TODO_PLACEHOLDER_RE 同源口径。 */
+const TODO_RE = /\[(?:待补充|TODO)\s*:\s*([^\]]*?)\s*\]/g;
 
 function extractQuotes(line: string): string[] {
   const quotes: string[] = [];
@@ -161,14 +205,6 @@ function extractQuotes(line: string): string[] {
 
 function stripQuotes(line: string): string {
   return line.replace(QUOTE_RE, "").trim();
-}
-
-function stripSuggestionLabel(line: string): string {
-  let out = line;
-  for (const label of [SUGGESTION_LABEL_ZH, SUGGESTION_LABEL_EN, "建议", "Suggestion"]) {
-    if (out.startsWith(label)) out = out.slice(label.length).trim();
-  }
-  return out;
 }
 
 function isNoneLine(line: string): boolean {
@@ -398,6 +434,160 @@ export function buildCompilePayload(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// compilePrompt:10 步编排(步骤 1-9;步骤 10 由 finalizeCompile 完成)
+//
+// 纯函数:不调用 LLM、不感知 Host / UI。宿主拿到 { system, user } 后自行
+// llm.stream,再把模型原文交给 finalizeCompile 得到最终 CompileResult。
+// result 骨架刻意 `provenance_ok=false`(尚未 validate),绝不提前乐观置真。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** compilePrompt 入参(全部可确定性提供;零 Harness 依赖)。 */
+export interface CompilePromptInput {
+  /** 用户本轮原始输入(原样保留)。 */
+  raw_input: string;
+  /** 会话近期对话(时间升序);按共享预算确定性收敛。 */
+  turns?: readonly ConversationTurn[];
+  /** 确定性 workspace metadata;非法字段静默丢弃。 */
+  workspace_metadata?: { cwd?: unknown; workspace_name?: unknown };
+  /**
+   * 手动类型覆盖:合法时直达 registry(函数级完全跳过分类);
+   * 非法 / 缺省按 AUTO 处理(绝不因未知值绕过分类语义)。
+   */
+  promptType?: PromptType | string;
+  /** AUTO 分类结果;缺省且无 override 时按 general 低置信兜底(不抛错)。 */
+  classifier?: ClassifierResult | null;
+  /** 策略注册表;缺省 = 七策略全量(未知类型 registry 内部回退 general)。 */
+  registry?: StrategyRegistry;
+  language?: "zh" | "en";
+  mode?: OptimizerMode;
+  /** 上一轮优化结果(轻量记忆链;可选)。 */
+  previous?: string;
+  /**
+   * 是否 legacy general 编译路径:由调用方按 registry 判定后传入。
+   * 不在本模块用对象身份判定,避免独立 bundle 间策略副本导致的误判。
+   */
+  legacy?: boolean;
+}
+
+/** compilePrompt 产出:宿主直接可用的编译载荷 + 待 validate 的结果骨架。 */
+export interface CompilePlan {
+  /** 实际采用的分类结果(override 时为确定性 manual 结果)。 */
+  classifier: ClassifierResult;
+  /** 由 registry 解析出的策略(类型/版本可审计)。 */
+  strategy: PromptStrategy;
+  /** 确定性归一化上下文。 */
+  normalized: NormalizedContext;
+  /** 注入策略的编译变量(missing_constraints 已去重)。 */
+  vars: CompileVars;
+  /** compile 阶段 system(策略 + 机器可解析四段协议)。 */
+  system: string;
+  /** compile 阶段 user(原始输入 + 上下文 + 缺口清单 + 记忆链)。 */
+  user: string;
+  /** 待 validate 的 CompileResult 骨架:`provenance_ok=false`、`optimized_prompt=""`。 */
+  result: CompileResult;
+  /** 是否走手动 override(为 true 时不存在任何分类调用)。 */
+  overridden: boolean;
+  legacy: boolean;
+  /** 本次编排机械落实的步骤 id(见 COMPILE_PROMPT_STEPS)。 */
+  steps: CompileStepId[];
+}
+
+/** classifier 的缺口字符串 → 稳定 id 的 MissingConstraint。 */
+function classifierMissingConstraints(classifier: ClassifierResult): MissingConstraint[] {
+  const raw = Array.isArray(classifier.missing_constraints) ? classifier.missing_constraints : [];
+  return dedupeConstraints(
+    raw.map((label, index) => ({ id: `mc-classifier-${index + 1}`, label: String(label ?? "") })),
+  );
+}
+
+/**
+ * 执行 Compiler 的确定性编排(PLAN-v1 §8 步骤 1-9):
+ *
+ *   1. Intent Preservation      —— raw_input 原样进入 vars(协议约束模型保真);
+ *   2. Context Reconstruction   —— normalizeInput 保守截断(仅 user/assistant 合法轮次);
+ *   3. Missing Information      —— classifier 缺口 → MissingConstraint(去重);
+ *   4. Hidden Constraint        —— 仅当有证据,交由策略协议 + 守卫;
+ *   5. Risk / Ambiguity         —— 写入 DIAGNOSIS 段(协议);
+ *   6. Strategy Structuring     —— registry.get(type),未知类型回退 general;
+ *   7. Output Contract          —— 策略 required_sections 进入 user 载荷;
+ *   8. Anti-drift Constraints   —— 策略 system + 共享规则段(禁入集合 / 强断言纪律);
+ *   9. Provenance Preservation  —— 四段协议(EXPLICIT/CONTEXT/SUGGESTED/UNKNOWN + OPTIMIZED/END)。
+ *
+ * 第 10 步(Final Compilation = 解析 + provenance 校验 + 守卫汇总)由
+ * {@link finalizeCompile} 在模型输出到达后完成。
+ */
+export function compilePrompt(input: CompilePromptInput): CompilePlan {
+  const language = input.language ?? "zh";
+  const mode = input.mode ?? "full";
+  const registry = input.registry ?? defaultStrategyRegistry;
+
+  // 步骤 2:归一化(deterministic;raw_input 不截断,上下文按共享预算收敛)。
+  const normalized = normalizeInput({
+    raw_input: input.raw_input,
+    turns: input.turns,
+    workspace_metadata: input.workspace_metadata,
+  });
+
+  // 步骤 2 附:类型解析 —— override 直达 registry(函数级旁路分类);否则用 AUTO 结果。
+  const override = parsePromptTypeInput(input.promptType);
+  const overridden = override !== undefined;
+  const classifier: ClassifierResult =
+    override !== undefined
+      ? manualClassifierResult(override)
+      : input.classifier ?? fallbackClassifierResult("未提供分类结果,已回退通用模式;可手动选择任务类型");
+
+  // 步骤 6:策略选择(未知类型由 registry 兜底 general)。
+  const strategy = registry.get(classifier.prompt_type);
+  const legacy = input.legacy ?? false;
+
+  // 步骤 3:缺失信息检测(classifier 缺口 → [待补充:] 注入清单)。
+  const missing = classifierMissingConstraints(classifier);
+
+  const vars: CompileVars = {
+    raw_input: normalized.raw_input,
+    context_turns: [...normalized.bounded_turns],
+    workspace_metadata: normalized.workspace_metadata,
+    missing_constraints: missing,
+  };
+
+  // 步骤 7/8/9:输出契约 + 反漂移 + 四段来源协议(组装 system / user)。
+  const payload = buildCompilePayload(strategy, vars, {
+    language,
+    mode,
+    previous: input.previous,
+    legacy,
+  });
+
+  // 待 validate 的骨架:provenance_ok 保持 false,optimized_prompt 留空。
+  const result: CompileResult = {
+    prompt_type: strategy.type,
+    confidence_level: toConfidenceLevel(classifier.confidence_internal),
+    diagnosis: "",
+    explicit_requirements: [],
+    context_requirements: [],
+    suggested_requirements: [],
+    unknowns: [],
+    missing_constraints: missing,
+    optimized_prompt: "",
+    strategy_version: strategy.version,
+    provenance_ok: false,
+  };
+
+  return {
+    classifier,
+    strategy,
+    normalized,
+    vars,
+    system: payload.system,
+    user: payload.user,
+    result,
+    overridden,
+    legacy,
+    steps: [...ORCHESTRATION_STEP_IDS],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // finalizeCompile:解析 + provenance 校验 + guards 汇总
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -410,6 +600,8 @@ export interface FinalizeCompileOptions {
   mode: OptimizerMode;
   /** 是否为 legacy general 兜底策略(由调用方按 registry 判定后传入)。 */
   legacy?: boolean;
+  /** 缺口占位符语言(缺省 zh);legacy 路径不注入。 */
+  language?: "zh" | "en";
 }
 
 export interface CompiledOutcome {
@@ -432,11 +624,41 @@ function dedupeConstraints(items: MissingConstraint[]): MissingConstraint[] {
 }
 
 /**
+ * 机械注入缺口占位符:确保每条 missing constraint 在优化稿中以
+ * `[待补充: …]`(zh)/ `[TODO: …]`(en)出现。
+ *
+ * - 优化稿已逐字包含该 label(例如策略自己的 Evidence Gaps 段)→ 不重复注入;
+ * - 其余追加到文末「## 待补充（编译期自动补录）」清单,绝不改写既有内容;
+ * - 纯函数:不发明 label 之外的任何信息,也不替用户做决定。
+ */
+export function injectMissingPlaceholders(
+  prompt: string,
+  missing: readonly MissingConstraint[],
+  language: "zh" | "en" = "zh",
+): { prompt: string; injected: MissingConstraint[] } {
+  const base = String(prompt ?? "");
+  const injected: MissingConstraint[] = [];
+  const lines: string[] = [];
+  for (const item of missing) {
+    const label = String(item.label ?? "").trim();
+    if (!label || base.includes(label)) continue;
+    injected.push({ ...item, label });
+    lines.push(`- ${todoPlaceholder(label, language)}`);
+  }
+  if (!lines.length) return { prompt: base, injected };
+  const header =
+    language === "en" ? "## TODOs (auto-appended by compiler)" : "## 待补充（编译期自动补录）";
+  const separator = base.trim() ? "\n\n" : "";
+  return { prompt: `${base.trimEnd()}${separator}${header}\n${lines.join("\n")}`, injected };
+}
+
+/**
  * 把模型原始输出编译为 `CompileResult`。
  *
  * - legacy general:沿用 parseOptimizerOutput(零回归),provenance 段为空、ok=true;
  * - 其余策略:parseCompileOutput → validateProvenance(机械比对)→ strategy.guards;
- *   provenance error 或任一守卫触发 → provenance_ok=false(UI 顶部警示)。
+ *   provenance error 或任一守卫触发 → provenance_ok=false(UI 顶部警示);
+ * - 非 legacy 路径还会把未在优化稿中出现的缺口机械注入为 `[待补充: …]`。
  */
 export function finalizeCompile(
   strategy: PromptStrategy,
@@ -444,6 +666,7 @@ export function finalizeCompile(
   opts: FinalizeCompileOptions,
 ): CompiledOutcome {
   const confidenceLevel = toConfidenceLevel(opts.classifier.confidence_internal);
+  const language = opts.language ?? "zh";
 
   if (opts.legacy) {
     const parsed = parseOptimizerOutput(rawText, opts.mode);
@@ -464,6 +687,7 @@ export function finalizeCompile(
   }
 
   const sections = parseCompileOutput(rawText);
+  const missing = dedupeConstraints([...opts.missing, ...sections.missing_constraints]);
   const result: CompileResult = {
     prompt_type: strategy.type,
     confidence_level: confidenceLevel,
@@ -472,11 +696,18 @@ export function finalizeCompile(
     context_requirements: sections.context_requirements,
     suggested_requirements: sections.suggested_requirements,
     unknowns: sections.unknowns,
-    missing_constraints: dedupeConstraints([...opts.missing, ...sections.missing_constraints]),
+    missing_constraints: missing,
     optimized_prompt: sections.optimized_prompt,
     strategy_version: strategy.version,
     provenance_ok: true,
   };
+
+  // 缺口机械注入:保证 missing_constraints 在交付稿中显式可见(不发明、不改写)。
+  result.optimized_prompt = injectMissingPlaceholders(
+    result.optimized_prompt,
+    result.missing_constraints,
+    language,
+  ).prompt;
 
   const records = [...result.explicit_requirements, ...result.context_requirements];
   const provenance = validateProvenance(records, opts.rawInput, [...opts.contextTurns]);

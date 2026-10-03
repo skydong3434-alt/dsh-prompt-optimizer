@@ -1,6 +1,6 @@
 # P04-T01 — Compiler 核心（four-section 协议）
 
-**Status**: PENDING
+**Status**: DONE
 **Phase**: P04（Compiler + Validation）
 ## Executor
 Claude Code + DSH 验收
