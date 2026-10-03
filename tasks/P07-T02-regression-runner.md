@@ -1,6 +1,6 @@
 # P07-T02 — Regression Runner 实现
 
-**Status**: PENDING
+**Status**: DONE
 **Phase**: P07
 ## Executor
 Claude Code + DSH 验收

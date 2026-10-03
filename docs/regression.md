@@ -1,8 +1,9 @@
 # Behavioral / Effect Regression 语料语义（P07）
 
-> 状态：**DSH 草案**（P07-T01 产出，待 Human Gate **G-3** 定稿）。
+> 状态：**G-3 已通过**（2026-10-04 用户预授权；14 例语料定稿）；P07-T02 双通道 runner 已实现。
 > 真值实现：`test/regression/fixtures/*.json`（语料）＋ `test/regression/schema.test.mjs`
-> （离线 schema / 语料级检查）＋ `test/regression/run.mjs`（P07-T02，运行期双通道 runner）。
+> （离线 schema / 语料级检查）＋ `test/regression/run.mjs`（P07-T02，运行期双通道 runner）
+> ＋ `test/regression/run.test.mjs`（runner 自身单测）。
 > 契约来源：PLAN-v1 §11.2 / §13 P07、PLAN-v1.1 R-2、`docs/provenance.md` §8。
 
 ## 1. 为什么需要语料
@@ -62,8 +63,20 @@ Unit 全绿 ≠ 产品完成（PLAN-v1 §11.3）。P07 用**真实语义语料**
 
 | 层 | 输入 | 判定 |
 |---|---|---|
-| deterministic | 编译产物（四段协议解析结果 + `optimized_prompt`） | 每条 `require` 必须命中、每条 `prohibit` 必须不命中；任一违反 = 该例 FAIL（硬 Gate） |
-| model-assisted | raw_input vs optimized_prompt | evaluator 逐问给「是/否 + 一句理由」；temperature 0；失败重跑一次，重跑不一致不计 PASS；仅参考线 |
+| deterministic | 编译产物（四段协议原始输出 + `optimized_prompt`） | 每条 `require` 必须命中、每条 `prohibit` 必须不命中；任一违反 = 该例 FAIL（硬 Gate） |
+| model-assisted | raw_input vs optimized_prompt | evaluator 逐问给「是/否 + 一句理由」；temperature 0；首个答案非「是」时重跑一次，重跑不一致不计 PASS；仅参考线 |
+
+运行期文本面 = `rawOutput`（模型四段协议原文） + `optimized_prompt`：默认 anti-drift 断言看
+`optimized_prompt`，而四段协议类断言（如 `planning-override-contract` 的 `<<<EXPLICIT>>>`）
+需要原始协议文本；两者都属编译产物，合并判定可同时覆盖「交付稿漂移」与「协议段落漂移」。
+
+硬性纪律（P07-T02 实现，`test/regression/run.mjs`）：
+
+- `overall` 只由 deterministic 决定：evaluator 给「是」也不能把 deterministic FAIL 翻成 PASS
+  （`evaluator 不得覆盖 deterministic FAIL`，runner 单测 rr3 硬断言）；
+- evaluator **不是**硬 Gate：deterministic PASS 而 evaluator FAIL 时该例仍记 PASS，仅以
+  `reference_mismatch` 标注，供 P07-T03 / G-5 人工判读；
+- evaluator 失败重跑不一致 → `inconsistent`，不计 PASS（S-08 防误伤）。
 
 `optimized_prompt` 是 anti-drift 断言的默认文本面；涉及来源分组 / 四段协议的断言（如
 `planning-override-contract`）由 `invariant_checks` 在运行期对完整 `CompileResult` 判定。
@@ -85,6 +98,9 @@ Unit 全绿 ≠ 产品完成（PLAN-v1 §11.3）。P07 用**真实语义语料**
 
 `params.sections` 必须与 `defaultStrategyRegistry.getSections('planning')` 完全一致——
 schema 测试会直接对比注册表，策略段落改动会立刻让语料校验失败（防止「实现漂移、语料跟着漂」）。
+
+P07-T02 已在 `test/regression/run.mjs` 实现上表全部 7 个 canonical id；未知 id 一律
+fail-closed（判 FAIL，不静默跳过）。运行期判定失败 = 该例 deterministic FAIL（硬 Gate）。
 
 ## 5. 通过阈值语义（DEFERRED_TO_P07_CALIBRATION）
 
@@ -123,15 +139,55 @@ schema 测试会直接对比注册表，策略段落改动会立刻让语料校�
 覆盖检查（由 schema 测试强制）：七类型齐全；六个非 general 类型各有一条 `golden`；
 至少一条 `user-history`；G-4 五项 + G-2 case B/C 全部在库；assistant-only provenance 与 execution safe-mutation 各有一条真实回归。
 
-## 7. 运行方式
+## 7. 运行方式（P07-T02 runner CLI）
 
 ```bash
 npm run build
-node test/regression/schema.test.mjs   # P07-T01：离线 schema / 语料自洽校验
-node test/regression/run.mjs           # P07-T02：双通道 runner（deterministic + evaluator）
+node test/regression/schema.test.mjs        # P07-T01：离线 schema / 语料自洽校验
+node test/regression/run.test.mjs           # P07-T02：runner 自身单测（fake fixture + scripted adapter）
+node test/regression/run.mjs                # P07-T02：双通道 runner（默认 deterministic + mock）
+node test/regression/run.mjs --mode all     # + evaluator 参考线（intent-fidelity-v1，temp 0）
+node test/regression/run.mjs --fixture <id>[,<id>]   # 只跑部分语料
+node test/regression/run.mjs --adapter live --provider deepseek --model deepseek-chat
+node test/regression/run.mjs --adapter external --external ./my-adapter.mjs
+node test/regression/run.mjs --report <path>  # 默认 test/regression/report-<date>.json
 ```
 
-`npm test` 已包含 schema 校验；runner 由 P07-T02 接入。
+- **adapter 三态**：`mock`（离线机制冒烟，默认，**不代表模型效果**）、`live`
+  （真实模型，P07-T03 用；凭据只从 env `DEEPSEEK_API_KEY` / `DSH_REGRESSION_API_KEY`
+  或显式 `--credentials <yaml>` 读取，**不默认读 `~/.dsh`**）、`external`
+  （外部模块导出 `createAdapter()` / `default`，返回 `{ name, call(ctx) }`）。
+- **exit code**：deterministic 全过 = 0，任一 FAIL = 1；`npm test` 只跑 runner 的
+  **自身单测**（`run.test.mjs`），不把 mock 语料运行结果当门禁。
+- `run.mjs` 的编排与 host 一致：AUTO 走 `classifyViaLlm`（manual override 函数级旁路分类）
+  → `compilePrompt` → `finalizeCompile` → 非 legacy 再跑 `validateCompileResult`
+  并以三层结果覆盖 `provenance_ok`（general 保持 legacy 路径）。
+
+### 7.1 开销测量（G-2 追加要求 A）
+
+每次 classify / compile 调用分别记录：
+
+| 字段 | 含义 |
+|---|---|
+| `system_tokens` | 实际下发的 system prompt token 数（项目 `estimateTokens`，CJK≈1 token/字、其余≈4 字符/token） |
+| `context_tokens` | user 载荷（原始输入 + 上下文 + 缺口清单 + 记忆链）token 数 |
+| `total_input_tokens` | 优先用真实 `usage.prompt_tokens`；无 usage 时 = system + context 估算 |
+| `latency_ms` | 本次调用墙钟耗时 |
+
+报告按 `strategy → phase` 聚合 `min/avg/max`（另有 `_total` 合计）；真实 `usage` 可用时
+`actual_prompt_tokens` 单独记录。**550–650 行策略源码规模本身不是问题**：本阶段只测量、
+**不预防性删内容**；仅当数据证明 token / 延迟 / instruction dilution 明显时才由后续任务压缩。
+
+### 7.2 报告结构（`report-<date>.json`）
+
+顶层：`schema`(`apo-regression-report-v1`) / `generated_at` / `mode` / `adapter` /
+`evaluator_prompt_id` / `threshold`(**恒为 null**，R-2) / `threshold_status`
+(`DEFERRED_TO_P07_CALIBRATION`) / `gate`(`deterministic`) / `totals` / `costs` / `results[]`。
+每例含 `classification` / `deterministic.invariants` / `deterministic.invariant_checks` /
+`evaluator`（参考线，逐问带理由与重跑记录）/ `overall`（**只看 deterministic**）/
+`reference_mismatch` / `provenance_ok` / `problems`。
+
+`npm test` 已包含 schema 校验与 runner 单测；真实语料运行由 P07-T03 驱动。
 
 ## 8. 维护规则
 
