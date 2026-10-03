@@ -2,15 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T08:42:00+08:00
+last_updated: 2026-10-03T09:05:00+08:00
 current_phase: P04
 current_task: 
 status: RUNNING
-next_task: P04-T02
+next_task: P04-T03
 machine_gate: PASS
 human_review: PASS_G2
-phase_status: G-2 已通过（2026-10-03 七策略定稿）。G-2 后追加的 Performance/Effect 验收要求已入 P07 契约：A. per-strategy token/latency 测量（system/context/total input token + latency，不预防性压缩）；B. planning 历史事实误报 case（用户提供的既有完成事实允许引用，守卫只阻止 Optimizer 凭空宣称实施）；C. creative 显式覆盖优先级 case（CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED）。P03 三任务全部完成（classify 纯函数层 1aebeec / 调用侧封装 1e73fb2 / 防误判测试契约 a810ea1）。P04-T01 已完成：compiler core——compilePrompt() 10 步编排（override 七类型直达 registry 且函数级旁路分类、AUTO 分类、缺省 general 兜底、CompileResult 骨架 provenance_ok=false 待 validate）+ COMPILE_PROMPT_STEPS 审计锚点（orchestration/protocol/finalize 三态）+ parseCompileOutput 容错增强（[待补充:]/[TODO:] 中英同构、suggested 标签剥离复用 _shared）+ injectMissingPlaceholders 缺口机械注入（幂等，legacy 零回归）；test/compiler.test.mjs k1..k16，8248c22。next=P04-T02（validate.ts 三层守卫）。
-latest_commit: 8248c223f680b073d79f0bd3b99a2c2ab8de4ac6
+phase_status: G-2 已通过（2026-10-03 七策略定稿）。G-2 后追加的 Performance/Effect 验收要求已入 P07 契约：A. per-strategy token/latency 测量（system/context/total input token + latency，不预防性压缩）；B. planning 历史事实误报 case（用户提供的既有完成事实允许引用，守卫只阻止 Optimizer 凭空宣称实施）；C. creative 显式覆盖优先级 case（CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED）。P03 三任务全部完成（classify 纯函数层 1aebeec / 调用侧封装 1e73fb2 / 防误判测试契约 a810ea1）。P04-T01 已完成：compiler core——compilePrompt() 10 步编排（override 七类型直达 registry 且函数级旁路分类、AUTO 分类、缺省 general 兜底、CompileResult 骨架 provenance_ok=false 待 validate）+ COMPILE_PROMPT_STEPS 审计锚点（orchestration/protocol/finalize 三态）+ parseCompileOutput 容错增强（[待补充:]/[TODO:] 中英同构、suggested 标签剥离复用 _shared）+ injectMissingPlaceholders 缺口机械注入（幂等，legacy 零回归）；test/compiler.test.mjs k1..k16，8248c22。P04-T02 已完成：输出守卫 `src/core/validate.ts` 三层 anti-drift 机械校验（①Preservation：explicit/context 逐字 quote 证据复用 P01-T02 provenance + required_sections 齐全 + 要求可寻回 + 术语漂移 raw-only→warn/用户要求→error；②Inference&Suggestion：suggested 混入 explicit/context→error、无标注升级→error、无证据强断言→error、无证据量化（预算/时间/平台/模型）→error；③Unknown：UNKNOWN 记录与 missing_constraints 落地 `[待补充:]` 可定位）+ collectStrategyGuardProblems 汇总策略 guards + validateCompileResult 结构化输出（problems/ok/provenance_ok/layers/strategyGuards）；test/validate.test.mjs v1..v14（含 provenance_ok 与 finalizeCompile/compilePrompt 骨架联动一致）；156b857。next=P04-T03（compiler + validator 集成测试七类型契约矩阵）。
+latest_commit: 156b85799f8d792803f7a03806d198cd6cf5f84e
 auto_continue: true
 stop_reason: none
 ```
@@ -43,7 +43,8 @@ stop_reason: none
 | P03-T02 | DONE | classifyViaLlm 调用侧封装：硬参数钳制/thinkFilter/超时与失败回退 + mock 单测（1e73fb2） | — |
 | P03-T03 | DONE | 防误判规则测试（fixtures 五类 + g1..g10 + S-06 稳定性抽查，a810ea1） | P04 |
 | P04-T01 | DONE | compiler core：compilePrompt 10 步编排 + 四段协议解析容错 + 缺口注入（8248c22） | — |
-| P04-T02..T03 | PENDING | validator 三层守卫 / compiler 集成测试 | P05 |
+| P04-T02 | DONE | validate.ts 三层守卫（Preservation/Inference&Suggestion/Unknown）+ 策略 guards 汇总 + provenance_ok 联动契约（156b857） | — |
+| P04-T03 | PENDING | compiler + validator 集成测试：七类型契约矩阵 / provenance_ok 联动 | P05 |
 | P05-T01..T02 | PENDING | host pipeline/兼容回归 | P06 |
 | P06-T01..T03 | PENDING | 下拉/dock 四组渲染/settings+i18n | **G-4** |
 | P07-T01..T03 | PENDING | 语料（**G-3**，阈值校准 R-2）/runner/首轮 | **G-5** |
