@@ -31,6 +31,18 @@ JSON/文本编辑/git
 2. effect 字段（optional：evaluator_prompt_id=intent-fidelity-v1 + questions）
 3. docs/regression.md：语义、断言写法、通过阈值语义（DEFERRED_TO_P07_CALIBRATION：先不定数值阈值，跑数据后按人工标注校准）
 
+## G-4 真人 UI 验收暴露的问题（2026-10-03 用户确认加入 P07）
+
+用户在 G-4 隔离 UI 冒烟中真人操作，AUTO→Research 全链路 PASS；**Planning 手动 override 暴露**了 provenance 校验失败 + 模型输出格式未完全遵守。用户裁定：属 P07 Effect Regression / Strategy-Compiler 质量问题，**不阻塞 G-4**。以下 5 项正式纳入 P07：
+
+1. **partial-quote provenance 过度归因**：quote 只部分匹配（如引用短片段却归因为整条要求）时应降级/标注，不应全额归因为 USER_EXPLICIT；需 fixture 覆盖「部分匹配」场景并断言不误判。
+2. **UNKNOWN semantic dedup**：语义重复的 UNKNOWN 项（如「预算边界」「预算约束」「时间/工期约束」重复出现）应合并去重，避免结果冗长；需断言去重后条数与语义唯一性。
+3. **UNKNOWN non-blocking completion**：验证 invariant A 在真实输出中成立——大量 UNKNOWN 时 `provenance_ok` 仍可为 true、优化稿不得出现阻塞句式、下游任务可在合理边界内继续。
+4. **conflicting evidence evidence-weighted judgment**：冲突证据必须并列呈现并按证据强度（来源权威 + 可复现性）给出加权提示，不得静默择一；需 fixture 含真实冲突对。
+5. **Planning 手动 override 的格式遵守 / provenance regression**：手动选 Planning 时（跳过 classifier）编译器需仍严格产出 16 段契约 + 四段协议，且 provenance 校验必须通过；本项在 G-4 真人操作中**实测失败**，属最高优先级修复目标。
+
+**处理原则**：以上均按「先有 regression 证据、再改策略/编译器」的铁律处理——不在 G-4 阶段预防性调参，由 P07 语料固化后按失败证据驱动修复。
+
 ## Tests
 fixtures JSON schema 校验（test/regression/schema.test.mjs）；语料级 cross-strategy invariants：每例可携带 `invariant_checks`（unknown 不阻断 / suggested 不升级），运行期强制。
 
