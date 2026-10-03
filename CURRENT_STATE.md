@@ -2,15 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T00:35:00+08:00
+last_updated: 2026-10-04T06:00:00+08:00
 current_phase: P07
-current_task: P07-T02
+current_task:
 status: RUNNING
-next_task: P07-T02
+next_task: P07-T03
 machine_gate: PASS
 human_review: PASS_G3
-phase_status: G-3 已通过（2026-10-04 用户预授权，本次追加即确认）：语料集定稿 14 例（原 12 例全部保留，新增 fixture 13 assistant-only 不升级为用户决定、fixture 14 execution safe-mutation-boundary 非永久规则）；schema 全过 + npm test 22 套全绿 + apo_state PASS + 原 12 例未改；R-2 保持：G-3 不设 model-assisted 固定阈值（deterministic FAIL=硬 Gate，evaluator=参考线，P07-T03 首轮数据+人工标注后校准）。 next=P07-T02（regression runner + token/latency 测量）→ P07-T03（首轮真实回归，只基于失败证据修复）→ 停靠 G-5。
-latest_commit: f6f7466
+phase_status: P07-T02 完成（cc3aed0）：`test/regression/run.mjs` 双通道 runner + 7 个 canonical invariant_checks（未知 id fail-closed）+ evaluator 参考线（intent-fidelity-v1，temp 0，重跑不一致不计 PASS，不得覆盖 deterministic FAIL）+ classify/compile 分测 token/latency 并按 strategy 聚合 min/avg/max + CLI（--mode deterministic|all、--fixture、--adapter mock|live|external、--report）+ R-2 threshold=null；`test/regression/run.test.mjs` 10 组单测接入 npm test（rr1..rr10 全绿）。npm test + apo_state 双绿。next=P07-T03（首轮真实回归：--adapter live，失败例逐条分析→按失败证据回修→复跑）→ 停靠 G-5。
+latest_commit: cc3aed0
 auto_continue: true
 stop_reason: none
 ```
@@ -51,7 +51,8 @@ stop_reason: none
 | P06-T02 | DONE | ResultDock 四组 provenance 定稿 + 缺口清单独立 + 低置信类型黄条（1f3d530） | — |
 | P06-T03 | DONE | settings 新字段（默认类型/分类模型）+ i18n 收尾（3dc97af） | **G-4** |
 | P07-T01 | DONE（G-3 待确认） | 语料固化：12 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
-| P07-T02..T03 | PENDING | runner 双通道 + 首轮执行/人工校准 | **G-5** |
+| P07-T02 | DONE | regression runner：双通道 + 开销测量 + 报告（cc3aed0） | — |
+| P07-T03 | PENDING | 首轮真实回归执行 + 人工校准 | **G-5** |
 | P08-T01..T02 | PENDING | 隔离冒烟/桌面证据 | **G-6** |
 | P09-T01..T02 | PENDING | 备份演练（**G-7** 安装许可）/发布 | DoD 用户终检 |
 
