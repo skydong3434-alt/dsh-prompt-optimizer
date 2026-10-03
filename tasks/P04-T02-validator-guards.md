@@ -1,6 +1,6 @@
 # P04-T02 — 输出守卫（三层 Validation）
 
-**Status**: PENDING
+**Status**: DONE
 **Phase**: P04
 ## Executor
 Claude Code + DSH 验收
