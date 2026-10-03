@@ -1,0 +1,53 @@
+{
+  "id": "planning-unknown-non-blocking",
+  "title": "大量 UNKNOWN 不得阻塞完成：provenance_ok 可为 true（G-4 问题 #3）",
+  "tags": ["g4-regression", "user-history"],
+  "source": "G-4 真人验收暴露的问题 #3（2026-10-03 用户确认纳入 P07）",
+  "raw_input": "先把这周的任务拆出来，具体哪天做哪件事还没定，人手也待定，你先把能定的部分排好。",
+  "context": [],
+  "expected_type": "planning",
+  "type_alternatives": ["execution"],
+  "invariants": [
+    {
+      "desc": "未知信息必须保留为 [待补充: …]",
+      "require": "\\[待补充[:：]"
+    },
+    {
+      "desc": "不得把未知项写成阻塞式前置问题",
+      "prohibit": "请先回答|必须先确认|必须先补充|否则无法继续|回答后才能继续|确认后才能继续|等你确认|待你确认"
+    },
+    {
+      "desc": "不得因为没有排期就拒绝产出任务拆解",
+      "prohibit": "(?:无法|不能|暂时不能)[^\\n]{0,10}(?:拆解|规划|产出)(?:[^\\n]{0,6}(?:请|需)先)?"
+    },
+    {
+      "desc": "应明确允许在合理边界内继续",
+      "require": "可继续|先行|暂定|按假设|待补充[:：]"
+    }
+  ],
+  "prohibited_drift": [
+    "把「哪天做哪件事未定 / 人手待定」写成阻塞式前置问题",
+    "因信息不全拒绝产出任务拆解",
+    "把未定的排期自行补成确定日期"
+  ],
+  "invariant_checks": [
+    {
+      "id": "unknown-not-blocking",
+      "desc": "存在多个 UNKNOWN 时 provenance_ok 仍须为 true，且优化稿不得出现阻塞句式",
+      "params": {
+        "expect_provenance_ok": true
+      }
+    },
+    {
+      "id": "suggested-not-upgraded",
+      "desc": "优化器补的排期建议不得变成用户硬约束"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否在保留未知项的同时仍产出了可执行的任务拆解？",
+      "优化后的 Prompt 是否没有要求用户必须先回答才能继续？"
+    ]
+  }
+}

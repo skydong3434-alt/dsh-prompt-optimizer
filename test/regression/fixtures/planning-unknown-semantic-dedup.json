@@ -1,0 +1,54 @@
+{
+  "id": "planning-unknown-semantic-dedup",
+  "title": "语义重复的 UNKNOWN 必须合并去重（G-4 问题 #2）",
+  "tags": ["g4-regression", "user-history"],
+  "source": "G-4 真人验收暴露的问题 #2（2026-10-03 用户确认纳入 P07）",
+  "raw_input": "帮我规划一下这个月的开发节奏：预算方面我还没定，预算边界先空着，工期约束也没想好，时间上你给个提示就行。",
+  "context": [],
+  "expected_type": "planning",
+  "type_alternatives": [],
+  "invariants": [
+    {
+      "desc": "重复的预算未知项不得以不同措辞各占一条",
+      "prohibit": "预算方面[^\\n]*\\n(?:[^\\n]*\\n){0,4}[^\\n]*预算边界"
+    },
+    {
+      "desc": "重复的工期/时间未知项不得以不同措辞各占一条",
+      "prohibit": "工期约束[^\\n]*\\n(?:[^\\n]*\\n){0,4}[^\\n]*时间上"
+    },
+    {
+      "desc": "合并后仍必须保留预算与工期两个未知项",
+      "require": "预算[\\s\\S]{0,120}工期|工期[\\s\\S]{0,120}预算"
+    },
+    {
+      "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+      "prohibit": "请先回答|必须先确认|否则无法继续|确认后才能继续"
+    }
+  ],
+  "prohibited_drift": [
+    "把「预算方面 / 预算边界」拆成多条语义重复的 UNKNOWN",
+    "把「工期约束 / 时间上」拆成多条语义重复的 UNKNOWN",
+    "为了去重直接丢弃预算或工期任一未知项"
+  ],
+  "invariant_checks": [
+    {
+      "id": "unknown-semantic-dedup",
+      "desc": "语义等价的 UNKNOWN 条目（预算 / 工期）必须合并为各一条唯一项",
+      "params": {
+        "topic": "预算与工期约束",
+        "aliases": ["预算方面", "预算边界", "工期约束", "时间上"]
+      }
+    },
+    {
+      "id": "unknown-not-blocking",
+      "desc": "去重后 UNKNOWN 仍不得阻塞规划产出"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否把预算类未知项合并成一条、工期类未知项合并成一条？",
+      "优化后的 Prompt 是否在去重的同时保留了两种约束的缺失信息？"
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "id": "planning-historical-fact-true-negative",
+  "title": "用户已完成的安装/开发事实不得被误判为 planning 违规（G-2 追加 case B）",
+  "tags": ["golden", "g2-appended", "user-history"],
+  "source": "G-2 抽审追加 case B（2026-10-03 用户确认）",
+  "raw_input": "前置安装和依赖升级我已经做完了，现在只做规划：把 P07 回归语料固化拆成可执行步骤，先不写代码。",
+  "context": [
+    {
+      "role": "user",
+      "text": "我已经在本机装好 Node 20 和依赖，npm test 能跑通。"
+    },
+    {
+      "role": "assistant",
+      "text": "建议先补齐回归语料再进入 runner 实现。"
+    }
+  ],
+  "expected_type": "planning",
+  "type_alternatives": ["execution"],
+  "invariants": [
+    {
+      "desc": "必须允许把用户明确提供的历史完成事实写进 Background / Preconditions",
+      "require": "Preconditions|前置|已完成|已安装"
+    },
+    {
+      "desc": "不得把用户已完成的安装/依赖升级写成未完成前置条件",
+      "prohibit": "尚未(?:安装|完成|升级)|还没(?:安装|完成|升级)|需要你先(?:安装|升级)|先(?:安装|升级)[^\\n]{0,8}Node"
+    },
+    {
+      "desc": "不得凭空宣称 Optimizer/Planning Agent 本轮实施过任何执行动作",
+      "prohibit": "(?:我|本(?:轮|次))(?:已经|已)?(?:执行|实施|运行|写入)(?:了)?[^\\n]{0,10}(?:代码|命令|安装)"
+    },
+    {
+      "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+      "prohibit": "请先回答|必须先确认|否则无法继续|确认后才能继续"
+    }
+  ],
+  "prohibited_drift": [
+    "把用户明确提供的已完成事实误判为 planning 违规",
+    "出现「以为用户尚未完成」类语言",
+    "Optimizer 本轮凭空宣称自己实施过安装/开发动作"
+  ],
+  "invariant_checks": [
+    {
+      "id": "unknown-not-blocking",
+      "desc": "规划仍有未知项（如具体排期），但不得因此阻塞规划产出"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否把用户已完成的安装/依赖事实当作既有前置条件，而不是待办？",
+      "优化后的 Prompt 是否只规划、不擅自扩展到执行动作？"
+    ]
+  }
+}

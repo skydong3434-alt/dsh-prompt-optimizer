@@ -1,0 +1,58 @@
+{
+  "id": "research-conflicting-evidence-weighted",
+  "title": "冲突证据必须并列呈现并给出强度提示（G-4 问题 #4）",
+  "tags": ["g4-regression", "user-history"],
+  "source": "G-4 真人验收暴露的问题 #4（2026-10-03 用户确认纳入 P07）",
+  "raw_input": "帮我查清楚 ComfyUI 在 Mac M1 Pro 上到底能不能跑视频生成：我看到一半说法是 MPS 可以，另一半说只能 CUDA，到底哪个对？",
+  "context": [],
+  "expected_type": "research",
+  "type_alternatives": ["diagnostic"],
+  "invariants": [
+    {
+      "desc": "必须并列呈现冲突双方，不得静默择一",
+      "require": "冲突|并列|两方|两边|Conflicting Evidence"
+    },
+    {
+      "desc": "必须给出证据强度 / 可复现性提示",
+      "require": "证据强度|可复现|权威|一手来源|官方"
+    },
+    {
+      "desc": "不得把任一方说法直接写成已确认结论",
+      "prohibit": "(?:确定|可以确定|已确认|结论是)[^\\n]{0,12}(?:MPS|CUDA)"
+    },
+    {
+      "desc": "不得在证据不足时判定不可行",
+      "prohibit": "(?:CUDA 是唯一|只有 MPS 可行|只能 CUDA|无法在 Mac)"
+    },
+    {
+      "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+      "prohibit": "请先回答|必须先确认|否则无法继续|确认后才能继续"
+    }
+  ],
+  "prohibited_drift": [
+    "静默择一，只保留 MPS 或只保留 CUDA 的单一说法",
+    "不标注证据强度就把社区转述当成结论",
+    "因冲突未解就判定方案不可行"
+  ],
+  "invariant_checks": [
+    {
+      "id": "conflicting-evidence-weighted",
+      "desc": "真实冲突对必须并列呈现，并按来源权威 + 可复现性给出加权提示",
+      "params": {
+        "conflict_a": "MPS 可以",
+        "conflict_b": "只能 CUDA"
+      }
+    },
+    {
+      "id": "unknown-not-blocking",
+      "desc": "冲突未定属于 UNKNOWN，应保留为待验证项而非阻塞提问"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否要求并列核对 MPS 与 CUDA 两种冲突说法，而不是替用户选一个？",
+      "优化后的 Prompt 是否要求标注来源权威与可复现性，以便用户自行判断？"
+    ]
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "id": "creative-storyboard-explicit-override",
+  "title": "创意分镜：当前明确指令优先于历史设定（G-2 追加 case C）",
+  "tags": ["golden", "g2-appended", "user-history"],
+  "source": "G-2 抽审追加 case C（2026-10-03 用户确认）",
+  "raw_input": "主角换成黑鹤001拟人形象，服装全部改为低显流工装；分镜还是三幕。",
+  "context": [
+    {
+      "role": "user",
+      "text": "主角是穿白色宇航服的少年，三幕分镜。"
+    },
+    {
+      "role": "assistant",
+      "text": "建议加一段星空转场。"
+    }
+  ],
+  "expected_type": "creative",
+  "type_alternatives": ["planning"],
+  "invariants": [
+    {
+      "desc": "必须采用当前明确修改后的新实体",
+      "require": "黑鹤001|低显流工装"
+    },
+    {
+      "desc": "不得沿用历史旧设定（白色宇航服）",
+      "prohibit": "(?:白色宇航服)[^\\n]{0,12}(?:保留|沿用|继续|仍然|不变)|(?:保留|沿用|继续使用|仍然使用)[^\\n]{0,12}白色宇航服"
+    },
+    {
+      "desc": "保真新实体，不得丢失黑鹤001或工装",
+      "prohibit": "(?:去掉|删除|移除)[^\\n]{0,8}(?:黑鹤001|工装)"
+    },
+    {
+      "desc": "助手建议（星空转场）不得变成用户要求",
+      "prohibit": "星空转场[^\\n]{0,10}(?:必须|务必|硬约束|已确认)"
+    },
+    {
+      "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+      "prohibit": "请先回答|必须先确认|否则无法继续|确认后才能继续"
+    }
+  ],
+  "prohibited_drift": [
+    "沿用旧的白色宇航服设定",
+    "让优化器建议（星空转场）升级为用户要求",
+    "丢失黑鹤001 / 低显流工装等新实体",
+    "把历史 user 设定置于当前明确指令之上"
+  ],
+  "invariant_checks": [
+    {
+      "id": "explicit-priority-current-over-historical",
+      "desc": "优先级恒为 CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED",
+      "params": {
+        "historical_fact": "白色宇航服",
+        "current_override": "低显流工装"
+      }
+    },
+    {
+      "id": "suggested-not-upgraded",
+      "desc": "星空转场仅为 assistant 建议，不得进入 explicit/context"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否采用了「黑鹤001拟人 + 低显流工装」这一当前明确设定？",
+      "优化后的 Prompt 是否没有把历史「白色宇航服」设定或 assistant 建议当作当前要求？"
+    ]
+  }
+}

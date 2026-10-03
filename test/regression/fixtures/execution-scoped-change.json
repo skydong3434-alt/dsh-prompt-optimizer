@@ -1,0 +1,64 @@
+{
+  "id": "execution-scoped-change",
+  "title": "受控范围的执行任务：只改指定文件并跑测试",
+  "tags": ["golden", "user-history"],
+  "source": "项目日常执行类需求的代表样本（P06-T03 类工作）",
+  "raw_input": "把设置里的默认任务类型字段接上 i18n：只改 src/client 和 i18n 文案，改完跑 npm test，失败就回退，不要动 settings 的存储层。",
+  "context": [
+    {
+      "role": "user",
+      "text": "settings 新字段已经落地，存储层不用再改。"
+    }
+  ],
+  "expected_type": "execution",
+  "type_alternatives": ["planning"],
+  "invariants": [
+    {
+      "desc": "必须给出 Allowed Scope",
+      "require": "Allowed Scope|允许(?:修改)?范围"
+    },
+    {
+      "desc": "必须给出 Forbidden Scope",
+      "require": "Forbidden Scope|禁止(?:修改)?范围"
+    },
+    {
+      "desc": "必须要求真实运行测试",
+      "require": "npm test|Tests"
+    },
+    {
+      "desc": "不得把改动范围扩大到存储层",
+      "prohibit": "(?:修改|改动|重构)[^\\n]{0,12}(?:settings\\s*存储|存储层|settings\\.ts)"
+    },
+    {
+      "desc": "不得引入自动发送 / 自动执行 / 自动决策（NON-GOAL）",
+      "prohibit": "自动(?:发送|执行|决策)|自动替换输入框"
+    },
+    {
+      "desc": "不得在未运行测试时声称通过",
+      "prohibit": "测试通过[^\\n]{0,10}(?:（无需运行|不用运行）)"
+    },
+    {
+      "desc": "UNKNOWN 不得写成阻塞式前置问题（invariant A）",
+      "prohibit": "请先回答|必须先确认|必须先补充|否则无法继续|确认后才能继续"
+    }
+  ],
+  "prohibited_drift": [
+    "扩大改动范围到 settings 存储层或其它模块",
+    "声称测试通过但未真实运行",
+    "引入自动发送 / 自动执行 / 自动决策",
+    "跳过失败的测试而不是回退"
+  ],
+  "invariant_checks": [
+    {
+      "id": "unknown-not-blocking",
+      "desc": "执行细节缺失时保留为待补充，而非阻塞式提问"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否明确限定了只改 src/client 与 i18n 文案？",
+      "优化后的 Prompt 是否要求真实运行 npm test 并给出失败回退策略？"
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "id": "planning-partial-quote-over-attribution",
+  "title": "partial-quote 过度归因：片段匹配不得支撑整条 USER_EXPLICIT（G-4 问题 #1）",
+  "tags": ["g4-regression", "user-history"],
+  "source": "G-4 真人验收暴露的问题 #1（2026-10-03 用户确认纳入 P07）",
+  "raw_input": "先按 500 元预算来，时间两周内出结果，其他你看着办。",
+  "context": [],
+  "expected_type": "planning",
+  "type_alternatives": ["execution"],
+  "invariants": [
+    {
+      "desc": "用户确实说过的 500 元预算与两周时间可以进 explicit",
+      "require": "500\\s*元|两周"
+    },
+    {
+      "desc": "不得把用户没说的「硬件采购清单」写成明确要求",
+      "prohibit": "硬件采购清单|采购清单"
+    },
+    {
+      "desc": "不得用片段「预算」为整条扩写要求背书",
+      "prohibit": "\\[quote:\\s*预算\\s*\\][^\\n]{0,40}(?:采购|清单|必须包含)"
+    },
+    {
+      "desc": "证据缺口必须显式暴露",
+      "require": "\\[待补充[:：]|待确认"
+    },
+    {
+      "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+      "prohibit": "请先回答|必须先确认|否则无法继续|确认后才能继续"
+    }
+  ],
+  "prohibited_drift": [
+    "用「预算」这一片段把「预算上限 500 元且必须包含硬件采购清单」整条归因为 USER_EXPLICIT",
+    "把 500 元预算扩写成硬件采购清单 / 供应商选择",
+    "对部分匹配的 quote 不做降级或标注"
+  ],
+  "invariant_checks": [
+    {
+      "id": "partial-quote-not-user-explicit",
+      "desc": "部分匹配的 quote（预算）只能支撑用户原话覆盖的内容，不得为整条扩写要求背书",
+      "params": {
+        "quote": "预算",
+        "claimed_requirement": "预算上限 500 元且必须包含硬件采购清单"
+      }
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Prompt 是否只把用户原话覆盖的约束标为明确要求？",
+      "优化后的 Prompt 是否把「硬件采购清单」一类扩写排除在用户要求之外？"
+    ]
+  }
+}
