@@ -1,6 +1,6 @@
 # P06-T03 — Settings 扩展 + i18n 收尾
 
-**Status**: PENDING
+**Status**: DONE
 **Phase**: P06
 ## Executor
 Claude Code + DSH 验收
@@ -50,3 +50,15 @@ node/tsc/node:test/git
 分支 phase/<阶段>；commit 前缀 `p06(t03): `；一个内容提交 + 一个仅 CURRENT_STATE 同步提交；不 force / 不 reset --hard / 不 rewrite / 不 push upstream。
 ## Next Transition
 G-4 → P07-T01（语料固化）
+
+## Manual Test Checklist（G-4 阶段出口执行，dev profile）
+> 无头自动化已覆盖数据面（compat-settings cs7..cs10 + settings-i18n s1..s3）；
+> 下列为需要真实渲染/预览的手测项，与 P06-T01/T02 的清单一起在 G-4 的 UI 预览中执行
+> （不装正式 profile）。
+
+1. 设置页「提示词优化」标签新增「任务类型识别」分组：默认任务类型下拉（AUTO + 六策略）+ 分类用模型（跟随主路由/固定模型，带刷新）。
+2. 默认任务类型保持 AUTO：优化一次仍走自动识别（meta 的 prompt_type 来自分类器）。
+3. 默认任务类型设为 Planning：发送栏下拉保持 AUTO 时不再出现分类等待，结果类型固定 Planning；发送栏手动选 Research 可覆盖该默认。
+4. 分类用模型设为一个小模型：只有类型识别走该模型，编译仍用主路由（各自 provider/model 不同）。
+5. 撤销上一次修改：可把默认类型/分类模型与其余设置一起整批还原。
+6. 中英界面语言切换：新文案全部有译（缺译回退中文不报错）。

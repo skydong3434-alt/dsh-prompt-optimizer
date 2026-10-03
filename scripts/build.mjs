@@ -214,6 +214,20 @@ await build({
   logLevel: 'info',
 })
 
+// Client settings 统一读写面(settings-face.ts):纯逻辑,零 React/DOM 依赖,
+// 独立 ESM 产物供单测直接引用(验证 0.1.x settingsScope / 0.2.0 configForms 双后端
+// 以及新增 promptType / classifierModel 字段的读写与快照缓存)。
+await build({
+  entryPoints: ['src/client/settings-face.ts'],
+  outfile: 'lib/client/settings-face.js',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node18',
+  packages: 'external',
+  logLevel: 'info',
+})
+
 // Client 半:loader 的 lazy-CJS factory 形态(对齐官方包的产物结构)。
 // react 与 @deepseek-ai/* 是页面运行时外部模块,不打包进 bundle。
 // 注意:loader id 必须等于插件 npm 包名 —— 宿主 client-modules 按包名 serve
@@ -243,4 +257,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/validate.js + lib/core/strategies/_shared.js + lib/core/strategies/research.js + lib/core/strategies/planning.js + lib/core/strategies/execution.js + lib/core/strategies/diagnostic.js + lib/core/strategies/review.js + lib/core/strategies/creative.js + lib/core/strategies/general.js done')
+console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/client/settings-face.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/validate.js + lib/core/strategies/_shared.js + lib/core/strategies/research.js + lib/core/strategies/planning.js + lib/core/strategies/execution.js + lib/core/strategies/diagnostic.js + lib/core/strategies/review.js + lib/core/strategies/creative.js + lib/core/strategies/general.js done')

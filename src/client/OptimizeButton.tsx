@@ -13,7 +13,7 @@ export type OptimizeButtonProps = PropsRuntime<'conversation.input.right'>
  * 不会漏翻。general 不在 TYPE_OPTIONS(契约:兜底类型不进下拉),但保留映射,
  * 以防程序化设置 typeSelection='general' 时文案缺位。
  */
-const TYPE_LABEL_KEY: Record<TypeSelection, MessageKey> = {
+export const TYPE_LABEL_KEY: Record<TypeSelection, MessageKey> = {
   auto: 'panel.type.auto',
   research: 'panel.type.research',
   planning: 'panel.type.planning',

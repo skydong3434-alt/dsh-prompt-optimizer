@@ -33,6 +33,10 @@ export interface OptimizerSettingsValue {
   autoMaxTokens?: boolean
   /** 优化时携带会话近期对话作为上下文,默认 true。 */
   includeContext?: boolean
+  /** 默认任务类型:'auto'(默认,每次自动识别)或具体策略类型(客户端未显式指定时生效)。 */
+  promptType?: 'auto' | 'research' | 'planning' | 'execution' | 'diagnostic' | 'review' | 'creative' | 'general'
+  /** 分类小调用专用模型:'' = 跟随主路由;否则 'provider/model'。 */
+  classifierModel?: string
 }
 
 /** 设置快照的最小依赖面(两条后端共同的形状)。 */

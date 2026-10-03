@@ -36,6 +36,8 @@ const BASE = {
   temperature: 0.2,
   autoMaxTokens: true,
   includeContext: true,
+  promptType: 'auto',
+  classifierModel: undefined,
 }
 
 function makeLlm(onStream) {
@@ -58,6 +60,7 @@ async function boot({ settings, config = {}, carriers = ['httpServer'] } = {}) {
   const routes = {}
   const routeRegistrations = []
   let lastOptions = null
+  const allOptions = []
   for (const carrier of carriers) {
     ctx.provide(carrier, {
       register(route) {
@@ -67,7 +70,7 @@ async function boot({ settings, config = {}, carriers = ['httpServer'] } = {}) {
       },
     })
   }
-  ctx.provide('llm', makeLlm((options) => { lastOptions = options }))
+  ctx.provide('llm', makeLlm((options) => { lastOptions = options; allOptions.push(options) }))
   if (settings) ctx.provide('settings', settings)
   await ctx.plugin(plugin, config)
   assert.ok(routes['/dsh-prompt-optimizer/optimize'], '插件应注册 optimize 路由')
@@ -77,6 +80,7 @@ async function boot({ settings, config = {}, carriers = ['httpServer'] } = {}) {
     routeRegistrations,
     handler: routes['/dsh-prompt-optimizer/optimize'].handler,
     getOptions: () => lastOptions,
+    getCalls: () => allOptions,
   }
 }
 
@@ -108,7 +112,12 @@ async function call(handler, body) {
 }
 
 function done(res) {
-  const events = res.body
+  return eventsOf(res).find((e) => e.type === 'done')
+}
+
+/** 解析 SSE 响应体为事件数组(meta/delta/done/error)。 */
+function eventsOf(res) {
+  return res.body
     .split('\n\n')
     .filter(Boolean)
     .map((frame) => {
@@ -116,7 +125,6 @@ function done(res) {
       return line ? JSON.parse(line.slice(5).trim()) : null
     })
     .filter(Boolean)
-  return events.find((e) => e.type === 'done')
 }
 
 // cs1. 0.2.0 SettingsForms:configure({auto:false}) 被调用;无 register/installSection 误判;
@@ -228,6 +236,65 @@ function done(res) {
   assert.equal(routeRegistrations.filter((p) => p === '/dsh-prompt-optimizer/optimize').length, 1, 'optimize 路由只挂载一次')
   assert.equal(routeRegistrations.filter((p) => p === '/dsh-prompt-optimizer/test-model').length, 1, 'test-model 路由只挂载一次')
   console.log('✓ cs6 双载体并存只挂载一次')
+}
+
+// cs7. 默认任务类型(P06-T03):设置 promptType='planning' 且请求体不带 promptType 时
+// 完全跳过分类调用,直接按 planning 编译;请求体显式 promptType 优先级更高(覆盖默认)。
+{
+  const { handler, getCalls } = await boot({ config: { promptType: 'planning' } })
+  const first = await call(handler, { text: 'x', provider: 'p', model: 'm' })
+  const calls = getCalls()
+  assert.equal(calls.length, 1, '固定默认类型 = 零分类调用(仅 1 次编译)')
+  assert.notEqual(calls[0].maxTokens, 512, '唯一调用必须是编译调用(分类调用固定 512)')
+  const meta = eventsOf(first).find((e) => e.type === 'meta')
+  assert.equal(meta.prompt_type, 'planning', 'meta 类型应取设置默认值')
+  assert.equal(meta.confidence_level, 'High', '默认类型等价用户指定,应为最高置信')
+
+  const second = await call(handler, { text: 'x', provider: 'p', model: 'm', promptType: 'research' })
+  assert.equal(getCalls().length, 2, '显式 promptType 仍跳过分类(累计 2 次编译调用)')
+  const meta2 = eventsOf(second).find((e) => e.type === 'meta')
+  assert.equal(meta2.prompt_type, 'research', '请求体显式值覆盖设置默认')
+  console.log('✓ cs7 默认 promptType 生效 + 显式覆盖优先')
+}
+
+// cs8. 默认类型非法值 / 缺省 → AUTO 分类(宽松 schema 的归一化回归)。
+{
+  const invalid = await boot({ config: { promptType: 'bogus' } })
+  const res = await call(invalid.handler, { text: 'x', provider: 'p', model: 'm' })
+  const calls = invalid.getCalls()
+  assert.equal(calls.length, 2, '非法默认类型必须回落 AUTO(分类 + 编译)')
+  assert.equal(calls[0].maxTokens, 512, '第 1 次应是分类调用')
+  assert.ok(eventsOf(res).find((e) => e.type === 'meta'), '非法默认类型仍应下发 meta')
+
+  const absent = await boot({})
+  await call(absent.handler, { text: 'x', provider: 'p', model: 'm' })
+  assert.equal(absent.getCalls().length, 2, '未配置默认类型 = AUTO(分类 + 编译)')
+  console.log('✓ cs8 非法/缺省默认类型回落 AUTO')
+}
+
+// cs9. 分类调用参数(P06-T03):classifierModel 只替换分类小调用的路由,编译仍走主路由。
+{
+  const { handler, getCalls } = await boot({ config: { classifierModel: 'fast-p/fast-m' } })
+  const res = await call(handler, { text: 'x', provider: 'main-p', model: 'main-m' })
+  done(res)
+  const calls = getCalls()
+  assert.equal(calls.length, 2, 'AUTO = 分类 1 次 + 编译 1 次')
+  assert.equal(calls[0].provider, 'fast-p', '分类调用应走 classifierModel 指定路由')
+  assert.equal(calls[0].model, 'fast-m')
+  assert.equal(calls[0].maxTokens, 512, '分类调用硬参数不变')
+  assert.equal(calls[1].provider, 'main-p', '编译仍走主路由')
+  assert.equal(calls[1].model, 'main-m')
+  console.log('✓ cs9 classifierModel 仅替换分类路由')
+}
+
+// cs10. classifierModel 非法格式:不冒险构造无效路由,分类回退主路由。
+{
+  const { handler, getCalls } = await boot({ config: { classifierModel: 'not-a-route' } })
+  await call(handler, { text: 'x', provider: 'main-p', model: 'main-m' })
+  const calls = getCalls()
+  assert.equal(calls[0].provider, 'main-p', '非法 classifierModel 应回退主路由')
+  assert.equal(calls[0].model, 'main-m')
+  console.log('✓ cs10 非法 classifierModel 回落主路由')
 }
 
 console.log('\ncompat-settings: all passed')

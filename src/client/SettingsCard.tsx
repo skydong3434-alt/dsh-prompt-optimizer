@@ -4,6 +4,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { OptimizerModelFailure, OptimizerModelGroup } from './host-faces.js'
 import { sessionCatalog } from './host-faces.js'
 import type { OptimizerSettingsValue, SettingsFace } from './settings-face.js'
+import { TYPE_OPTIONS } from './controller.js'
+import { TYPE_LABEL_KEY } from './OptimizeButton.js'
 import { useT } from './i18n.js'
 
 /**
@@ -270,10 +272,12 @@ export function createSettingsCard(ctx: ClientContext, face: SettingsFace) {
     const SETTING_KEYS = [
       'language', 'model', 'fallbackModel', 'maxTokens', 'timeoutSeconds',
       'mode', 'reasoningEffort', 'temperature', 'autoMaxTokens', 'includeContext',
+      'promptType', 'classifierModel',
     ] as const
     const SETTING_DEFAULTS: OptimizerSettingsValue = {
       language: 'zh', model: '', fallbackModel: '', maxTokens: 8192, timeoutSeconds: 120,
       mode: 'full', reasoningEffort: 'lowest', temperature: 0.2, autoMaxTokens: true, includeContext: true,
+      promptType: 'auto', classifierModel: '',
     }
     const undoStack = useRef<SettingValueSnapshot[]>([])
     const [canUndo, setCanUndo] = useState(false)
@@ -417,6 +421,37 @@ export function createSettingsCard(ctx: ClientContext, face: SettingsFace) {
               {test.status === 'testing' ? t('settings.test.running') : t('settings.test.run')}
             </button>
           </span>
+        </Row>
+
+        <div className="dsh-po-group">{t('settings.group.classify')}</div>
+        <Row title={t('settings.promptType')} desc={t('settings.promptType.desc')}>
+          <select
+            className="dsh-po-select dsh-po-btn"
+            style={{ backgroundImage: catalogChevron() }}
+            value={value.promptType ?? 'auto'}
+            aria-label={t('settings.promptType')}
+            onChange={(e) => setValue('promptType', e.target.value as WritableValue<'promptType'>)}
+          >
+            {TYPE_OPTIONS.map((type) => (
+              <option key={type} value={type}>
+                {t(TYPE_LABEL_KEY[type])}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row title={t('settings.classifierModel')} desc={t('settings.classifierModel.desc')}>
+          <ModelSelect
+            label={t('settings.classifierModel')}
+            value={value.classifierModel ?? ''}
+            groups={groups}
+            catalogState={catalogState}
+            catalogHint={catalogHint}
+            noneLabel={t('settings.classifierModel.follow')}
+            onChange={(v) => setValue('classifierModel', v)}
+            onRefresh={() => void loadCatalog()}
+            refreshTitle={t('settings.refreshTitle')}
+            refreshLabel={t('settings.refresh')}
+          />
         </Row>
 
         <div className="dsh-po-group">{t('settings.group.params')}</div>

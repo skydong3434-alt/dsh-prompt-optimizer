@@ -10,6 +10,7 @@ import { toConfidenceLevel } from './core/types.js'
 import {
   classifyViaLlm,
   parsePromptTypeInput,
+  PROMPT_TYPES,
   type ClassifierLlm,
 } from './core/classify.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
@@ -43,6 +44,10 @@ export interface Config {
   autoMaxTokens: boolean
   /** 优化时携带会话近期对话作为上下文(默认开):方向更贴合;关闭后仅看草稿本身。 */
   includeContext: boolean
+  /** 默认任务类型:'auto'(默认)= 每次自动识别;六个具体策略类型 = 客户端未显式指定时跳过分类直达该策略。 */
+  promptType: string
+  /** 分类小调用专用模型('provider/model',可选);留空 = 跟随主路由(分类是元任务,可用更小/更快的模型)。 */
+  classifierModel?: string
 }
 
 // 枚举字段刻意用宽松 string 而非 union:设置文档持久化在 profile 补丁/旧版
@@ -62,6 +67,8 @@ export const Config = Schema.object({
   temperature: Schema.number().min(0).max(2).default(0.2).volatile(),
   autoMaxTokens: Schema.boolean().default(true).volatile(),
   includeContext: Schema.boolean().default(true).volatile(),
+  promptType: Schema.string().default('auto').volatile(),
+  classifierModel: Schema.string().volatile(),
 })
 
 /** 0.2.0 volatile 字段的运行时形态:宿主原位更新的引用 cell(cosmokit Volatile)。 */
@@ -87,6 +94,8 @@ function readConfig(raw: Config): Config {
     temperature: unwrapCell(raw.temperature),
     autoMaxTokens: unwrapCell(raw.autoMaxTokens),
     includeContext: unwrapCell(raw.includeContext),
+    promptType: unwrapCell(raw.promptType) ?? 'auto',
+    classifierModel: unwrapCell(raw.classifierModel),
   }
 }
 
@@ -107,12 +116,16 @@ function warnUnknownEnum(value: string, allowed: readonly string[], label: strin
   }
 }
 
-/** 对三个宽松枚举字段做非法值告警;归一化仍由各使用处完成。 */
+/** 对四个宽松枚举字段做非法值告警;归一化仍由各使用处完成。 */
 function warnUnknownEnumConfig(cfg: Config): void {
   if (cfg.language !== 'zh' && cfg.language !== 'en') warnUnknownEnum(cfg.language, ['zh', 'en'], 'language')
   if (cfg.mode !== 'full' && cfg.mode !== 'fast') warnUnknownEnum(cfg.mode, ['full', 'fast'], 'mode')
   if (cfg.reasoningEffort !== 'lowest' && cfg.reasoningEffort !== 'session') {
     warnUnknownEnum(cfg.reasoningEffort, ['lowest', 'session'], 'reasoningEffort')
+  }
+  // promptType:'auto'(默认)或七个策略类型;其余值在使用处按 AUTO 处理。
+  if (cfg.promptType !== 'auto' && !(PROMPT_TYPES as readonly string[]).includes(cfg.promptType)) {
+    warnUnknownEnum(cfg.promptType, ['auto', ...PROMPT_TYPES], 'promptType')
   }
 }
 
@@ -481,14 +494,28 @@ export function apply(ctx: Context, config: Config) {
           }
         }
 
+        // 分类小调用专用路由:设置里配了 classifierModel('provider/model')时,分类走该
+        // 路由,而编译仍走上方主路由/回退链。非法格式不冒险构造无效路由,回退主路由。
+        const classifierRaw = asOptionalString(cfg.classifierModel)
+        let classifierRoute = route
+        if (classifierRaw) {
+          const slash = classifierRaw.indexOf('/')
+          if (slash > 0 && slash < classifierRaw.length - 1) {
+            classifierRoute = { provider: classifierRaw.slice(0, slash), model: classifierRaw.slice(slash + 1) }
+          } else {
+            console.warn(`[${name}] classifierModel="${classifierRaw}" 不是 'provider/model' 形式,分类调用改用主路由`)
+          }
+        }
+
         // 设置里关掉「携带上下文」时,即使客户端带了 context 也忽略(Host 侧硬开关)。
         const context = cfg.includeContext === false ? undefined : parseContextInput(body.context)
         // 轻量记忆链:上一轮优化结果,截断到 1500 字符(它只是延续参考,不是优化对象)。
         // 与 context 一样跟随「携带上下文」开关——关闭后不带任何会话衍生材料。
         const previousRaw = cfg.includeContext === false ? undefined : asOptionalString(body.previous)
         const previous = previousRaw ? (previousRaw.length > 1500 ? `${previousRaw.slice(0, 1500)}…` : previousRaw) : undefined
-        // 手动类型覆盖:合法值跳过分类(UI 永远最高优先级);缺省 / 非法值 = AUTO。
-        const manualType = parsePromptTypeInput(body.promptType)
+        // 手动类型覆盖:请求体显式值优先(UI 永远最高优先级);缺省 / 非法值回落到
+        // 设置里的默认类型(默认 'auto' → 走 AUTO 分类;固定类型 → 跳过分类直达策略)。
+        const manualType = parsePromptTypeInput(body.promptType) ?? parsePromptTypeInput(cfg.promptType)
         // 输出上限跟随输入长度:优化结果体量与草稿正相关(完整模式还多一段分析),
         // 长草稿撞固定上限会被截断。取配置值与「输入估算 × 模式系数」的较大者,32768 封顶。
         const maxTokens =
@@ -539,7 +566,7 @@ export function apply(ctx: Context, config: Config) {
             // general 兜底(绝不阻塞编译)。手动 override 完全跳过本阶段。
             const classifyOutcome = await classifyViaLlm<Message>(
               ctx.llm as unknown as ClassifierLlm<Message>,
-              route,
+              classifierRoute,
               { raw_input: text, context_turns: context },
               {
                 language,
