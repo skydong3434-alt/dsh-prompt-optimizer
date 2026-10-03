@@ -45,3 +45,75 @@ cordis.patch.yml        → insert id: prompt-optimizer
 
 ## 下一阶段
 P01 Core Contracts & Provenance（G-1 出口）
+
+---
+
+# 附录 A — P05-T02 兼容性回归（双版本面 + 全量测试）
+
+日期：2026-10-03 ｜ 检查点：S-03（未大量重写 Host）/ S-04（DSH API 冲突）
+结论：**全绿** —— 23 个测试文件（22 既有 + 1 新增）全部通过；core 层 tsc 0 error；settings 双版本能力探测未被破坏。
+
+## A.1 版本矩阵（本次实测）
+
+| 维度 | 实测值 |
+|---|---|
+| 主机 / OS | macOS 26.5.1（Darwin 25.5.0 arm64） |
+| Node / npm | v22.23.0 / 10.9.8 |
+| @deepseek-ai/cordis | 4.0.4 |
+| @deepseek-ai/dsh-llm | 0.2.0-rc.2 |
+| @deepseek-ai/schemastery | 3.18.4 |
+| TypeScript / esbuild | 5.9.3 / 0.24.2 |
+| 插件版本 / 分支 | 0.4.0 / phase/p01.5-slice |
+
+目标宿主版本面（规划基线见 PLAN-v1 §11.1；既有实测记录见 README「兼容性」）：
+
+| dsh 版本面 | 优化路由 / 模型调用 | 设置页双版本接入 | 发送栏 / 结果面板 |
+|---|---|---|---|
+| DSH Desktop 2.0.15 / dsh 0.1.7-rc.2（规划基线） | 同一份构建覆盖 | `settingsScope`（0.1.x 服务） | 沿用 |
+| dsh 0.2.0-rc.2（v0.4.0 实测线） | ✅ | `volatile` + `configForms`（`configure({auto:false})` 关闭宿主原生表单） | ✅ |
+| dsh 0.1.5-rc.2 / 0.1.2-rc.1 / 0.1.0-rc.7+ | ✅ | `installSection` / `register` 逐级回落 | ✅ |
+
+> 本次为**开发机离线回归**（mock llm + 真 cordis Context），不含真实 desktop profile 端到端（P08 / S-09 范围）；未触碰任何正式 DSH profile / `~/.dsh` / PAB。
+
+## A.2 全量测试矩阵
+
+命令：`npm test`（build + 23 个测试文件）→ **exit 0**
+
+- 旧三件套（P00 基线）：`smoke` ✅ / `prompt` ✅ / `controller` ✅
+- 底座纯函数层：`provenance` ✅ / `_shared` ✅ / 七策略（research·planning·execution·diagnostic·review·creative·general）✅ / `registry` ✅
+- 分类器：`classify` ✅ / `classify-llm` ✅ / `classify-guards` ✅
+- 编译 / 守卫：`core-pipeline` ✅ / `compiler` ✅ / `validate` ✅ / `compiler-integration` ✅
+- P05 pipeline：`host-pipeline` ✅ / `vertical-slice` ✅
+- **新增 P05-T02**：`compat-settings` ✅（settings 双版本能力探测）
+
+合计 **23/23 通过**。
+
+## A.3 typecheck 记录
+
+- **core 层**（`src/core/**` + `src/prompt.ts` + `src/index.ts`，strict + skipLibCheck）：
+  `npx tsc --noEmit ...` → **0 error**（零新增错误）。
+- 全量 `npm run typecheck`：仅 `src/client/**` 报模块解析类错误（`@deepseek-ai/dsh-client-*` 类型包未 `npm run sync:types` 拉取，且该层 `ctx.slots` / Context 合并声明缺失），**非本次改动引入**；client 类型面回归归 P06。
+
+## A.4 settings 双版本探测路径回归
+
+新增 `test/compat-settings.test.mjs`（cs1–cs6，纯 mock、零网络、不改产品代码）：
+
+| 用例 | 覆盖路径 | 结果 |
+|---|---|---|
+| cs1 | 0.2.0 SettingsForms：`configure({auto:false})` + volatile cell 读取 | ✅ |
+| cs2 | 0.1.2+ `settings.installSection(ctx,ns,schema,base,hooks)` → `setSource` 实时生效 | ✅ |
+| cs3 | 0.1.0-rc.x `settings.register(ns,schema,{base})` → `get()` / `watch()` 生效 | ✅ |
+| cs4 | settings 服务缺席 → 组合层配置回落（不抛错） | ✅ |
+| cs5 | HTTP 载体双名 `webServer` / `httpServer` | ✅ |
+| cs6 | 双载体并存 → `mount` 幂等，两路由各只注册一次 | ✅ |
+
+既有 smoke 用例 11（volatile 引用 cell 解包 / 旧版非法枚举宽松接收）在 A.2 中同步通过。
+
+## A.5 检查点结论
+
+- **S-03（未大量重写 Host）**：P05 仅新增 handler 内部两阶段编排与 SSE `meta` 扩展；路由 / 超时 / 断连 / 回退 / CSRF / settings 分派均未改写，旧用例 100% 通过（`host-pipeline` h5/h6 legacy 零回归）。
+- **S-04（DSH API 冲突）**：cordis 4.0.4 / dsh-llm 0.2.0-rc.2 依赖面下 build + 全量测试全绿，无 API 冲突。
+- 未触发任何 Stop Condition；兼容基线冻结，可进入 P06。
+
+## 下一阶段
+P06 UI Integration（G-4 出口）
