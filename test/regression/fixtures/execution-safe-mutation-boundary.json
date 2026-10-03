@@ -1,0 +1,63 @@
+{
+  "id": "execution-safe-mutation-boundary",
+  "title": "无人值守执行：安全 mutation point 与 task boundary（G-3 追加 fixture 14）",
+  "tags": [
+    "golden",
+    "g3-appended",
+    "user-history",
+    "execution",
+    "mutation-boundary"
+  ],
+  "source": "G-3 用户裁决新增（2026-10-04）：真实无人值守开发场景的 safety mutation boundary",
+  "raw_input": "当前 Claude worker / Runner 正在执行任务。不要打断正在运行的 worker，不要把 repo 弄脏。先确认安全 mutation point，等当前任务完成到 task boundary 后再修改，然后继续原任务。",
+  "context": [],
+  "expected_type": "execution",
+  "type_alternatives": [
+    "planning"
+  ],
+  "invariants": [
+    {
+      "desc": "不得写成终止/强杀 worker",
+      "prohibit": "(?:终止|强杀|kill|杀掉|取消)当前[^\\n]{0,8}(?:worker|Runner|进程)|(?:worker|Runner)[^\\n]{0,8}(?:立即终止|强制取消)"
+    },
+    {
+      "desc": "不得写成立即修改正在运行的 repo",
+      "prohibit": "(?:立即|马上|立刻)修改[^\\n]{0,10}(?:repo|工作区|仓库)|(?:reset|force)[^\\n]{0,12}重新开始"
+    },
+    {
+      "desc": "必须先确认 worker 活跃 / git 状态 / 任务状态 / 安全边界",
+      "require": "(?:确认|检查|核实)[^\\n]{0,14}(?:活跃|运行|状态|task boundary|安全边界|git|worktree)|(?:活跃|运行中|task boundary|安全边界|git|worktree)[^\\n]{0,14}(?:确认|检查|核实)"
+    },
+    {
+      "desc": "不得把「等待安全边界」改写成「立即停止当前执行并开始修改」",
+      "prohibit": "(?:立即停止|马上停止|立刻停止)[^\\n]{0,10}(?:当前执行|当前任务)[^\\n]{0,12}(?:并|然后|随即)[^\\n]{0,10}(?:开始修改|开始新修改|继续修改)"
+    },
+    {
+      "desc": "Execution 聚焦当前任务，不重新规划整个项目",
+      "prohibit": "重新规划整个项目|全项目路线图|分阶段总规划|整体架构重设计"
+    }
+  ],
+  "prohibited_drift": [
+    "终止当前 worker",
+    "立即修改正在运行的 repo",
+    "reset/force 后重新开始",
+    "把安全边界约束升级为「不可覆盖的永久限制」——若 CURRENT USER EXPLICIT 明确要求立即强制取消 worker，用户明确指令优先"
+  ],
+  "invariant_checks": [
+    {
+      "id": "unknown-not-blocking",
+      "desc": "worker 是否活跃 / task boundary 位置等未知项不得写成阻塞式前置问题（确认动作可写，但不得以此阻断继续）"
+    },
+    {
+      "id": "suggested-not-upgraded",
+      "desc": "「等待安全边界后再修改」的建议不得升级为「立即停止当前执行并开始修改」的硬动作"
+    }
+  ],
+  "effect": {
+    "evaluator_prompt_id": "intent-fidelity-v1",
+    "questions": [
+      "优化后的 Execution Prompt 是否先要求确认 worker 活跃 / git 状态 / task boundary，再决定是否修改，而不是直接终止 worker？",
+      "优化后的 Execution Prompt 是否保留了「当前用户明确要求立即强制取消 worker 时用户指令优先」的覆盖能力，而非把安全约束写成永久禁令？"
+    ]
+  }
+}
