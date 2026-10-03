@@ -2,15 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T08:22:26+08:00
+last_updated: 2026-10-03T08:42:00+08:00
 current_phase: P04
 current_task: 
 status: RUNNING
-next_task: P04-T01
+next_task: P04-T02
 machine_gate: PASS
 human_review: PASS_G2
-phase_status: G-2 已通过（2026-10-03 七策略定稿）。G-2 后追加的 Performance/Effect 验收要求已入 P07 契约：A. per-strategy token/latency 测量（system/context/total input token + latency，不预防性压缩）；B. planning 历史事实误报 case（用户提供的既有完成事实允许引用，守卫只阻止 Optimizer 凭空宣称实施）；C. creative 显式覆盖优先级 case（CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED）。P03-T01 已完成：classify.ts 纯函数层（七类型 + 防误判三规则 + JSON 契约容错，1aebeec）。P03-T02 已完成：classifyViaLlm 调用侧封装（结构化最小 LLM 接口、temp0/512/lowest 钳制、thinkFilter、硬超时/abort/失败回退、CLASSIFY_LLM_ISSUE + request 快照，mock 单测 ll1..ll14，1e73fb2）。P03-T03 已完成：防误判规则与 Manual Override 测试契约（fixtures 五类场景 referent/multi-intent/assistant-bg/negation/current-vs-history + g1..g10；assistant 发言永不产生 explicit；override 函数级零分类调用；S-06 稳定性抽查 5 例×3 次 + 调用侧 3 次稳定签名完全一致 stable=true，记录 docs/classifier.md，a810ea1）。P03 三任务全部完成，next=P04-T01（compiler core）。
-latest_commit: a810ea1ce3858419e36baaf861ab4eeac232de6c
+phase_status: G-2 已通过（2026-10-03 七策略定稿）。G-2 后追加的 Performance/Effect 验收要求已入 P07 契约：A. per-strategy token/latency 测量（system/context/total input token + latency，不预防性压缩）；B. planning 历史事实误报 case（用户提供的既有完成事实允许引用，守卫只阻止 Optimizer 凭空宣称实施）；C. creative 显式覆盖优先级 case（CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED）。P03 三任务全部完成（classify 纯函数层 1aebeec / 调用侧封装 1e73fb2 / 防误判测试契约 a810ea1）。P04-T01 已完成：compiler core——compilePrompt() 10 步编排（override 七类型直达 registry 且函数级旁路分类、AUTO 分类、缺省 general 兜底、CompileResult 骨架 provenance_ok=false 待 validate）+ COMPILE_PROMPT_STEPS 审计锚点（orchestration/protocol/finalize 三态）+ parseCompileOutput 容错增强（[待补充:]/[TODO:] 中英同构、suggested 标签剥离复用 _shared）+ injectMissingPlaceholders 缺口机械注入（幂等，legacy 零回归）；test/compiler.test.mjs k1..k16，8248c22。next=P04-T02（validate.ts 三层守卫）。
+latest_commit: 8248c223f680b073d79f0bd3b99a2c2ab8de4ac6
 auto_continue: true
 stop_reason: none
 ```
@@ -42,7 +42,8 @@ stop_reason: none
 | P03-T01 | DONE | classifier 纯函数层：七类型 + 防误判三规则 + JSON 契约容错（1aebeec） | — |
 | P03-T02 | DONE | classifyViaLlm 调用侧封装：硬参数钳制/thinkFilter/超时与失败回退 + mock 单测（1e73fb2） | — |
 | P03-T03 | DONE | 防误判规则测试（fixtures 五类 + g1..g10 + S-06 稳定性抽查，a810ea1） | P04 |
-| P04-T01..T03 | PENDING | compiler/validator/集成 | P05 |
+| P04-T01 | DONE | compiler core：compilePrompt 10 步编排 + 四段协议解析容错 + 缺口注入（8248c22） | — |
+| P04-T02..T03 | PENDING | validator 三层守卫 / compiler 集成测试 | P05 |
 | P05-T01..T02 | PENDING | host pipeline/兼容回归 | P06 |
 | P06-T01..T03 | PENDING | 下拉/dock 四组渲染/settings+i18n | **G-4** |
 | P07-T01..T03 | PENDING | 语料（**G-3**，阈值校准 R-2）/runner/首轮 | **G-5** |
