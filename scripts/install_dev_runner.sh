@@ -14,7 +14,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LABEL="com.apo.devrunner"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 TEMPLATE="$ROOT/scripts/dev_runner.plist.template"
-LOGS="$ROOT/logs/runner"
+# APO：launchd 专用日志目录（与 Runner 自身账本 logs/runner/ 分离，互不覆盖）
+LOGS="$ROOT/logs/runner/launchd"
 MAX_ROUNDS="${APO_MAX_ROUNDS:-20}"
 ROUND_TIMEOUT="${APO_ROUND_TIMEOUT:-3600}"
 AT_LOAD="${APO_RUN_AT_LOAD:-false}"
@@ -132,20 +133,22 @@ for key in ("WorkingDirectory", "StandardOutPath", "StandardErrorPath"):
         candidates.append(value)
 
 repo_like = sorted({c for c in candidates
-                    if c.startswith("/") and ("personal-ai-brain" in c or c.startswith(root + "/"))})
-stale = [c for c in repo_like
-         if not (c == root or c.startswith(root + "/"))]
+                    if c.startswith("/") and c.startswith(root + "/")})
+stale = [c for c in candidates
+         if c.startswith("/") and "dsh-adaptive-prompt-optimizer" in c
+         and not (c == root or c.startswith(root + "/"))]
 workdir = str(data.get("WorkingDirectory") or "")
 wrapper_ok = ("/bin/bash" in argv and "-lc" in argv
               and any("exec " in a and "unattended_runner.py" in a for a in argv))
 dsh_bin = sys.argv[3] if len(sys.argv) > 3 else ""
 
-# node 前置：不兼容的 node 会让 dsh 静默 exit 0；这里做行为验证而不是版本号比较
+# node 前置：不兼容的 node 会让 dsh 静默 exit 0；这里做行为验证而不是版本号比较。
+# APO 模板的 PATH 前置形如 export PATH="<node_dir>:<home>/.local/bin:..."（显式全量列表）。
 node_dir = None
 for item in argv:
     marker = 'export PATH="'
     if marker in item:
-        node_dir = item.split(marker, 1)[1].split(":$PATH", 1)[0]
+        node_dir = item.split(marker, 1)[1].split(":", 1)[0]
         break
 node_note = None
 node_problem = None
@@ -175,8 +178,10 @@ else:
 problems = []
 if stale:
     problems.append("旧/外部 repo 路径: " + "、".join(stale))
-if workdir != "/tmp":
-    problems.append("WorkingDirectory 必须是 /tmp（macOS 保护目录会导致 getcwd 失败），实际: " + (workdir or "(空)"))
+if workdir != root:
+    problems.append("WorkingDirectory 必须是 repo root（" + root + "），实际: " + (workdir or "(空)"))
+if not os.path.isdir(workdir):
+    problems.append("WorkingDirectory 不存在: " + (workdir or "(空)"))
 if not wrapper_ok:
     problems.append("ProgramArguments 必须是 /bin/bash -lc \"exec …\"（launchd 不能直接 spawn python）")
 if not any("--project-root" in a for a in argv):

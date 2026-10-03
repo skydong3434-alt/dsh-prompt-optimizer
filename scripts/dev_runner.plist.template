@@ -5,34 +5,43 @@
   <key>Label</key>
   <string>@@LABEL@@</string>
 
-  <!-- launchd 不能直接 spawn python（EX_CONFIG 78）：/bin/bash -lc 包一层，exec 让信号直达 Runner。
-       关键坑：`bash -lc` 会触发 /etc/profile 的 path_helper，把 /usr/local/bin 提到 PATH 最前，
-       于是 Runner 里的 shutil.which("node") 会选中 /usr/local/bin/node。若该 node 不满足 DSH 的
-       engines（package.json: "^22.19.0 || >=24.0.0"），`dsh headless` 会【静默 exit 0、零输出】，
-       Runner 读到 turn_end_reason=None 并 retry exhausted（2026-09-30 实机踩坑，3 次 attempt 白跑）。
-       所以这里把 renderer 行为验证过的 node 目录（@@NODE_DIR@@）前置到 PATH，不依赖 PATH 顺序。 -->
+  <!-- 唯一目的：让 APO unattended Runner 脱离 DSH / bash 工具调用的进程树，
+       避免 nohup 后台进程因宿主会话边界收到 SIGTERM（2026-10-03 实测两次 graceful stop signal 15）。
+       这不是 Runner 架构改造：任务图 / Task Contract / 门禁语义 / 项目代码均不变。
+
+       launchd 不能直接 spawn python（EX_CONFIG 78）：/bin/bash -lc 包一层，exec 让信号直达 Runner。
+       关键坑（PAB 2026-09-30 实机踩坑，3 次 attempt 白跑）：`bash -lc` 会触发 /etc/profile 的
+       path_helper，把 /usr/local/bin 提到 PATH 最前，于是 Runner 里的 shutil.which("node") 会选中
+       /usr/local/bin/node（本机实测 v22.16.0，不满足 DSH engines "^22.19.0 || >=24.0.0"），
+       `dsh headless` 会【静默 exit 0、零输出】，Runner 读到 turn_end_reason=None 并 retry exhausted。
+       故此处把行为验证过的 node 目录（@@NODE_DIR@@，本机实测 v22.23.0）前置到 PATH，不依赖 PATH 顺序，
+       并且不再依赖 $PATH 继承（用显式全量列表，避免交互 shell 污染）。 -->
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>export PATH="@@NODE_DIR@@:$PATH"; exec @@PYTHON@@ @@ROOT@@/scripts/unattended_runner.py --project-root @@ROOT@@ --run --max-rounds @@MAX_ROUNDS@@ --round-timeout @@ROUND_TIMEOUT@@</string>
+    <string>cd "@@ROOT@@" || exit 1; export PATH="@@NODE_DIR@@:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"; exec @@PYTHON@@ "@@ROOT@@/scripts/unattended_runner.py" --project-root "@@ROOT@@" --run --max-rounds @@MAX_ROUNDS@@ --round-timeout @@ROUND_TIMEOUT@@</string>
   </array>
 
-  <!-- 不能指向受 macOS 保护的目录（~/Desktop、~/Documents）会 getcwd: Operation not permitted -->
+  <!-- WorkingDirectory 必须是 repo 根：Runner 以 cwd 读取 CURRENT_STATE.md / tasks/ / logs/。
+       本 repo 位于 ~/Projects（非 macOS 受保护目录），launchd 可正常 getcwd。
+       （PAB 曾因 repo 在受保护目录而退回 /tmp，本 repo 无此问题。） -->
   <key>WorkingDirectory</key>
-  <string>/tmp</string>
+  <string>@@ROOT@@</string>
 
   <!-- launchd 的 PATH 很窄：DSH headless 需要能按名字找到 node/worker，否则静默 exit 0。
        这一项只是兜底；真正生效的是上面 ProgramArguments 里的 PATH 前置。 -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>@@NODE_DIR@@:@@HOME@@/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>@@NODE_DIR@@:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>HOME</key>
     <string>@@HOME@@</string>
   </dict>
 
-  <!-- 是否随登录自启由显式开关决定；默认惰性，需 kickstart 才跑（XML 注释不能含两个连字符） -->
+  <!-- 惰性：不随登录自启（RunAtLoad=false，需显式 kickstart）。
+       KeepAlive=false：Runner 因 Human Gate / STOP / max-rounds 正常退出后，launchd 不得把它拉起
+       重跑——那会绕过 Gate 语义。 -->
   <key>RunAtLoad</key>
   <@@AT_LOAD@@/>
   <key>KeepAlive</key>
