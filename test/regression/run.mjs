@@ -20,7 +20,7 @@
  *   node test/regression/run.mjs                       # deterministic + mock（离线机制冒烟）
  *   node test/regression/run.mjs --mode all            # + evaluator 参考线
  *   node test/regression/run.mjs --fixture <id>[,<id>] # 只跑部分语料
- *   node test/regression/run.mjs --adapter live        # 真实 DeepSeek（P07-T03；需 env 凭据）
+ *   node test/regression/run.mjs --adapter live        # 真实 LLM（R1：必须显式 --provider/--model/--base-url/--api-key-env，缺则 fail fast）
  *   node test/regression/run.mjs --adapter external --external ./my-adapter.mjs
  *   node test/regression/run.mjs --report <path>       # 自定义报告路径
  *   node test/regression/run.mjs --no-report           # 不写报告
@@ -112,9 +112,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
     fixtures: [],
     adapter: 'mock',
     external: null,
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    apiKeyEnv: 'DEEPSEEK_API_KEY',
+    // R1：不再默认 DeepSeek——provider/model/apiKeyEnv 留空，由 live/external 显式提供
+    provider: '',
+    model: '',
+    apiKeyEnv: '',
     credentials: null,
     report: null,
     writeReport: true,
@@ -1052,23 +1053,43 @@ function readApiKeyFromEnv(envName) {
   return key ? String(key).trim() : null
 }
 
-function readApiKeyFromYaml(path) {
+function readApiKeyFromYaml(path, envName) {
   const text = readFileSync(path, 'utf8')
-  const match = text.match(/(?:DEEPSEEK_API_KEY|api_key)\s*:\s*(\S+)/)
+  // 按指定 envName 精确匹配 credentials.yaml 的「两空格缩进 KEY: 值」行；
+  // 不使用 api_key 泛化备选（避免误取 DEEPSEEK_API_KEY 行——R1 修复）。
+  const match = text.match(new RegExp(`^\\s{2}${envName}:\\s*(\\S+)`, 'm'))
   return match ? match[1].replace(/['"]/g, '') : null
 }
 
-/** 真实模型 adapter（P07-T03 用）。凭据来源：--credentials 显式路径 或 env。 */
+/**
+ * 真实模型 adapter（P07-T03 用）。
+ * R1（2026-10-04 用户裁决）：不再默认 DeepSeek（provider/model/baseUrl/apiKeyEnv）。
+ * Real-LLM regression 必须显式提供 adapter/provider 配置，否则 fail fast——
+ * 禁止隐式回落任何付费 Provider（DeepSeek Official / OpenCode Go / 其它）。
+ */
 export function createLiveAdapter(options = {}) {
   const {
-    provider = 'deepseek',
-    model = 'deepseek-chat',
-    apiKeyEnv = 'DEEPSEEK_API_KEY',
+    provider = '',
+    model = '',
+    apiKeyEnv = '',
     credentials = null,
-    baseUrl = process.env.DSH_REGRESSION_BASE_URL ?? 'https://api.deepseek.com/chat/completions',
+    baseUrl = '',
     timeoutMs = 60000,
   } = options
-  const apiKey = credentials ? readApiKeyFromYaml(credentials) : readApiKeyFromEnv(apiKeyEnv)
+  const missing = []
+  if (!provider) missing.push('provider')
+  if (!model) missing.push('model')
+  if (!baseUrl) missing.push('baseUrl')
+  if (!apiKeyEnv && !credentials) missing.push('apiKeyEnv 或 credentials')
+  if (missing.length) {
+    throw new Error(
+      'Real-LLM regression requires an explicit adapter/provider configuration.'
+        + ` 缺少: ${missing.join(', ')}`
+        + '（--provider/--model/--base-url / --api-key-env 或 --credentials 必须显式给出；'
+        + '不默认 DeepSeek 或任何付费 Provider）',
+    )
+  }
+  const apiKey = credentials ? readApiKeyFromYaml(credentials, apiKeyEnv) : readApiKeyFromEnv(apiKeyEnv)
   if (!apiKey) {
     throw new Error(
       `live adapter 缺少凭据：设置 env ${apiKeyEnv}，或显式传入 --credentials <yaml>（不默认读 ~/.dsh）`,
