@@ -5,21 +5,16 @@ import Schema from '@deepseek-ai/schemastery'
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { capConversationContext, createThinkFilter, estimateTokens, type ConversationTurn, type OptimizerMode, type OutputLanguage } from './prompt.js'
-import type { ClassifierResult, CompileVars, MissingConstraint } from './core/types.js'
+import type { ClassifierResult } from './core/types.js'
 import { toConfidenceLevel } from './core/types.js'
 import {
-  CLASSIFIER_MAX_TOKENS,
-  CLASSIFIER_TEMPERATURE,
-  buildClassifierSystem,
-  buildClassifierUser,
-  fallbackClassifierResult,
-  manualClassifierResult,
-  parseClassifierResult,
+  classifyViaLlm,
   parsePromptTypeInput,
+  type ClassifierLlm,
 } from './core/classify.js'
-import { normalizeInput } from './core/context.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
-import { buildCompilePayload, finalizeCompile } from './core/compiler.js'
+import { compilePrompt, finalizeCompile } from './core/compiler.js'
+import { validateCompileResult } from './core/validate.js'
 
 export const name = 'dsh-prompt-optimizer'
 // 硬依赖只有 llm。HTTP 载体服务名在发布版间漂移过(npm 0.0.1-rc.x 类型包叫
@@ -537,39 +532,36 @@ export function apply(ctx: Context, config: Config) {
             }) as unknown as Message
           let classifier: ClassifierResult | null = null
           let classifyAborted = false
-          if (manualType) {
-            classifier = manualClassifierResult(manualType)
-          } else {
-            try {
-              const classifyMessage = buildOptimizeMessage(
-                buildClassifierUser({ raw_input: text, context_turns: context }, language),
-              )
-              const classifyOptions: GenerateOptions = {
-                provider: route.provider,
-                model: route.model,
-                system: buildClassifierSystem(language),
-                messages: [classifyMessage],
-                maxTokens: CLASSIFIER_MAX_TOKENS,
-                temperature: CLASSIFIER_TEMPERATURE,
+          if (!manualType) {
+            // ── 阶段一:意图分类(AUTO)──────────────────────────────────────────
+            // classifyViaLlm(P03-T02)封装一次小调用:maxTokens 512 / temperature 0 /
+            // lowest reasoning,JSON 契约 + 逐字证据过滤;调用侧失败 / 解析失败一律
+            // general 兜底(绝不阻塞编译)。手动 override 完全跳过本阶段。
+            const classifyOutcome = await classifyViaLlm<Message>(
+              ctx.llm as unknown as ClassifierLlm<Message>,
+              route,
+              { raw_input: text, context_turns: context },
+              {
+                language,
                 signal: abort.signal,
-              }
-              let classifyEffort = sessionEffort
-              if (!preferSessionEffort) {
-                classifyEffort = (await resolveLowestEffortCached(ctx.llm, route.provider, route.model)) ?? sessionEffort
-              }
-              if (classifyEffort) classifyOptions.reasoningEffort = classifyEffort as GenerateOptions['reasoningEffort']
-              const classifyRaw = await collectText(ctx.llm.stream(classifyOptions))
-              const parsed = parseClassifierResult(classifyRaw.text)
-              if (!parsed) throw new Error('分类输出不是合法 JSON')
-              classifier = parsed
-            } catch (error) {
-              if (timedOut || abort.signal.aborted) {
-                classifyAborted = true
-              } else {
-                const reason = error instanceof Error ? error.message : String(error)
+                // 推理强度口径与既有 handler 一致:'session' 时原样透传;否则钳该
+                // 路由最低档,解析不到再回退会话值(不冒险构造无效 effort)。
+                resolveLowestEffort: preferSessionEffort
+                  ? async () => sessionEffort
+                  : async (provider, model) =>
+                      (await resolveLowestEffortCached(ctx.llm, provider, model)) ?? sessionEffort,
+                buildMessage: (payload) => buildOptimizeMessage(payload),
+              },
+            )
+            if (classifyOutcome.aborted) {
+              // 客户端断连 / 超时:交下方既有分支统一处置(不进入编译)。
+              classifyAborted = true
+            } else {
+              if (classifyOutcome.usedFallback) {
+                const reason = classifyOutcome.reason ?? classifyOutcome.failure
                 console.warn(`[${name}] classify failed, fallback general: ${reason}`)
-                classifier = fallbackClassifierResult('分类调用失败,已回退通用模式;可手动选择任务类型')
               }
+              classifier = classifyOutcome.result
             }
           }
 
@@ -588,32 +580,36 @@ export function apply(ctx: Context, config: Config) {
                 error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
               })
             }
-          } else if (classifier) {
-            // ── 归一化 + 策略选择 + 编译载荷 ─────────────────────────────────
-            const strategy = defaultStrategyRegistry.get(classifier.prompt_type)
-            const missing: MissingConstraint[] = classifier.missing_constraints.map((label, index) => ({
-              id: `mc-classifier-${index + 1}`,
-              label,
-            }))
-            const normalized = normalizeInput({ raw_input: text, turns: context, workspace_metadata: {} })
-            const compileVars: CompileVars = {
-              raw_input: normalized.raw_input,
-              context_turns: normalized.bounded_turns,
-              workspace_metadata: normalized.workspace_metadata,
-              missing_constraints: missing,
-            }
-            const payload = buildCompilePayload(strategy, compileVars, { language, mode, previous, legacy: isLegacyGeneral(strategy) })
-            const message = buildOptimizeMessage(payload.user)
-            const system = payload.system
+          } else {
+            // ── 归一化 + 策略选择 + 编译载荷(compilePrompt 10 步编排)────────
+            // override 与 AUTO 共用同一入口:合法 promptType 由 compilePrompt 函数级
+            // 直达 registry(不存在任何分类调用);否则使用上面的 AUTO 分类结果。
+            const effectiveType = manualType ?? classifier!.prompt_type
+            const legacy = isLegacyGeneral(defaultStrategyRegistry.get(effectiveType))
+            const plan = compilePrompt({
+              raw_input: text,
+              turns: context,
+              workspace_metadata: {},
+              ...(manualType ? { promptType: manualType } : { classifier: classifier! }),
+              language,
+              mode,
+              previous,
+              legacy,
+            })
+            const strategy = plan.strategy
+            const effectiveClassifier = plan.classifier
+            const missing = plan.vars.missing_constraints
+            const message = buildOptimizeMessage(plan.user)
+            const system = plan.system
 
             // meta 必须先于任何 delta 下发(客户端据此把阶段切到「正在优化」);
             // 编译结果尚未产出,provenance_ok 在 meta 里是乐观值——done 携带真实值。
             send({
               type: 'meta',
               prompt_type: strategy.type,
-              confidence_level: toConfidenceLevel(classifier.confidence_internal),
+              confidence_level: toConfidenceLevel(effectiveClassifier.confidence_internal),
               missing_constraints: missing,
-              rationale: classifier.rationale,
+              rationale: effectiveClassifier.rationale,
               provenance_ok: true,
             })
 
@@ -668,11 +664,24 @@ export function apply(ctx: Context, config: Config) {
               const outcome = finalizeCompile(strategy, raw.text, {
                 rawInput: text,
                 contextTurns: context ?? [],
-                classifier,
+                classifier: effectiveClassifier,
                 missing,
                 mode,
-                legacy: isLegacyGeneral(strategy),
+                legacy: plan.legacy,
+                language,
               })
+              // 非 legacy 策略再跑 P04-T02 三层输出守卫(required_sections / 术语漂移 /
+              // 建议升级 / 无证据强断言与量化 / 未知项落位)。done 下发的 provenance_ok
+              // 以更严格的三层结果为准;legacy general 保持既有语义(i10 零回归)。
+              if (!plan.legacy) {
+                const validation = validateCompileResult(outcome.result, {
+                  rawInput: text,
+                  contextTurns: context ?? [],
+                  strategy,
+                  rawOutput: raw.text,
+                })
+                outcome.result.provenance_ok = validation.provenance_ok
+              }
               send({
                 type: 'done',
                 // 向后兼容字段:analysis / optimized / wellFormed 语义不变。
