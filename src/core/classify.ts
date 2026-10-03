@@ -1,9 +1,11 @@
 /**
  * Intent Classifier —— 提示词与解析器(纯函数层)。
  *
- * 本模块只负责「分类提示词构建 + JSON 契约容错解析 + 失败回退 + 确定性辅助检测」,
- * **不直接发请求**:真正的 LLM 调用由宿主侧封装(P03-T02 的 classifyViaLlm,
- * 见 src/index.ts 编排),因此本层可以完全脱离 Host ctx / UI 单测与复用。
+ * 本模块负责「分类提示词构建 + JSON 契约容错解析 + 失败回退 + 确定性辅助检测」,
+ * 以及 P03-T02 的调用侧封装 classifyViaLlm:一次分类小调用 + 失败回退。
+ * 调用侧只依赖**结构化最小 LLM 接口**(不 import @deepseek-ai/*),
+ * 因此可在完全脱离 Host ctx / UI 的前提下用 mock llm 单测;真实宿主
+ * handler 主路径的接入在 P05(P03-T02 不修改现有 optimize 流)。
  *
  * 防误判三规则(PLAN-v1 §6,写进 system prompt + 测试):
  *   1. 以「当前输入」为判断对象;历史讨论仅供参考;
@@ -16,7 +18,7 @@
  * 全部文案为本项目独立撰写;未复制任何 AGPL 项目源码 / 模板 / 测试。
  */
 import type { ClassifierResult, ConversationTurn, PromptType } from "./types.js";
-import { stripThinkBlocks } from "../prompt.js";
+import { createThinkFilter, stripThinkBlocks } from "../prompt.js";
 
 /** 任务类型封闭枚举(AUTO 分类器的合法取值;与 types.ts PromptType 对齐)。 */
 export const PROMPT_TYPES: readonly PromptType[] = [
@@ -548,4 +550,413 @@ export function manualClassifierResult(promptType: PromptType): ClassifierResult
 /** 从请求体解析手动类型:非法或缺失返回 undefined(走 AUTO)。 */
 export function parsePromptTypeInput(value: unknown): PromptType | undefined {
   return isPromptType(value) ? value : undefined;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P03-T02:LLM 调用侧封装(classifyViaLlm)
+//
+// 只做「一次分类小调用 + 失败回退」,不解析路由、不发起重试、不接入 handler
+// 主路径(P05 才编排)。硬参数:temperature=0 / maxTokens=512 / lowest reasoning;
+// 流式文本先过 thinkFilter 再走 parseClassifierOutput。
+//
+// 依赖面刻意收敛为结构化最小接口(不 import 任何 Harness LLM 包 / cordis),
+// 好处:core 保持可独立构建、mock llm 即可完整覆盖各失败分支;真实宿主 LLM 与
+// Message 在结构上可直接传入(宿主可注入 buildMessage 以带上 id/source)。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 分类调用里一条消息的最小结构面(真实宿主 Message 满足之)。 */
+export interface ClassifierLlmMessage {
+  role: string;
+  content: unknown;
+}
+
+/** 一个流式分片的最小结构面(与官方流式分片结构兼容)。 */
+export interface ClassifierLlmChunk {
+  type: string;
+  text?: string;
+  index?: number;
+  block?: { type: string; text?: string };
+  reason?: {
+    kind: string;
+    failure?: { code?: string; message?: string };
+  };
+}
+
+/** 模型目录信息的最小结构面(只取推理档位表)。 */
+export interface ClassifierModelInfoLike {
+  reasoning?: { efforts?: readonly { id: unknown; name?: string }[] };
+}
+
+/** 分类调用 GenerateOptions 的最小结构面。 */
+export interface ClassifierLlmStreamOptions<Message = ClassifierLlmMessage> {
+  provider: string;
+  model: string;
+  system?: string;
+  messages: readonly Message[];
+  maxTokens?: number;
+  temperature?: number;
+  reasoningEffort?: string;
+  signal?: AbortSignal;
+}
+
+/** 分类调用依赖的 LLM 结构面(真实宿主 LLM 满足;mock 亦可)。 */
+export interface ClassifierLlm<Message = ClassifierLlmMessage> {
+  stream(options: ClassifierLlmStreamOptions<Message>): AsyncIterable<ClassifierLlmChunk>;
+  resolveModelInfo?(provider: string, model: string): Promise<ClassifierModelInfoLike>;
+}
+
+/** 调用侧稳定 issue id(与 CLASSIFY_ISSUE 同层;UI / 回归可引用,不得随意改名)。 */
+export const CLASSIFY_LLM_ISSUE = {
+  /** 外部 signal 已取消 / 调用中途被中止。 */
+  aborted: "CLASSIFY_LLM_ABORTED",
+  /** 包装层硬超时(不是解析问题,调用方应走超时错误通道,而非兜底结果)。 */
+  timedOut: "CLASSIFY_LLM_TIMED_OUT",
+  /** 认证 / 授权类失败(API key 无效、401/403 等)。 */
+  authFailed: "CLASSIFY_LLM_AUTH_FAILED",
+  /** 其余传输 / 流中断失败。 */
+  streamError: "CLASSIFY_LLM_STREAM_ERROR",
+  /** 调用成功但输出无法解析成可用 JSON 契约。 */
+  invalidOutput: "CLASSIFY_LLM_INVALID_OUTPUT",
+} as const;
+
+/** 失败归类(用于调用方区分「可兜底」与「应走错误/取消通道」)。 */
+export type ClassifyFailureKind =
+  | "none"
+  | "aborted"
+  | "timeout"
+  | "auth"
+  | "stream-error"
+  | "invalid-output";
+
+/** classifyViaLlm 的完整结果(总返回一个 result;失败时为 general 兜底并带标记)。 */
+export interface ClassifyViaLlmOutcome {
+  /** 解析结果或兜底结果(general + 低置信);`usedFallback` 区分二者。 */
+  result: ClassifierResult;
+  /** 解析元信息(兜底路径为合成的降级元信息)。 */
+  meta: ClassifierParseMeta;
+  /** 是否发生了降级(解析补默认 / 未知类型 / 证据丢弃 / 任何失败兜底)。 */
+  degraded: boolean;
+  /** 是否被取消(外部 signal 或包装层超时)。 */
+  aborted: boolean;
+  /** 是否由包装层 `timeoutMs` 触发超时(与客户端断连区分)。 */
+  timedOut: boolean;
+  /** result 是否为 `fallbackClassifierResult()` 兜底。 */
+  usedFallback: boolean;
+  /** 失败归类;成功为 "none"。 */
+  failure: ClassifyFailureKind;
+  /** 失败原因(success 时可能为截断提示);不含用户隐私内容。 */
+  reason?: string;
+  /** 本次调用墙钟耗时(毫秒;审计/性能用,不参与判定)。 */
+  durationMs: number;
+  /** 实际下发的硬参数快照(审计:证明 temp0/512/lowest)。 */
+  request: {
+    provider: string;
+    model: string;
+    maxTokens: number;
+    temperature: number;
+    reasoningEffort?: string;
+  };
+}
+
+/** 分类调用输入(AUTO 路径:本轮输入 + 可选上下文)。 */
+export interface ClassifyViaLlmInput {
+  raw_input: string;
+  context_turns?: readonly ConversationTurn[];
+}
+
+/** classifyViaLlm 选项(全部可选;缺省即最保守行为)。 */
+export interface ClassifyViaLlmOptions<Message = ClassifierLlmMessage> {
+  language?: ClassifierLanguage;
+  /** 外部取消信号(客户端断连 / 宿主统一超时)。 */
+  signal?: AbortSignal;
+  /** 包装层硬超时(毫秒);>0 时生效,到时中止调用并标记 `timedOut`。 */
+  timeoutMs?: number;
+  /** 显式推理强度;优先级最高(用于宿主 `reasoningEffort='session'` 场景)。 */
+  reasoningEffort?: string;
+  /** 宿主注入的最低档解析(复用既有 resolveLowestEffortCached);返回 undefined 表示不指定。 */
+  resolveLowestEffort?: (provider: string, model: string) => Promise<string | undefined>;
+  /** 构造 user 消息(宿主注入带 id/source 的真实 Message);缺省用最小 user 文本消息。 */
+  buildMessage?: (payload: string) => Message;
+  /** 逐段回调:思考块已剥离的干净增量(宿主透传 SSE 时可注入)。 */
+  onDelta?: (text: string) => void;
+}
+
+/** 默认 user 消息:结构化最小形态,真实宿主可注入自己的 Message 工厂。 */
+function defaultClassifierMessage(payload: string): ClassifierLlmMessage {
+  return { role: "user", content: [{ type: "text", text: payload }] };
+}
+
+/** 内部失败载体:保留失败码供 auth 归类。 */
+class ClassifierStreamFailure extends Error {
+  readonly code: string | undefined;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "ClassifierStreamFailure";
+    this.code = code;
+  }
+}
+
+/** 认证 / 授权类失败关键词(保守;命中即归 auth,调用方可提示检查 API key)。 */
+const AUTH_FAILURE_PATTERN =
+  /auth|unauthor|permission|forbidden|invalid[_ -]?api[_ -]?key|api[_ -]?key|401|403/i;
+
+function isAuthFailure(message: string): boolean {
+  return AUTH_FAILURE_PATTERN.test(message);
+}
+
+/** 兜底路径的合成元信息(调用侧失败没有解析元信息,显式标记降级)。 */
+function fallbackMeta(issues: string[]): ClassifierParseMeta {
+  return {
+    jsonCandidates: 0,
+    degraded: true,
+    issues,
+    unknownTypeFallback: false,
+    droppedEvidence: 0,
+    lowConfidence: true,
+    multiIntent: false,
+  };
+}
+
+/**
+ * 内部最低档解析:显式注入优先;否则按 llm.resolveModelInfo 的档位表取最低。
+ * 目录查询失败 / 模型不暴露推理时返回 undefined(不冒险乱发)。
+ */
+async function resolveLowestEffortFromLlm(
+  llm: ClassifierLlm<unknown>,
+  provider: string,
+  model: string,
+): Promise<string | undefined> {
+  try {
+    const efforts = (await llm.resolveModelInfo?.(provider, model))?.reasoning?.efforts;
+    if (!efforts?.length) return undefined;
+    const keyworded = efforts.find((effort) =>
+      /none|minimal|low|低/i.test(`${effort.id} ${effort.name ?? ""}`),
+    );
+    return String((keyworded ?? efforts[0]).id);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 折叠分类流:文本增量过 thinkFilter(跨 chunk 剥 `<think>`),
+ * finish 为 error/aborted 时抛出,max-tokens 标记截断;无增量时降级用 block-end 文本。
+ */
+async function collectClassifierText(
+  stream: AsyncIterable<ClassifierLlmChunk>,
+  onDelta?: (text: string) => void,
+): Promise<{ text: string; truncated: boolean }> {
+  const filter = createThinkFilter();
+  const blocks = new Map<number, string>();
+  let filtered = "";
+  let truncated = false;
+
+  for await (const chunk of stream) {
+    switch (chunk.type) {
+      case "text-delta": {
+        const clean = filter.push(chunk.text ?? "");
+        if (clean) {
+          filtered += clean;
+          onDelta?.(clean);
+        }
+        break;
+      }
+      case "block-end": {
+        if (chunk.block?.type === "text") {
+          blocks.set(chunk.index ?? blocks.size, chunk.block.text ?? "");
+        }
+        break;
+      }
+      case "finish": {
+        const reason = chunk.reason;
+        if (!reason) break;
+        if (reason.kind === "error" || reason.kind === "aborted") {
+          const code = reason.failure?.code;
+          const detail = reason.failure
+            ? `${code ?? "unknown"}: ${reason.failure.message ?? ""}`.trim()
+            : reason.kind;
+          throw new ClassifierStreamFailure(`模型调用失败(${detail})`, code);
+        }
+        // 分类调用不带工具,模型请求工具说明路由/适配异常,明确报错而非当成功。
+        if (reason.kind === "tool-calls") {
+          throw new ClassifierStreamFailure("模型意外请求工具调用(分类调用不提供工具),请检查模型路由配置");
+        }
+        if (reason.kind === "max-tokens") truncated = true;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  const tail = filter.flush();
+  if (tail) {
+    filtered += tail;
+    onDelta?.(tail);
+  }
+  // 优先使用增量(协议主通道);某些适配器只发 block-end 时降级,仍剥思考块。
+  const text =
+    filtered ||
+    stripThinkBlocks(
+      [...blocks.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([, blockText]) => blockText)
+        .join(""),
+    );
+  return { text, truncated };
+}
+
+/**
+ * classifyViaLlm —— 一次分类小调用(宿主侧调用入口,P03-T02)。
+ *
+ * 语义:
+ *   - 正常 → parseClassifierOutput;结果可用即返回,失败(无可用 JSON)→ general 兜底;
+ *   - error(AUTH / 传输)→ general + 低置信兜底,`failure` 标注 auth / stream-error;
+ *   - 超时(`timeoutMs`)→ `timedOut: true`,调用方应走超时错误通道(与现有宿主风格一致);
+ *   - 外部 signal 取消 → `aborted: true`;signal 在调用前已取消时立即返回,不发起请求。
+ *
+ * 本函数不解析路由、不重试、不写 UI、不影响 handler 主路径(P05 才编排)。
+ */
+export async function classifyViaLlm<Message = ClassifierLlmMessage>(
+  llm: ClassifierLlm<Message>,
+  route: { provider: string; model: string },
+  input: ClassifyViaLlmInput,
+  options: ClassifyViaLlmOptions<Message> = {},
+): Promise<ClassifyViaLlmOutcome> {
+  const startedAt = Date.now();
+  const language: ClassifierLanguage = options.language ?? "zh";
+  const rawInput = input.raw_input ?? "";
+  const contextTurns = input.context_turns ?? [];
+  const buildMessage =
+    options.buildMessage ??
+    ((payload: string): Message => defaultClassifierMessage(payload) as unknown as Message);
+
+  // 请求快照:即使提前取消也给出「本应使用的硬参数」,便于审计与回归。
+  const request: ClassifyViaLlmOutcome["request"] = {
+    provider: route.provider,
+    model: route.model,
+    maxTokens: CLASSIFIER_MAX_TOKENS,
+    temperature: CLASSIFIER_TEMPERATURE,
+  };
+  const finish = (
+    outcome: Omit<ClassifyViaLlmOutcome, "durationMs" | "request">,
+  ): ClassifyViaLlmOutcome => ({
+    ...outcome,
+    durationMs: Date.now() - startedAt,
+    request,
+  });
+
+  // 1. 调用前已取消:立即生效,绝不发起请求。
+  if (options.signal?.aborted) {
+    return finish({
+      result: fallbackClassifierResult("分类已取消,回退通用模式;可手动选择任务类型"),
+      meta: fallbackMeta([CLASSIFY_LLM_ISSUE.aborted]),
+      degraded: true,
+      aborted: true,
+      timedOut: false,
+      usedFallback: true,
+      failure: "aborted",
+      reason: "aborted before start",
+    });
+  }
+
+  // 2. 推理强度:显式 > 宿主注入的最低档解析 > 内部目录解析。
+  let reasoningEffort = options.reasoningEffort;
+  if (!reasoningEffort) {
+    const resolver =
+      options.resolveLowestEffort ?? ((provider, model) => resolveLowestEffortFromLlm(llm, provider, model));
+    reasoningEffort = await resolver(route.provider, route.model);
+  }
+  if (reasoningEffort) request.reasoningEffort = reasoningEffort;
+
+  // 3. 组合中止信号:外部 signal 或包装层超时,任一触发都中止底层调用。
+  const controller = new AbortController();
+  let timedOut = false;
+  const onExternalAbort = (): void => controller.abort();
+  options.signal?.addEventListener("abort", onExternalAbort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  if (typeof options.timeoutMs === "number" && options.timeoutMs > 0) {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, options.timeoutMs);
+  }
+
+  try {
+    const system = buildClassifierSystem(language);
+    const user = buildClassifierUser({ raw_input: rawInput, context_turns: contextTurns }, language);
+    const stream = llm.stream({
+      provider: route.provider,
+      model: route.model,
+      system,
+      messages: [buildMessage(user)],
+      maxTokens: CLASSIFIER_MAX_TOKENS,
+      temperature: CLASSIFIER_TEMPERATURE,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      signal: controller.signal,
+    });
+
+    const collected = await collectClassifierText(stream, options.onDelta);
+    // 中止可能以「正常 end」收尾:半截输出不可信,统一走取消 / 超时语义。
+    if (controller.signal.aborted) {
+      throw new ClassifierStreamFailure(timedOut ? "分类调用超时" : "分类调用被中止");
+    }
+
+    const outcome = parseClassifierOutput(collected.text, { rawInput, contextTurns });
+    if (outcome.result === null) {
+      return finish({
+        result: fallbackClassifierResult("分类输出无法解析,已回退通用模式;可手动选择任务类型"),
+        meta: fallbackMeta([CLASSIFY_LLM_ISSUE.invalidOutput, ...outcome.meta.issues]),
+        degraded: true,
+        aborted: false,
+        timedOut: false,
+        usedFallback: true,
+        failure: "invalid-output",
+        reason: "classifier output is not usable JSON",
+      });
+    }
+    return finish({
+      result: outcome.result,
+      meta: outcome.meta,
+      degraded: outcome.meta.degraded,
+      aborted: false,
+      timedOut: false,
+      usedFallback: false,
+      failure: "none",
+      reason: collected.truncated ? "classifier output truncated at maxTokens" : undefined,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (timedOut || controller.signal.aborted) {
+      return finish({
+        result: fallbackClassifierResult(
+          timedOut
+            ? "分类调用超时,回退通用模式;可手动选择任务类型"
+            : "分类调用已取消,回退通用模式;可手动选择任务类型",
+        ),
+        meta: fallbackMeta([timedOut ? CLASSIFY_LLM_ISSUE.timedOut : CLASSIFY_LLM_ISSUE.aborted]),
+        degraded: true,
+        aborted: true,
+        timedOut,
+        usedFallback: true,
+        failure: timedOut ? "timeout" : "aborted",
+        reason: message,
+      });
+    }
+    const auth = isAuthFailure(message);
+    return finish({
+      result: fallbackClassifierResult("分类调用失败,已回退通用模式;可手动选择任务类型"),
+      meta: fallbackMeta([auth ? CLASSIFY_LLM_ISSUE.authFailed : CLASSIFY_LLM_ISSUE.streamError]),
+      degraded: true,
+      aborted: false,
+      timedOut: false,
+      usedFallback: true,
+      failure: auth ? "auth" : "stream-error",
+      reason: message,
+    });
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onExternalAbort);
+  }
 }
