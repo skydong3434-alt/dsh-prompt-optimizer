@@ -5,7 +5,15 @@
  * 运行:先 `npm run build`,再 `node test/controller.test.mjs`。
  */
 import assert from 'node:assert/strict'
-import { createOptimizerController, extractContextTurns, shouldAutoClose, splitCommandPrefix } from '../lib/controller.js'
+import {
+  createOptimizerController,
+  extractContextTurns,
+  shouldAutoClose,
+  splitCommandPrefix,
+  MANUAL_PROMPT_TYPES,
+  TYPE_OPTIONS,
+} from '../lib/controller.js'
+import { PROMPT_TYPES } from '../lib/core/classify.js'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const enc = new TextEncoder()
@@ -652,8 +660,19 @@ const DONE = {
   console.log('✓ c22 meta + 四组 provenance 落盘')
 }
 
-// c23. AUTO 下拉:auto 不发 promptType;手动覆盖随请求发出并跨 close 保留
+// c23. AUTO 下拉:选项集完整且顺序固定;auto 不发 promptType;手动覆盖随请求发出并跨 close 保留
 {
+  // 选项集是「AUTO + 六个真实类型」:general 是 AUTO 兜底,契约上不进下拉。
+  assert.equal(TYPE_OPTIONS[0], 'auto', 'AUTO 必须排在下拉首位')
+  assert.deepEqual(TYPE_OPTIONS.slice(1), [...MANUAL_PROMPT_TYPES], '手动项应与 MANUAL_PROMPT_TYPES 一致')
+  assert.deepEqual(
+    [...MANUAL_PROMPT_TYPES],
+    PROMPT_TYPES.filter((t) => t !== 'general'),
+    '下拉手动项必须覆盖除 general 外的全部 PromptType(与 classify 闭集对齐)',
+  )
+  assert.equal(new Set(TYPE_OPTIONS).size, TYPE_OPTIONS.length, '下拉取值不得重复')
+  assert.equal(TYPE_OPTIONS.includes('general'), false, 'general 兜底类型不得出现在下拉里')
+
   const { ctx } = makeCtx()
   const c = createOptimizerController(ctx)
   assert.equal(c.getSnapshot().typeSelection, 'auto', '默认应为 AUTO')
@@ -676,6 +695,52 @@ const DONE = {
     },
   )
   console.log('✓ c23 AUTO 下拉 / 手动覆盖')
+}
+
+// c24. 每种手动类型都可直达请求体;「重新优化」沿用所选类型;切回 AUTO 后不再携带
+{
+  const { ctx } = makeCtx()
+  const c = createOptimizerController(ctx)
+
+  // 逐个手动类型:选择 → 优化 → 请求体携带该类型
+  for (const type of MANUAL_PROMPT_TYPES) {
+    c.setTypeSelection(type)
+    assert.equal(c.getSnapshot().typeSelection, type, `选择 ${type} 后 state 应立即生效`)
+    await withFetch(
+      () => sseResponse([DONE]),
+      async (calls) => {
+        await c.optimize(`${type} 草稿`, 's1')
+        assert.equal(calls[0].body.promptType, type, `${type} 应随请求发出`)
+      },
+    )
+  }
+
+  // 重新优化(retry)沿用「当前」所选类型,而不是首轮使用的类型
+  c.setTypeSelection('planning')
+  await withFetch(
+    () => sseResponse([DONE]),
+    async (calls) => {
+      await c.optimize('规划草稿', 's1')
+      assert.equal(calls[0].body.promptType, 'planning', '首轮携带所选类型')
+      c.setTypeSelection('diagnostic')
+      c.retry()
+      await sleep(10)
+      assert.equal(calls.length, 2, 'retry 应重新发起一次请求')
+      assert.equal(calls[1].body.promptType, 'diagnostic', '重新优化沿用当前所选类型')
+      assert.equal(calls[1].body.text, '规划草稿', 'retry 复用同一草稿')
+    },
+  )
+
+  // 切回 AUTO:后续请求不再携带 promptType(回到分类器路径)
+  c.setTypeSelection('auto')
+  await withFetch(
+    () => sseResponse([DONE]),
+    async (calls) => {
+      await c.optimize('草稿', 's1')
+      assert.equal(calls[0].body.promptType, undefined, '切回 AUTO 后不应携带 promptType')
+    },
+  )
+  console.log('✓ c24 各手动类型 + 重新优化沿用所选')
 }
 
 console.log('\ncontroller: all passed')

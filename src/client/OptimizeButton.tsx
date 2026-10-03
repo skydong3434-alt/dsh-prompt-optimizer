@@ -3,17 +3,26 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 类型级引入,激活 'conversation.input.right' 的 SlotMap 合并声明。
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
-import { useT } from './i18n.js'
-import type { OptimizerController, TypeSelection } from './controller.js'
+import { useT, type MessageKey } from './i18n.js'
+import { TYPE_OPTIONS, type OptimizerController, type TypeSelection } from './controller.js'
 
 export type OptimizeButtonProps = PropsRuntime<'conversation.input.right'>
 
-/** AUTO 下拉:auto = 自动识别;其余为手动覆盖(classifier 完全不调用)。 */
-const TYPE_OPTIONS: { value: TypeSelection; key: 'panel.type.auto' | 'panel.type.research' | 'panel.type.general' }[] = [
-  { value: 'auto', key: 'panel.type.auto' },
-  { value: 'research', key: 'panel.type.research' },
-  { value: 'general', key: 'panel.type.general' },
-]
+/**
+ * 下拉取值 → 文案键:每个 TypeSelection 一条,新增类型时类型检查会强制补齐,
+ * 不会漏翻。general 不在 TYPE_OPTIONS(契约:兜底类型不进下拉),但保留映射,
+ * 以防程序化设置 typeSelection='general' 时文案缺位。
+ */
+const TYPE_LABEL_KEY: Record<TypeSelection, MessageKey> = {
+  auto: 'panel.type.auto',
+  research: 'panel.type.research',
+  planning: 'panel.type.planning',
+  execution: 'panel.type.execution',
+  diagnostic: 'panel.type.diagnostic',
+  review: 'panel.type.review',
+  creative: 'panel.type.creative',
+  general: 'panel.type.general',
+}
 
 // 类型下拉:与优化按钮同一行的紧凑选择器;沿用 dsw 设计令牌,零新依赖。
 const selectStyle = {
@@ -82,9 +91,9 @@ export function createOptimizeButton(controller: OptimizerController) {
           aria-label={t('button.typeTitle')}
           onChange={(event) => controller.setTypeSelection(event.target.value as TypeSelection)}
         >
-          {TYPE_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {t(option.key)}
+          {TYPE_OPTIONS.map((value) => (
+            <option key={value} value={value}>
+              {t(TYPE_LABEL_KEY[value])}
             </option>
           ))}
         </select>

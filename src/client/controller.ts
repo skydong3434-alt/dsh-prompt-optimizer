@@ -9,6 +9,24 @@ import type { PromptType } from '../core/types.js'
 /** 下拉可选的任务类型:auto = AUTO 自动识别;其余为手动覆盖。 */
 export type TypeSelection = PromptType | 'auto'
 
+/**
+ * UI 下拉里的手动类型(不含 AUTO)。`general` 是 AUTO 无法判定时的兜底
+ * (types.ts 契约:不单独出现在 UI 下拉),故不在此列——手动覆盖只暴露
+ * 六个真实策略类型,避免把「兜底」当成用户可选项。
+ * 单一真值源:OptimizeButton 渲染与 controller.test 断言都从这里取。
+ */
+export const MANUAL_PROMPT_TYPES: readonly PromptType[] = [
+  'research',
+  'planning',
+  'execution',
+  'diagnostic',
+  'review',
+  'creative',
+] as const
+
+/** 下拉全部取值(AUTO 恒在最前);顺序即 UI 展示顺序。 */
+export const TYPE_OPTIONS: readonly TypeSelection[] = ['auto', ...MANUAL_PROMPT_TYPES] as const
+
 /** Provenance 记录在 UI 侧的展示形态(结构化自 done 事件)。 */
 export interface ProvenanceView {
   id: string
