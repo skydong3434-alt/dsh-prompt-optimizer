@@ -1,6 +1,6 @@
 # P03-T01 — Classifier 提示词与解析器（纯函数）
 
-**Status**: PENDING
+**Status**: DONE（2026-10-03；commit 1aebeec：classify.ts 纯函数层 + test/classify.test.mjs c1..c10 全绿）
 **Phase**: P03（Intent Classifier）
 ## Executor
 Claude Code + DSH 验收
