@@ -32,6 +32,20 @@ node/scripts/git
 3. 逐类回修 → 复跑直至 deterministic 全绿（或触发 S-08/retry exhausted）
 4. 人工标注样本（Human）→ 校准 evaluator 阈值与提示词 → 记录校准依据
 
+## G-4 真人验收暴露的优先修复清单（2026-10-03）
+
+按「regression 证据驱动」铁律处理，**不得预防性调参**。首轮回归后逐项定位并修复：
+
+| # | 问题 | 归属层 | 证据要求 |
+|---|---|---|---|
+| 1 | partial-quote provenance 过度归因 | provenance.ts / validate.ts | 部分匹配 quote 的 fixture → 断言不误判为 USER_EXPLICIT |
+| 2 | UNKNOWN semantic dedup | compiler.ts / 策略 outputContract | 语义重复 UNKNOWN → 断言合并后唯一 |
+| 3 | UNKNOWN non-blocking completion | validate.ts + invariant A | 多 UNKNOWN 场景 → provenance_ok 可 true 且无阻塞句式 |
+| 4 | conflicting evidence evidence-weighted judgment | research 策略 + validate | 真实冲突对 → 断言并列呈现 + 强度提示 |
+| 5 | **Planning 手动 override 的格式遵守 / provenance regression** | planning 策略 + compiler | G-4 实测失败；override 时须 16 段齐全 + 四段协议 + provenance 通过 |
+
+第 5 项为 G-4 真实操作中**实际观测到失败**，优先级最高（有直接证据，非推测）。
+
 ## Tests
 deterministic 全绿为准；evaluator 参考线达标（阈值经人工校准后生效）；S-08 记录
 
