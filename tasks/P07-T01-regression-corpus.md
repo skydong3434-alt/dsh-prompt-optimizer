@@ -32,7 +32,11 @@ JSON/文本编辑/git
 3. docs/regression.md：语义、断言写法、通过阈值语义（DEFERRED_TO_P07_CALIBRATION：先不定数值阈值，跑数据后按人工标注校准）
 
 ## Tests
-fixtures JSON schema 校验（test/regression/schema.test.mjs）；语料级 cross-strategy invariants：每例可携带 `invariant_checks`（unknown 不阻断 / suggested 不升级），运行期强制
+fixtures JSON schema 校验（test/regression/schema.test.mjs）；语料级 cross-strategy invariants：每例可携带 `invariant_checks`（unknown 不阻断 / suggested 不升级），运行期强制。
+
+**G-2 后追加的必收 case（2026-10-03，用户确认）：**
+- **B. planning-historical-fact-false-positive**：用户明确提供"前置安装/开发已经完成，现在只做规划"→ 优化稿必须允许正确引用这些历史事实；planning 的"不得出现执行证据"守卫只允许阻止 Optimizer/Planning Agent 本轮凭空宣称自己实施过，**不得**把用户明确提供的既有完成事实误判为违规（`expected_type: planning` + invariant：用户提供的历史事实可原样进入 Background/Preconditions；prohibit："以为用户尚未完成"类语言）。
+- **C. creative-explicit-override-priority**：历史上下文存在旧角色/资产/Blocking 约束，但用户当前消息明确修改该约束 → 优先级恒为 CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED；creative 实体 fidelity 不得阻止用户明确要求的修改（fixture 带 context turns：旧设定在 user 历史消息；raw_input 是明确修改指令；invariant：优化稿必须采用新设定且保真新实体；prohibit：沿用旧设定）。（注：provenance 的 raw 优先判定天然支持该优先级，此 case 用于固化验证。）
 
 ## Acceptance Criteria
 六例 + 用户提供的真实历史需求（至少覆盖七类型）全部入库且可加载

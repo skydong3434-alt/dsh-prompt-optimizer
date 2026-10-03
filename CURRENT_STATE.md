@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-03T07:52:27+0800
-current_phase: P02
-current_task:
-status: GATE_PENDING
+last_updated: 2026-10-03T18:10:00+08:00
+current_phase: P03
+current_task: P03-T01
+status: RUNNING
 next_task: P03-T01
 machine_gate: PASS
-human_review: BLOCKING_G2
-phase_status: G-VS 已通过（2026-10-03 用户验收）。P02-T01（_shared 完整化）e06bf3b、P02-T02（planning 策略）9784dbe、P02-T03（execution 策略）543f737、P02-T04（diagnostic 策略）e0ec912、P02-T05（review 策略）11315af、P02-T06（creative 策略）7c9bde3、P02-T07（general fallback + research 正式化）bb37841 已完成；P02-T08（Registry 与版本化）已完成并提交 419f999：registry.ts 完整版——七策略按 PromptType 规范顺序全注册、get() 未知类型→general、list()/types()/getVersion()/getSections() 版本可审计、自定义注册表裁掉 general 自动补回、general 过渡期仍标 legacy（host 编译路径零回归）；新增 test/registry.test.mjs（rg1–rg7），core-pipeline cp3 机械同步 2→7 类型。P02 十任务全部完成，等待 G-2（七策略内容抽审：铁律/措辞/边界）用户确认后进入 P03。
+human_review: PASS_G2
+phase_status: G-2 已通过（2026-10-03 七策略定稿）。G-2 后追加的 Performance/Effect 验收要求已入 P07 契约：A. per-strategy token/latency 测量（system/context/total input token + latency，不预防性压缩）；B. planning 历史事实误报 case（用户提供的既有完成事实允许引用，守卫只阻止 Optimizer 凭空宣称实施）；C. creative 显式覆盖优先级 case（CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED）。七策略文本不再改动（无真实 regression 证据前不预防性调参）。next=P03-T01（classifier 完整化）。
 latest_commit: 419f99997045cb81f20c20682ce554ce86b16f74
 auto_continue: true
-stop_reason: awaiting user confirmation: G-2
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
