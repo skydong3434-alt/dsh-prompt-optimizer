@@ -1,6 +1,6 @@
 # P03-T03 — 防误判规则与 Manual Override 测试
 
-**Status**: PENDING
+**Status**: DONE（2026-10-03；test/classify-guards.test.mjs g1–g10 + fixtures 全绿；S-06 抽查 stable=true，记录见 docs/classifier.md）
 **Phase**: P03
 ## Executor
 DSH（验收）+ Claude Code（补测）
