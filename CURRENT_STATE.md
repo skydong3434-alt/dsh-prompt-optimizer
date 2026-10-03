@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T00:13:00+08:00
+last_updated: 2026-10-04T00:35:00+08:00
 current_phase: P07
-current_task:
-status: GATE_PENDING
+current_task: P07-T02
+status: RUNNING
 next_task: P07-T02
 machine_gate: PASS
-human_review: BLOCKING_G3
-phase_status: P07-T01 完成（DSH 草案，f6f7466）：test/regression/fixtures 12 例（六 golden + general 兜底 + 真实历史需求），覆盖 G-VS 真实案例、G-4 五项（partial-quote/UNKNOWN dedup/non-blocking/conflicting evidence 加权/Planning override 契约）与 G-2 case B/C；schema.test.mjs 做 JSON schema + 语料级 invariant_checks 前置自洽校验（planning 16 段直接对齐 registry）；docs/regression.md 记录语料语义与阈值 DEFERRED_TO_P07_CALIBRATION（R-2）。npm test 全绿 + apo_state PASS。**命中 Human Gate G-3**：语料草案待用户定稿确认（阈值仍延后到 P07-T03 人工标注校准）。next=P07-T02（runner 实现，待 G-3 确认后）。
+human_review: PASS_G3
+phase_status: G-3 已通过（2026-10-04 用户预授权，本次追加即确认）：语料集定稿 14 例（原 12 例全部保留，新增 fixture 13 assistant-only 不升级为用户决定、fixture 14 execution safe-mutation-boundary 非永久规则）；schema 全过 + npm test 22 套全绿 + apo_state PASS + 原 12 例未改；R-2 保持：G-3 不设 model-assisted 固定阈值（deterministic FAIL=硬 Gate，evaluator=参考线，P07-T03 首轮数据+人工标注后校准）。 next=P07-T02（regression runner + token/latency 测量）→ P07-T03（首轮真实回归，只基于失败证据修复）→ 停靠 G-5。
 latest_commit: f6f7466
 auto_continue: true
-stop_reason: awaiting user confirmation: G-3
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
