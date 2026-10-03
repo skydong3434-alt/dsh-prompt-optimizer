@@ -40,7 +40,7 @@
     "prepare": "node scripts/build.mjs",
     "sync:types": "node scripts/sync-types.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/prompt.test.mjs && node test/controller.test.mjs && node test/provenance.test.mjs && node test/strategies-research.test.mjs && node test/strategies-shared.test.mjs && node test/strategies-planning.test.mjs && node test/strategies-execution.test.mjs && node test/strategies-diagnostic.test.mjs && node test/strategies-review.test.mjs && node test/strategies-creative.test.mjs && node test/strategies-general.test.mjs && node test/registry.test.mjs && node test/core-pipeline.test.mjs && node test/vertical-slice.test.mjs"
+    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/prompt.test.mjs && node test/controller.test.mjs && node test/provenance.test.mjs && node test/strategies-research.test.mjs && node test/strategies-shared.test.mjs && node test/strategies-planning.test.mjs && node test/strategies-execution.test.mjs && node test/strategies-diagnostic.test.mjs && node test/strategies-review.test.mjs && node test/strategies-creative.test.mjs && node test/strategies-general.test.mjs && node test/registry.test.mjs && node test/classify.test.mjs && node test/core-pipeline.test.mjs && node test/vertical-slice.test.mjs"
   },
   "dsh": {
     "bundle": {
