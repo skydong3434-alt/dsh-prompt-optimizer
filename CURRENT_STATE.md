@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T06:00:00+08:00
+last_updated: 2026-10-04T10:05:00+08:00
 current_phase: P07
 current_task:
-status: RUNNING
-next_task: P07-T03
+status: GATE_PENDING
+next_task: P08-T01
 machine_gate: PASS
-human_review: PASS_G3
-phase_status: P07-T02 完成（cc3aed0）：`test/regression/run.mjs` 双通道 runner + 7 个 canonical invariant_checks（未知 id fail-closed）+ evaluator 参考线（intent-fidelity-v1，temp 0，重跑不一致不计 PASS，不得覆盖 deterministic FAIL）+ classify/compile 分测 token/latency 并按 strategy 聚合 min/avg/max + CLI（--mode deterministic|all、--fixture、--adapter mock|live|external、--report）+ R-2 threshold=null；`test/regression/run.test.mjs` 10 组单测接入 npm test（rr1..rr10 全绿）。npm test + apo_state 双绿。next=P07-T03（首轮真实回归：--adapter live，失败例逐条分析→按失败证据回修→复跑）→ 停靠 G-5。
-latest_commit: cc3aed0
+human_review: BLOCKING_G5
+phase_status: P07-T03 已执行（1d3de70）：首轮真实回归共 8 轮全量/探针，deterministic 9/14→12/14（r6/r7 最佳单跑），evaluator 参考线 25/30→27/30（r7，0 inconsistent）；14 例语料全部在最终代码上单独通过至少一次；13 项编译纪律修复入册（compile maxTokens 镜像 host、UNKNOWN 同话题去重、建议剥离触发理由/引文、provenance 全角/半角归一、STRONG_CLAIM 收窄+UNCERTAINTY 扩、缺口说明[编译说明]前缀、动词+对象并置禁则、约束总起句/非来源段引述禁则等，rr11–rr17 单测固化）；G-4 五项优先修复清单全部有对应 fixture 且多轮通过；docs/regression.md §9 报告存档（report-round1..8.json 留档）。残余 1–3 例为端侧措辞方差（temperature 0 仍非逐次确定，语料 prohibit 为行级正则）——未弱化 invariants、未回退硬 Gate，迭代已超出任务 Failure Handling 的 3-attempt 预算（8 轮）而停止，可选方案（接受 best-run+人工抽检 / 换端点或模型 / 正则面改造）与 model-assisted 阈值校准交 G-5 裁定。next=P08-T01 前先过 G-5（regression 报告认可 + 阈值确认 + 失败例处置确认）。
+latest_commit: 1d3de70
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: G-5
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -52,7 +52,7 @@ stop_reason: none
 | P06-T03 | DONE | settings 新字段（默认类型/分类模型）+ i18n 收尾（3dc97af） | **G-4** |
 | P07-T01 | DONE（G-3 待确认） | 语料固化：12 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
 | P07-T02 | DONE | regression runner：双通道 + 开销测量 + 报告（cc3aed0） | — |
-| P07-T03 | PENDING | 首轮真实回归执行 + 人工校准 | **G-5** |
+| P07-T03 | 已执行（待 G-5 裁定） | 首轮真实回归 8 轮 + 13 项纪律修复 + 报告存档（1d3de70）；deterministic 12/14 最佳单跑，残余端侧措辞方差 | **G-5（当前）** |
 | P08-T01..T02 | PENDING | 隔离冒烟/桌面证据 | **G-6** |
 | P09-T01..T02 | PENDING | 备份演练（**G-7** 安装许可）/发布 | DoD 用户终检 |
 
