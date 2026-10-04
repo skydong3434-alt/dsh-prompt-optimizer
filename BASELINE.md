@@ -117,3 +117,50 @@ P01 Core Contracts & Provenance（G-1 出口）
 
 ## 下一阶段
 P06 UI Integration（G-4 出口）
+
+---
+
+# 附录 B — P08-T02 桌面端实测版本矩阵（Isolated Desktop Integration）
+
+日期：2026-10-04 ｜ 检查点：S-04（DSH API 冲突）/ S-09（正式 profile 零改动）
+结论：**全绿** —— 全量测试 26 文件 exit 0；真实 DSH Desktop 2.0.15（apo-dev 隔离 profile）四项真机探针全部通过。
+
+## B.1 版本矩阵（本轮实测）
+
+| 维度 | 实测值 |
+|---|---|
+| 主机 / OS | macOS 26.5.1（Build 25F80，Darwin arm64） |
+| Node / npm | v22.23.0 / 10.9.8 |
+| 目标宿主 | DSH Desktop 2.0.15（/Applications/DSH Desktop.app） |
+| dsh | 0.1.7-rc.2 |
+| @deepseek-ai/cordis | 4.0.4 |
+| @deepseek-ai/dsh-llm（宿主运行时） | 0.1.7-rc.2（repo devDep 0.2.0-rc.2 为双版本回归另一面） |
+| 插件版本 / 分支 | @y1x1n/dsh-prompt-optimizer 0.4.0 / phase/p01.5-slice |
+| 隔离 profile | `~/.dsh/profiles/apo-dev`（P08-T01 新建；本轮仅复用，文件逐字节未改） |
+| 会话默认模型 | opencode-go / deepseek-v4-flash（agent-default-model，与 headless 同款 E1 批准路由） |
+| 模型端点 | https://opencode.ai/zen/go（providers.opencode-go；API key 读 ~/.dsh/.credentials.yaml 的 OPENCODE_API_KEY；头 x-opencode-session: dsh-apo-dev-smoke） |
+| 插件回退模型 | fallbackModel 默认空（未配置任何 DeepSeek fallback，宁可明确失败不静默产生计费） |
+| APO HTTP 端口 | 18776（--no-open，headless boot） |
+
+## B.2 实测结论（探针摘要，证据细节见 docs/p08-desktop.md）
+
+| # | 探针 | 结果 |
+|---|---|---|
+| T-1 | 直接 HTTP smoke（无 session context，不带 provider/model）→ 回落第一 provider deepseek-official → QUOTA 明确报错 | 测试入口行为（记录，非缺陷） |
+| T-2 | 真实 UI session 等价载荷（body provider=opencode-go/model=deepseek-v4-flash）→ done 回声 opencode-go/deepseek-v4-flash + 758 帧真实流式 | **PASS**（Follow DSH model route；真实 UI 会话不回落第一 provider） |
+| T-3 | fallbackModel 默认空 + 无效主路由 → SSE 明确 error，无任何 provider 切换 | **PASS**（Fallback billing safety：默认不隐式回退） |
+| T-4 | 显式配置 fallbackModel（--patch 覆盖层）→ done.fallbackUsed=true + fallbackReason | **PASS**（Fallback billing safety：仅在显式配置时启用） |
+
+KNOWN_NON_BLOCKING_HARNESS_LIMITATION：research `provenance_ok=false` 为 phrasing-sensitive
+deterministic regex 假阳性族（本次表面「声称支持…但无实测」条件句；G-5/P08-T01 既有表面
+「[待补充: 时间/工期约束]」前缀式与「取决于…」转述同源）——记录、不修、不重开 P02/P04 模块。
+
+## B.3 检查点结论
+
+- **S-04**：cordis 4.0.4 / dsh-llm 0.1.7-rc.2 宿主面下真实 boot + 全量测试全绿，无 API 冲突。
+- **S-09**：正式 desktop profile 零改动（本轮未读未写 `~/.dsh/profiles/desktop/**`；apo-dev profile
+  本体 sha256 任务前后一致，T-4 仅用启动期 `--patch` 覆盖层）。
+- 未触发任何 Stop Condition；桌面端实测证据封存（docs/p08-desktop.md），可进入 P09（G-7 前不再动正式 profile）。
+
+## 下一阶段
+P09-T01 Backup & Install Drill（G-7 出口）
