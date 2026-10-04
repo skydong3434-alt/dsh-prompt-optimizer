@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T12:00:00+08:00
-current_phase: P08
-current_task: P08-T02
-status: RUNNING
-next_task: P08-T02
+last_updated: 2026-10-04T13:54:50+08:00
+current_phase: P09
+current_task: 
+status: GATE_PENDING
+next_task: P09-T01
 machine_gate: PASS
-human_review: PASS_G6
-phase_status: G-6 已通过（2026-10-04 用户裁决 A）：隔离 profile 真实加载成功；正式 desktop profile S-09 零污染（sha256+mtime 一致）；SSE/AUTO/override/context/cancel/replace/undo/dropdown/settings/fallback 全部真实或既定自动化验证通过；唯一 provenance_ok=false 属 G-5 已识别的 phrasing-sensitive regex false positive（KNOWN_NON_BLOCKING_HARNESS_LIMITATION，本轮不修，后续单独治理 deterministic regex 边界）。 P08-T02 经用户裁决新增两项真实桌面验收（已入任务契约）：①Follow DSH model route——真实 UI session 必须实际调用 opencode-go/deepseek-v4-flash，区分"直接 HTTP smoke 无 session context"（回落第一 provider 属测试入口行为）与"真实 DSH UI session"（若回落 = BLOCKING route defect，G-7 前必须修）；②Fallback billing safety——fallback 仅显式 fallbackModel 时启用，默认空时主模型失败必须明确报错，不得隐式 fallback 到任何其他 provider（尤其 deepseek-official）。 plus 三槽位渲染/双版本设置/SSE/replace·undo/BASELINE 版本矩阵。出口 G-7（唯一正式修改 desktop profile 的许可点）。
-latest_commit: 73b5425
+human_review: BLOCKING_G7
+phase_status: P08 完成（P08-T02 桌面端实测/回归证据）：真实 DSH Desktop 2.0.15（apo-dev 隔离 profile）四项真机探针全过——T-1 无会话 smoke 回落第一 provider（deepseek-official→QUOTA）=测试入口行为（记录，非缺陷）；T-2 Follow DSH model route 真实会话等价载荷 done=opencode-go/deepseek-v4-flash + 758 帧真实流式（真实 UI 会话不回落第一 provider，无 route defect，G-7 前无需修）；T-3 默认 fallbackModel 空 → 无效主路由明确 SSE error 不静默换 provider；T-4 显式 fallbackModel（--patch 覆盖层，profile 本体零改动）→ fallbackUsed=true+fallbackReason（回退仅显式配置启用）。KNOWN_NON_BLOCKING_HARNESS_LIMITATION 记档（research provenance_ok=false 同一 deterministic regex 假阳性族，本次表面「声称支持…但无实测」条件句，不修、不重开 P02/P04）。全量 npm test 26 文件 exit 0；BASELINE 附录 B 版本矩阵追加（docs/p08-desktop.md 证据存档）；正式 desktop profile 零触碰（S-09 口径）。出口 G-7（唯一正式修改 desktop profile 的许可点）。
+latest_commit: e26f960
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: G-7
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -53,11 +53,11 @@ stop_reason: none
 | P07-T01 | DONE（G-3 待确认） | 语料固化：12 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
 | P07-T02 | DONE | regression runner：双通道 + 开销测量 + 报告（cc3aed0） | — |
 | P07-T03 | 已执行（待 G-5 裁定） | 首轮真实回归 8 轮 + 13 项纪律修复 + 报告存档（1d3de70）；deterministic 12/14 最佳单跑，残余端侧措辞方差 | **G-5（当前）** |
-| P08-T01 | DONE | 隔离 profile apo-dev 安装 + 冒烟 12 项全过 + S-09 零改动证明（docs/p08-smoke.md） | **G-6（当前）** |
-| P08-T02 | PENDING | 桌面端实测/回归证据 | — |
-| P09-T01..T02 | PENDING | 备份演练（**G-7** 安装许可）/发布 | DoD 用户终检 |
+| P08-T01 | DONE | 隔离 profile apo-dev 安装 + 冒烟 12 项全过 + S-09 零改动证明（docs/p08-smoke.md） | **G-6（已过，2026-10-04 用户裁决 A）** |
+| P08-T02 | DONE | 桌面端实测/回归证据：四项真机探针全过（Follow DSH model route=opencode-go + fallback billing safety 双向验证）+ KNOWN_NON_BLOCKING_HARNESS_LIMITATION 记档 + BASELINE 附录 B（e26f960；docs/p08-desktop.md） | — |
+| P09-T01..T02 | PENDING | 备份演练（**G-7（当前）** 安装许可）/发布 | DoD 用户终检 |
 
-Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ DoD 终检 PASS。
+Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → **G-7（当前）正式安装许可**（唯一动正式 profile 的开关）→ DoD 终检 PASS。
 
 ## 无人值守运行说明（简版，详见 docs/runner-ops.md）
 
