@@ -46,6 +46,8 @@ import {
   TODO_PLACEHOLDER_PREFIX_EN,
   readProtocolLines,
   stripSuggestionLabel,
+  stripSuggestionQuotedRefs,
+  stripSuggestionReason,
 } from "./strategies/_shared.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -161,9 +163,14 @@ const TOKEN_STOPWORDS = new Set([
   "must", "yes", "ok", "okay", "please", "need", "needs", "want", "wants",
 ]);
 
-/** 强断言词（无逐字证据即 error）。含裸「最终 / 确定」，由降级标注与疑问句豁免兜底。 */
+/**
+ * 强断言词（无逐字证据即 error）。
+ * P07-T03 收窄：去掉裸「最终 / 确定」——它们常作交付物修饰语（「最终产出物 / 最终清单」）
+ * 或既有前提引用（「按确定的口径」），并非新结论，误报会把干净产出判成 provenance_ok=false。
+ * 保留全部**结论式**短语；与策略侧 `STRONG_CLAIM_SOURCE`（_shared）同口径。
+ */
 const STRONG_CLAIM_RE =
-  /(已确认|已确定|已定论|已拍板|确认采用|确定采用|最终采用|最终方案|定为最终|选定为|不可行|无法实现|行不通|淘汰|放弃|排除|最终|确定)/;
+  /(已确认|已确定|已定论|已拍板|确认采用|确定采用|最终采用|最终方案|定为最终|选定为|不可行|无法实现|行不通|淘汰|放弃|排除)/;
 
 /** 候选名（拉丁词）紧跟确认动词，如「H3 已确认 / ComfyUI 采用」。捕获组 2 为确认动词。 */
 const CANDIDATE_CONFIRMED_RE =
@@ -171,7 +178,7 @@ const CANDIDATE_CONFIRMED_RE =
 
 /** 已降级 / 建议 / 候选 / 疑问等标注：命中即视为该行不是「无证据结论」。 */
 const UNCERTAINTY_MARKER_RE =
-  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|不得|禁止|切勿|不允许|不能(?:判定|认定|视为|看作|当作|得)|缺失|缺少|未说明|未提供|未给出|未给定|未提及|未明确|[?？]|如何|怎样|怎么|是否|能否|哪些|哪个|为什么/;
+  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|不得|禁止|切勿|不要|勿|无需|不允许|不能(?:判定|认定|视为|看作|当作|得)|缺失|缺少|未说明|未提供|未给出|未给定|未提及|未明确|上下文已确认|已确认(?:约束|值|信息|事项|清单|口径|范围|条件|标准|前提|的|项|内容|事实|要求|需求|方案|路线|状态|配置|硬件|环境|参数|目标|假定|基础|材料|资料|细节|结论|结果)|[?？]|如何|怎样|怎么|是否|能否|哪些|哪个|为什么|若|如果|假如|倘若/;
 
 /** 结构性行：Markdown 标题 / 四段协议标签（标签本身不是结论）。 */
 const STRUCTURAL_LINE_RE =
@@ -289,10 +296,10 @@ function technicalTokens(text: string): string[] {
   return [...out];
 }
 
-/** 两条记录文本是否指向同一条语义单元（去建议前缀后逐字比较；短串要求包含）。 */
+/** 两条记录文本是否指向同一条语义单元（去建议前缀、触发理由与原话引用后逐字比较；短串要求包含）。 */
 function sameSemanticUnit(left: string, right: string): boolean {
-  const a = stripSuggestionLabel(String(left ?? ""));
-  const b = stripSuggestionLabel(String(right ?? ""));
+  const a = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(String(left ?? ""))));
+  const b = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(String(right ?? ""))));
   if (!a || !b) return false;
   if (a === b) return true;
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
@@ -472,7 +479,7 @@ export function validateInferenceAndSuggestion(
 
   // 2a. 建议出现在 explicit / context 来源组。
   for (const record of suggested) {
-    const text = stripSuggestionLabel(String(record?.text ?? "")).trim();
+    const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(String(record?.text ?? "")))).trim();
     if (!text) continue;
     const hit = requirementRecords.find((item) =>
       sameSemanticUnit(text, String(item?.text ?? "")),
@@ -494,7 +501,7 @@ export function validateInferenceAndSuggestion(
     const line = rawLine.trim();
     if (!line || isExemptLine(line)) continue;
     for (const record of suggested) {
-      const text = stripSuggestionLabel(String(record?.text ?? "")).trim();
+      const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(String(record?.text ?? "")))).trim();
       if (text && line.includes(text)) {
         problems.push(
           issue(

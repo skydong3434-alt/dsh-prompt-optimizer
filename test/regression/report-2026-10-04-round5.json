@@ -1,0 +1,2299 @@
+{
+  "schema": "apo-regression-report-v1",
+  "generated_at": "2026-10-04T01:04:28.019Z",
+  "mode": "all",
+  "adapter": "opencode-go:deepseek-v4-flash",
+  "evaluator_prompt_id": "intent-fidelity-v1",
+  "threshold": null,
+  "threshold_status": "DEFERRED_TO_P07_CALIBRATION",
+  "gate": "deterministic",
+  "config": {
+    "max_tokens": 8192,
+    "auto_max_tokens": true,
+    "host_fidelity": true
+  },
+  "totals": {
+    "fixtures": 14,
+    "deterministic_pass": 11,
+    "deterministic_fail": 3,
+    "classification_pass": 11,
+    "evaluator_used": true,
+    "evaluator_questions": 30,
+    "evaluator_pass": 25,
+    "evaluator_inconsistent": 1
+  },
+  "costs": {
+    "research": {
+      "classify": {
+        "calls": 3,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 59,
+          "avg": 90,
+          "max": 136
+        },
+        "total_input_tokens": {
+          "min": 559,
+          "avg": 583,
+          "max": 625
+        },
+        "latency_ms": {
+          "min": 1120,
+          "avg": 1579.33,
+          "max": 1927
+        },
+        "actual_prompt_tokens": {
+          "min": 559,
+          "avg": 583,
+          "max": 625
+        }
+      },
+      "compile": {
+        "calls": 3,
+        "system_tokens": {
+          "min": 3620,
+          "avg": 3620,
+          "max": 3620
+        },
+        "context_tokens": {
+          "min": 725,
+          "avg": 759,
+          "max": 822
+        },
+        "total_input_tokens": {
+          "min": 3611,
+          "avg": 3640.67,
+          "max": 3699
+        },
+        "latency_ms": {
+          "min": 11652,
+          "avg": 19042.33,
+          "max": 33082
+        },
+        "actual_prompt_tokens": {
+          "min": 3611,
+          "avg": 3640.67,
+          "max": 3699
+        }
+      },
+      "evaluator": {
+        "calls": 7,
+        "system_tokens": {
+          "min": 87,
+          "avg": 87,
+          "max": 87
+        },
+        "context_tokens": {
+          "min": 1635,
+          "avg": 2165.57,
+          "max": 2525
+        },
+        "total_input_tokens": {
+          "min": 1520,
+          "avg": 1981.71,
+          "max": 2234
+        },
+        "latency_ms": {
+          "min": 833,
+          "avg": 1069.71,
+          "max": 1547
+        },
+        "actual_prompt_tokens": {
+          "min": 1520,
+          "avg": 1981.71,
+          "max": 2234
+        }
+      },
+      "_total": {
+        "calls": 13,
+        "system_tokens": {
+          "min": 87,
+          "avg": 1006.38,
+          "max": 3620
+        },
+        "context_tokens": {
+          "min": 59,
+          "avg": 1362,
+          "max": 2525
+        },
+        "total_input_tokens": {
+          "min": 559,
+          "avg": 2041.77,
+          "max": 3699
+        },
+        "latency_ms": {
+          "min": 833,
+          "avg": 5334.85,
+          "max": 33082
+        }
+      }
+    },
+    "creative": {
+      "classify": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 134,
+          "avg": 134,
+          "max": 134
+        },
+        "total_input_tokens": {
+          "min": 611,
+          "avg": 611,
+          "max": 611
+        },
+        "latency_ms": {
+          "min": 2292,
+          "avg": 2292,
+          "max": 2292
+        },
+        "actual_prompt_tokens": {
+          "min": 611,
+          "avg": 611,
+          "max": 611
+        }
+      },
+      "_total": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 134,
+          "avg": 134,
+          "max": 134
+        },
+        "total_input_tokens": {
+          "min": 611,
+          "avg": 611,
+          "max": 611
+        },
+        "latency_ms": {
+          "min": 2292,
+          "avg": 2292,
+          "max": 2292
+        }
+      }
+    },
+    "execution": {
+      "compile": {
+        "calls": 4,
+        "system_tokens": {
+          "min": 804,
+          "avg": 3090.75,
+          "max": 3853
+        },
+        "context_tokens": {
+          "min": 28,
+          "avg": 553.25,
+          "max": 822
+        },
+        "total_input_tokens": {
+          "min": 735,
+          "avg": 3116.25,
+          "max": 3980
+        },
+        "latency_ms": {
+          "min": 9379,
+          "avg": 29937.25,
+          "max": 60788
+        },
+        "actual_prompt_tokens": {
+          "min": 735,
+          "avg": 3116.25,
+          "max": 3980
+        }
+      },
+      "evaluator": {
+        "calls": 10,
+        "system_tokens": {
+          "min": 87,
+          "avg": 87,
+          "max": 87
+        },
+        "context_tokens": {
+          "min": 158,
+          "avg": 1199,
+          "max": 1885
+        },
+        "total_input_tokens": {
+          "min": 264,
+          "avg": 1132.3,
+          "max": 1649
+        },
+        "latency_ms": {
+          "min": 996,
+          "avg": 1818.7,
+          "max": 4401
+        },
+        "actual_prompt_tokens": {
+          "min": 264,
+          "avg": 1132.3,
+          "max": 1649
+        }
+      },
+      "classify": {
+        "calls": 2,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 93,
+          "avg": 117,
+          "max": 141
+        },
+        "total_input_tokens": {
+          "min": 570,
+          "avg": 595,
+          "max": 620
+        },
+        "latency_ms": {
+          "min": 2392,
+          "avg": 2666.5,
+          "max": 2941
+        },
+        "actual_prompt_tokens": {
+          "min": 570,
+          "avg": 595,
+          "max": 620
+        }
+      },
+      "_total": {
+        "calls": 16,
+        "system_tokens": {
+          "min": 87,
+          "avg": 894.31,
+          "max": 3853
+        },
+        "context_tokens": {
+          "min": 28,
+          "avg": 902.31,
+          "max": 1885
+        },
+        "total_input_tokens": {
+          "min": 264,
+          "avg": 1561.13,
+          "max": 3980
+        },
+        "latency_ms": {
+          "min": 996,
+          "avg": 8954.31,
+          "max": 60788
+        }
+      }
+    },
+    "diagnostic": {
+      "classify": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 140,
+          "avg": 140,
+          "max": 140
+        },
+        "total_input_tokens": {
+          "min": 614,
+          "avg": 614,
+          "max": 614
+        },
+        "latency_ms": {
+          "min": 1443,
+          "avg": 1443,
+          "max": 1443
+        },
+        "actual_prompt_tokens": {
+          "min": 614,
+          "avg": 614,
+          "max": 614
+        }
+      },
+      "compile": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 3567,
+          "avg": 3567,
+          "max": 3567
+        },
+        "context_tokens": {
+          "min": 727,
+          "avg": 727,
+          "max": 727
+        },
+        "total_input_tokens": {
+          "min": 3660,
+          "avg": 3660,
+          "max": 3660
+        },
+        "latency_ms": {
+          "min": 28754,
+          "avg": 28754,
+          "max": 28754
+        },
+        "actual_prompt_tokens": {
+          "min": 3660,
+          "avg": 3660,
+          "max": 3660
+        }
+      },
+      "evaluator": {
+        "calls": 2,
+        "system_tokens": {
+          "min": 87,
+          "avg": 87,
+          "max": 87
+        },
+        "context_tokens": {
+          "min": 2173,
+          "avg": 2173.5,
+          "max": 2174
+        },
+        "total_input_tokens": {
+          "min": 1903,
+          "avg": 1904.5,
+          "max": 1906
+        },
+        "latency_ms": {
+          "min": 1000,
+          "avg": 1227.5,
+          "max": 1455
+        },
+        "actual_prompt_tokens": {
+          "min": 1903,
+          "avg": 1904.5,
+          "max": 1906
+        }
+      },
+      "_total": {
+        "calls": 4,
+        "system_tokens": {
+          "min": 87,
+          "avg": 1069.75,
+          "max": 3567
+        },
+        "context_tokens": {
+          "min": 140,
+          "avg": 1303.5,
+          "max": 2174
+        },
+        "total_input_tokens": {
+          "min": 614,
+          "avg": 2020.75,
+          "max": 3660
+        },
+        "latency_ms": {
+          "min": 1000,
+          "avg": 8163,
+          "max": 28754
+        }
+      }
+    },
+    "general": {
+      "classify": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 45,
+          "avg": 45,
+          "max": 45
+        },
+        "total_input_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "latency_ms": {
+          "min": 2443,
+          "avg": 2443,
+          "max": 2443
+        },
+        "actual_prompt_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        }
+      },
+      "compile": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 3788,
+          "avg": 3788,
+          "max": 3788
+        },
+        "context_tokens": {
+          "min": 586,
+          "avg": 586,
+          "max": 586
+        },
+        "total_input_tokens": {
+          "min": 3691,
+          "avg": 3691,
+          "max": 3691
+        },
+        "latency_ms": {
+          "min": 13012,
+          "avg": 13012,
+          "max": 13012
+        },
+        "actual_prompt_tokens": {
+          "min": 3691,
+          "avg": 3691,
+          "max": 3691
+        }
+      },
+      "evaluator": {
+        "calls": 3,
+        "system_tokens": {
+          "min": 87,
+          "avg": 87,
+          "max": 87
+        },
+        "context_tokens": {
+          "min": 670,
+          "avg": 672.67,
+          "max": 674
+        },
+        "total_input_tokens": {
+          "min": 700,
+          "avg": 701.33,
+          "max": 702
+        },
+        "latency_ms": {
+          "min": 1022,
+          "avg": 1248.67,
+          "max": 1695
+        },
+        "actual_prompt_tokens": {
+          "min": 700,
+          "avg": 701.33,
+          "max": 702
+        }
+      },
+      "_total": {
+        "calls": 5,
+        "system_tokens": {
+          "min": 87,
+          "avg": 917.4,
+          "max": 3788
+        },
+        "context_tokens": {
+          "min": 45,
+          "avg": 529.8,
+          "max": 674
+        },
+        "total_input_tokens": {
+          "min": 538,
+          "avg": 1266.6,
+          "max": 3691
+        },
+        "latency_ms": {
+          "min": 1022,
+          "avg": 3840.2,
+          "max": 13012
+        }
+      }
+    },
+    "planning": {
+      "classify": {
+        "calls": 4,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 50,
+          "avg": 87.25,
+          "max": 157
+        },
+        "total_input_tokens": {
+          "min": 546,
+          "avg": 572.75,
+          "max": 631
+        },
+        "latency_ms": {
+          "min": 941,
+          "avg": 1452.5,
+          "max": 2489
+        },
+        "actual_prompt_tokens": {
+          "min": 546,
+          "avg": 572.75,
+          "max": 631
+        }
+      },
+      "compile": {
+        "calls": 4,
+        "system_tokens": {
+          "min": 3752,
+          "avg": 3752,
+          "max": 3752
+        },
+        "context_tokens": {
+          "min": 681,
+          "avg": 729,
+          "max": 821
+        },
+        "total_input_tokens": {
+          "min": 3744,
+          "avg": 3784.25,
+          "max": 3860
+        },
+        "latency_ms": {
+          "min": 17658,
+          "avg": 31815.5,
+          "max": 54278
+        },
+        "actual_prompt_tokens": {
+          "min": 3744,
+          "avg": 3784.25,
+          "max": 3860
+        }
+      },
+      "evaluator": {
+        "calls": 11,
+        "system_tokens": {
+          "min": 87,
+          "avg": 87,
+          "max": 87
+        },
+        "context_tokens": {
+          "min": 1921,
+          "avg": 2586.36,
+          "max": 2810
+        },
+        "total_input_tokens": {
+          "min": 1760,
+          "avg": 2342.09,
+          "max": 2585
+        },
+        "latency_ms": {
+          "min": 936,
+          "avg": 1377.55,
+          "max": 2164
+        },
+        "actual_prompt_tokens": {
+          "min": 1760,
+          "avg": 2342.09,
+          "max": 2585
+        }
+      },
+      "_total": {
+        "calls": 19,
+        "system_tokens": {
+          "min": 87,
+          "avg": 953.53,
+          "max": 3752
+        },
+        "context_tokens": {
+          "min": 50,
+          "avg": 1669.21,
+          "max": 2810
+        },
+        "total_input_tokens": {
+          "min": 546,
+          "avg": 2273.21,
+          "max": 3860
+        },
+        "latency_ms": {
+          "min": 936,
+          "avg": 7801.32,
+          "max": 54278
+        }
+      }
+    },
+    "review": {
+      "classify": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 138,
+          "avg": 138,
+          "max": 138
+        },
+        "total_input_tokens": {
+          "min": 613,
+          "avg": 613,
+          "max": 613
+        },
+        "latency_ms": {
+          "min": 1251,
+          "avg": 1251,
+          "max": 1251
+        },
+        "actual_prompt_tokens": {
+          "min": 613,
+          "avg": 613,
+          "max": 613
+        }
+      },
+      "compile": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 3697,
+          "avg": 3697,
+          "max": 3697
+        },
+        "context_tokens": {
+          "min": 748,
+          "avg": 748,
+          "max": 748
+        },
+        "total_input_tokens": {
+          "min": 3709,
+          "avg": 3709,
+          "max": 3709
+        },
+        "latency_ms": {
+          "min": 10282,
+          "avg": 10282,
+          "max": 10282
+        },
+        "actual_prompt_tokens": {
+          "min": 3709,
+          "avg": 3709,
+          "max": 3709
+        }
+      },
+      "evaluator": {
+        "calls": 2,
+        "system_tokens": {
+          "min": 87,
+          "avg": 87,
+          "max": 87
+        },
+        "context_tokens": {
+          "min": 1032,
+          "avg": 1035,
+          "max": 1038
+        },
+        "total_input_tokens": {
+          "min": 1049,
+          "avg": 1052,
+          "max": 1055
+        },
+        "latency_ms": {
+          "min": 988,
+          "avg": 1287.5,
+          "max": 1587
+        },
+        "actual_prompt_tokens": {
+          "min": 1049,
+          "avg": 1052,
+          "max": 1055
+        }
+      },
+      "_total": {
+        "calls": 4,
+        "system_tokens": {
+          "min": 87,
+          "avg": 1102.25,
+          "max": 3697
+        },
+        "context_tokens": {
+          "min": 138,
+          "avg": 739,
+          "max": 1038
+        },
+        "total_input_tokens": {
+          "min": 613,
+          "avg": 1606.5,
+          "max": 3709
+        },
+        "latency_ms": {
+          "min": 988,
+          "avg": 3527,
+          "max": 10282
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "fixture_id": "assistant-only-context-not-user-decision",
+      "expected_type": "research",
+      "resolved_type": "research",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=research（期望 research）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "不得把 H3 写成用户已确认路线",
+            "kind": "prohibit",
+            "pattern": "(?:用户|你)[^\\n]{0,12}(?:已确认|确定|决定|之前决定|已采用)[^\\n]{0,12}H3|H3[^\\n]{0,16}(?:已确认|既定路线|最终方案|用户决定)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得把 MiniMax 写成已确定技术方案 / 用户硬约束",
+            "kind": "prohibit",
+            "pattern": "(?:既定路线为|按照用户之前确定|用户已确认|用户硬约束|已确定技术方案)[^\\n]{0,12}MiniMax|MiniMax(?:\\.?API)?[^\\n]{0,12}(?:已确认|既定路线|用户决定|硬约束)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "H3 / 黑鹤001 保持候选线索身份，不淘汰",
+            "kind": "prohibit",
+            "pattern": "黑鹤001[^\\n]{0,10}(?:不可行|淘汰|放弃|不予考虑)|H3[^\\n]{0,10}(?:不可行|淘汰|放弃|不予考虑)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "assistant-only 内容只能忽略或作为待验证线索，不得伪装成用户决定",
+            "kind": "require",
+            "pattern": "待验证|待确认|待核实|候选|线索|未经证实|需验证",
+            "ok": true,
+            "detail": "命中「待验证」"
+          },
+          {
+            "desc": "未知项不阻塞（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "assistant 的建议（H3 走 MiniMax）不得升级为优化稿要求段",
+            "kind": "prohibit",
+            "pattern": "(?:建议|推荐|提及)[^\\n]{0,16}(?:升级为|必须|务必|硬约束)|MiniMax[^\\n]{0,12}(?:必须|务必|硬约束|作为要求)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "assistant 的「H3 路线确认走 MiniMax API」仅出现在 assistant 历史，不得进入 explicit/context 来源组或优化稿要求段",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          },
+          {
+            "id": "unknown-not-blocking",
+            "desc": "H3 所指 / MiniMax 适用性等未知项不得写成阻塞式前置问题",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否把「H3 使用 MiniMax」明确标注为待验证线索或未决项，而非用户已确认的决定？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在背景、待验证假设和证据缺口等多处明确将「H3 走 MiniMax API」标注为来自助手发言、未经用户确认的待验证线索，而非用户已确认的决定。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否保留了黑鹤001低显流与 H3 的候选线索身份，未将其升级为已确认路线？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 将黑鹤001低显流与 H3 列为候选方案，并明确标注 H3 与 MiniMax API 的关系仅为待验证线索，未升级为已确认路线。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": []
+    },
+    {
+      "fixture_id": "creative-storyboard-explicit-override",
+      "expected_type": "creative",
+      "resolved_type": "execution",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": false,
+        "detail": "classified=execution 不在期望集合 creative|planning"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须采用当前明确修改后的新实体",
+            "kind": "require",
+            "pattern": "黑鹤001|低显流工装",
+            "ok": true,
+            "detail": "命中「黑鹤001」"
+          },
+          {
+            "desc": "不得沿用历史旧设定（白色宇航服）",
+            "kind": "prohibit",
+            "pattern": "(?:白色宇航服)[^\\n]{0,12}(?:保留|沿用|继续|仍然|不变)|(?:保留|沿用|继续使用|仍然使用)[^\\n]{0,12}白色宇航服",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "保真新实体，不得丢失黑鹤001或工装",
+            "kind": "prohibit",
+            "pattern": "(?:去掉|删除|移除)[^\\n]{0,8}(?:黑鹤001|工装)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "助手建议（星空转场）不得变成用户要求",
+            "kind": "prohibit",
+            "pattern": "星空转场[^\\n]{0,10}(?:必须|务必|硬约束|已确认)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "explicit-priority-current-over-historical",
+            "desc": "优先级恒为 CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT > CONTEXT FACT > OPTIMIZER SUGGESTED",
+            "ok": true,
+            "detail": "CURRENT USER EXPLICIT > HISTORICAL USER EXPLICIT 优先级成立"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "星空转场仅为 assistant 建议，不得进入 explicit/context",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否采用了「黑鹤001拟人 + 低显流工装」这一当前明确设定？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的Prompt明确将主角形象替换为黑鹤001拟人形象，并将服装全部改为低显流工装，符合当前设定。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否没有把历史「白色宇航服」设定或 assistant 建议当作当前要求？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 明确将白色宇航服少年替换为黑鹤001拟人形象，并将星空转场列为不在改动范围内，未把历史设定或建议当作当前要求。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "shared-unknown-not-blocking",
+          "detail": "发现阻塞式未知项「无法继续」:UNKNOWN ≠ BLOCKING,未知项应保留为 [待补充: …] 并允许在合理边界内继续"
+        }
+      ]
+    },
+    {
+      "fixture_id": "diagnostic-planning-override-provenance-failure",
+      "expected_type": "diagnostic",
+      "resolved_type": "diagnostic",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=diagnostic（期望 diagnostic）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须先给出症状与复现步骤",
+            "kind": "require",
+            "pattern": "Symptom|Reproduction|复现",
+            "ok": true,
+            "detail": "命中「复现」"
+          },
+          {
+            "desc": "必须列出待验证假设",
+            "kind": "require",
+            "pattern": "Hypotheses|假设",
+            "ok": true,
+            "detail": "命中「假设」"
+          },
+          {
+            "desc": "不得在无证据时把某个根因写成定论",
+            "kind": "prohibit",
+            "pattern": "根因(?:就是|一定是|确定为|是)[^\\n]{0,12}(?:建议|因为)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "先验证后修改：不得直接宣称已修复",
+            "kind": "prohibit",
+            "pattern": "已修复|已解决|已经改好|已定位并修复",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "assistant 发言不得作为用户已确认的证据",
+            "kind": "prohibit",
+            "pattern": "用户(?:已)?(?:确认|要求)[^\\n]{0,10}[^\\n]*(?:provenance_ok=true)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "根因尚未确定属于 UNKNOWN，应保留为待验证假设而非阻塞提问",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否把「先查清楚原因、先别改代码」作为核心约束保留？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在根因分析与修复建议中明确要求先验证根因、保持代码现状不改动，保留了“先查清楚原因、先别改代码”的核心约束。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否要求先复现并列出假设，而不是直接给出修复动作？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 明确要求先收集证据、复现并列出待验证假设，且 Fix Proposal 声明根因未验证前不改动代码，而非直接给出修复动作。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "diagnostic-no-unproven-root-cause",
+          "detail": "发现无证据强断言「排除」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「排除」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        }
+      ]
+    },
+    {
+      "fixture_id": "execution-safe-mutation-boundary",
+      "expected_type": "execution",
+      "resolved_type": "execution",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=execution（期望 execution）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "不得写成终止/强杀 worker",
+            "kind": "prohibit",
+            "pattern": "(?:终止|强杀|kill|杀掉|取消)当前[^\\n]{0,8}(?:worker|Runner|进程)|(?:worker|Runner)[^\\n]{0,8}(?:立即终止|强制取消)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得写成立即修改正在运行的 repo",
+            "kind": "prohibit",
+            "pattern": "(?:立即|马上|立刻)修改[^\\n]{0,10}(?:repo|工作区|仓库)|(?:reset|force)[^\\n]{0,12}重新开始",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "必须先确认 worker 活跃 / git 状态 / 任务状态 / 安全边界",
+            "kind": "require",
+            "pattern": "(?:确认|检查|核实)[^\\n]{0,14}(?:活跃|运行|状态|task boundary|安全边界|git|worktree)|(?:活跃|运行中|task boundary|安全边界|git|worktree)[^\\n]{0,14}(?:确认|检查|核实)",
+            "ok": true,
+            "detail": "命中「确认且 task boundary」"
+          },
+          {
+            "desc": "不得把「等待安全边界」改写成「立即停止当前执行并开始修改」",
+            "kind": "prohibit",
+            "pattern": "(?:立即停止|马上停止|立刻停止)[^\\n]{0,10}(?:当前执行|当前任务)[^\\n]{0,12}(?:并|然后|随即)[^\\n]{0,10}(?:开始修改|开始新修改|继续修改)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "Execution 聚焦当前任务，不重新规划整个项目",
+            "kind": "prohibit",
+            "pattern": "重新规划整个项目|全项目路线图|分阶段总规划|整体架构重设计",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "worker 是否活跃 / task boundary 位置等未知项不得写成阻塞式前置问题（确认动作可写，但不得以此阻断继续）",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "「等待安全边界后再修改」的建议不得升级为「立即停止当前执行并开始修改」的硬动作",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "fail",
+        "questions": [
+          {
+            "question": "优化后的 Execution Prompt 是否先要求确认 worker 活跃 / git 状态 / task boundary，再决定是否修改，而不是直接终止 worker？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Execution Prompt 在 Exact Actions 中明确先检查 worker 运行状态、git 工作区状态并确认安全 mutation point 与 task boundary，之后才执行修改，而非直接终止 worker。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Execution Prompt 是否保留了「当前用户明确要求立即强制取消 worker 时用户指令优先」的覆盖能力，而非把安全约束写成永久禁令？",
+            "verdict": "fail",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "no",
+                "reason": "优化后的 Prompt 将“不打断 worker、不弄脏 repo、仅在 task boundary 后修改”写成无条件约束，且停止条件只允许“等待人工裁决”，未保留“用户明确要求立即强制取消时用户指令优先”的覆盖条款。",
+                "raw_attempt": 1
+              },
+              {
+                "answer": "no",
+                "reason": "优化后 Prompt 未包含“用户明确要求强制取消 worker 时指令优先”的覆盖条款，反而将不中断 worker 写成无条件禁止与停止条件，安全约束被固化为永久禁令。",
+                "raw_attempt": 2
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": true,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「已确认」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        }
+      ]
+    },
+    {
+      "fixture_id": "execution-scoped-change",
+      "expected_type": "execution",
+      "resolved_type": "execution",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=execution（期望 execution）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须给出 Allowed Scope",
+            "kind": "require",
+            "pattern": "Allowed Scope|允许(?:修改)?范围",
+            "ok": true,
+            "detail": "命中「Allowed Scope」"
+          },
+          {
+            "desc": "必须给出 Forbidden Scope",
+            "kind": "require",
+            "pattern": "Forbidden Scope|禁止(?:修改)?范围",
+            "ok": true,
+            "detail": "命中「Forbidden Scope」"
+          },
+          {
+            "desc": "必须要求真实运行测试",
+            "kind": "require",
+            "pattern": "npm test|Tests",
+            "ok": true,
+            "detail": "命中「npm test」"
+          },
+          {
+            "desc": "不得把改动范围扩大到存储层",
+            "kind": "prohibit",
+            "pattern": "(?:修改|改动|重构)[^\\n]{0,12}(?:settings\\s*存储|存储层|settings\\.ts)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得引入自动发送 / 自动执行 / 自动决策（NON-GOAL）",
+            "kind": "prohibit",
+            "pattern": "自动(?:发送|执行|决策)|自动替换输入框",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得在未运行测试时声称通过",
+            "kind": "prohibit",
+            "pattern": "测试通过[^\\n]{0,10}(?:（无需运行|不用运行）)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "UNKNOWN 不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "执行细节缺失时保留为待补充，而非阻塞式提问",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否明确限定了只改 src/client 与 i18n 文案？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在允许范围、禁止范围及停止条件中均明确限定仅可改动 src/client 与 i18n 文案，其他模块保持现状。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否要求真实运行 npm test 并给出失败回退策略？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在具体动作中明确要求运行 npm test，并在失败时执行回退策略。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": []
+    },
+    {
+      "fixture_id": "general-vague-request",
+      "expected_type": "general",
+      "resolved_type": "execution",
+      "overridden": false,
+      "legacy": true,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": false,
+        "detail": "classified=execution 不在期望集合 general|creative|planning"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须暴露信息缺口",
+            "kind": "require",
+            "pattern": "\\[待补充[:：]|待补充|需要补充",
+            "ok": true,
+            "detail": "命中「[待补充：」"
+          },
+          {
+            "desc": "不得凭空假定任务类型与目标",
+            "kind": "prohibit",
+            "pattern": "(?:这显然|可以确定|已经明确)[^\\n]{0,10}(?:是|属于)[^\\n]{0,6}(?:research|planning|creative|诊断|审查)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "低信息量导致大量 UNKNOWN 时仍须给出可用结构，不得阻塞",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "inconsistent",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否在信息不足时仍给出可用的结构化改写？",
+            "verdict": "inconsistent",
+            "stable": false,
+            "attempts": [
+              {
+                "answer": "no",
+                "reason": "优化后的 Prompt 要求用户补充具体内容，未在信息不足时提供任何结构化改写。",
+                "raw_attempt": 1
+              },
+              {
+                "answer": "yes",
+                "reason": "优化后的prompt在缺少具体文本时仍提供了明确的改写要求、约束和输出格式，可作为可用的结构化改写模板。",
+                "raw_attempt": 2
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否避免臆造用户没有说过的任务类型与目标？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的Prompt将任务明确为优化内容使其更有条理、更清晰易读，符合用户‘弄好一点，看着有点乱’的意图，未臆造其他任务类型或目标。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": true,
+      "problems": []
+    },
+    {
+      "fixture_id": "planning-historical-fact-true-negative",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=planning（期望 planning）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须允许把用户明确提供的历史完成事实写进 Background / Preconditions",
+            "kind": "require",
+            "pattern": "Preconditions|前置|已完成|已安装",
+            "ok": true,
+            "detail": "命中「前置」"
+          },
+          {
+            "desc": "不得把用户已完成的安装/依赖升级写成未完成前置条件",
+            "kind": "prohibit",
+            "pattern": "尚未(?:安装|完成|升级)|还没(?:安装|完成|升级)|需要你先(?:安装|升级)|先(?:安装|升级)[^\\n]{0,8}Node",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得凭空宣称 Optimizer/Planning Agent 本轮实施过任何执行动作",
+            "kind": "prohibit",
+            "pattern": "(?:我|本(?:轮|次))(?:已经|已)?(?:执行|实施|运行|写入)(?:了)?[^\\n]{0,10}(?:代码|命令|安装)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "规划仍有未知项（如具体排期），但不得因此阻塞规划产出",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否把用户已完成的安装/依赖事实当作既有前置条件，而不是待办？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在 Preconditions 和 Inputs 中明确将 Node 20、依赖就绪、npm test 可跑通及前置安装/依赖升级已完成作为用户已确认的既有事实，而非待办任务。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否只规划、不擅自扩展到执行动作？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 仅将 P07 回归语料固化拆解为可执行步骤（含阶段、任务、验收标准），未实际执行任何固化或写代码动作，符合“只规划”要求。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": []
+    },
+    {
+      "fixture_id": "planning-manual-override-contract",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": true,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "manual override=planning"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "优化稿必须包含四段协议中的可解析标记",
+            "kind": "require",
+            "pattern": "<<<EXPLICIT>>>|## 明确要求|来自你的明确要求",
+            "ok": true,
+            "detail": "命中「<<<EXPLICIT>>>」"
+          },
+          {
+            "desc": "优化稿必须给出规划契约段落锚点",
+            "kind": "require",
+            "pattern": "Goal|Preconditions|Exact Steps|Acceptance Criteria|Next Step Condition",
+            "ok": true,
+            "detail": "命中「Goal」"
+          },
+          {
+            "desc": "不得有任何无 quote 支撑的 explicit 条目（provenance 必须通过）",
+            "kind": "prohibit",
+            "pattern": "\\[quote:\\s*\\]|\\[quote:\\s*（?无）?\\]",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "手动 override 时不得再触发 AUTO 分类行为",
+            "kind": "prohibit",
+            "pattern": "正在识别任务类型|AUTO\\s*分类|分类结果[:：]",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "planning-override-contract",
+            "desc": "手动 Planning override 必须仍严格产出 16 段契约 + 四段协议，且 provenance 校验通过",
+            "ok": false,
+            "detail": "期望 provenance_ok=true，实际 false"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "手动 override 场景下，建议项仍不得升级为用户要求",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 1
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "fail",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否完整覆盖 Planning 的 16 个契约段落？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 包含 Goal、Why、Preconditions、Inputs、Executor、Tools、Phases、Tasks、Dependencies、Exact Steps、Outputs、Tests、Acceptance Criteria、Failure Handling、Stop Conditions、Next Step Condition 共 16 个契约段落，覆盖完整。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否为每条明确要求保留用户原话 quote 证据？",
+            "verdict": "fail",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "no",
+                "reason": "优化后仅对“把回归语料从草案推进到可执行”和“先小步、每步可回退”保留了 quote，未对“手动按 Planning 帮我规划”保留 quote 证据。",
+                "raw_attempt": 1
+              },
+              {
+                "answer": "no",
+                "reason": "优化后仅在 Why 部分引用了用户原话，并未对每条明确要求都保留 quote 证据。",
+                "raw_attempt": 2
+              }
+            ]
+          },
+          {
+            "question": "手动选择 Planning 是否被严格尊重，而没有回退成 AUTO 分类结果？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 严格采用 Planning 结构（Goal/Phases/Tasks/验收标准等），未回退成 AUTO 分类结果。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "VALIDATION_REQUIREMENT_NOT_TRACEABLE",
+          "detail": "要求「手动按 Planning 帮我规划」在优化稿中找不到任何可寻关键词:疑似丢失或改写用户要求"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「已确认」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        }
+      ]
+    },
+    {
+      "fixture_id": "planning-partial-quote-over-attribution",
+      "expected_type": "planning",
+      "resolved_type": "general",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": false,
+        "detail": "classified=general 不在期望集合 planning|execution"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "用户确实说过的 500 元预算与两周时间可以进 explicit",
+            "kind": "require",
+            "pattern": "500\\s*元|两周",
+            "ok": true,
+            "detail": "命中「500 元」"
+          },
+          {
+            "desc": "不得把用户没说的「硬件采购清单」写成明确要求",
+            "kind": "prohibit",
+            "pattern": "硬件采购清单|采购清单",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得用片段「预算」为整条扩写要求背书",
+            "kind": "prohibit",
+            "pattern": "\\[quote:\\s*预算\\s*\\][^\\n]{0,40}(?:采购|清单|必须包含)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "证据缺口必须显式暴露",
+            "kind": "require",
+            "pattern": "\\[待补充[:：]|待确认",
+            "ok": true,
+            "detail": "命中「[待补充:」"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "partial-quote-not-user-explicit",
+            "desc": "部分匹配的 quote（预算）只能支撑用户原话覆盖的内容，不得为整条扩写要求背书",
+            "ok": true,
+            "detail": "无「片段 quote → 整条 USER_EXPLICIT」的过度归因"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "fail",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否只把用户原话覆盖的约束标为明确要求？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的Prompt仅将用户原话中的预算、工期及“其他你看着办”作为明确约束，其余均标记为待补充，未引入额外明确要求。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否把「硬件采购清单」一类扩写排除在用户要求之外？",
+            "verdict": "fail",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "no",
+                "reason": "优化后的 Prompt 并未明确排除“硬件采购清单”类扩写，只是未定义任务目标，因此不能视为将其排除在用户要求之外。",
+                "raw_attempt": 1
+              },
+              {
+                "answer": "no",
+                "reason": "优化后的 Prompt 并未明确排除“硬件采购清单”类扩写，只是未定义任务目标，因此不能视为将其排除在用户要求之外。",
+                "raw_attempt": 2
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": true,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "VALIDATION_REQUIREMENT_NOT_TRACEABLE",
+          "detail": "要求「其他你看着办」在优化稿中找不到任何可寻关键词:疑似丢失或改写用户要求"
+        }
+      ]
+    },
+    {
+      "fixture_id": "planning-unknown-non-blocking",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=planning（期望 planning）"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "未知信息必须保留为 [待补充: …]",
+            "kind": "require",
+            "pattern": "\\[待补充[:：]",
+            "ok": true,
+            "detail": "命中「[待补充:」"
+          },
+          {
+            "desc": "不得把未知项写成阻塞式前置问题",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|回答后才能继续|确认后才能继续|等你确认|待你确认",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得因为没有排期就拒绝产出任务拆解",
+            "kind": "prohibit",
+            "pattern": "(?:无法|不能|暂时不能)[^\\n]{0,10}(?:拆解|规划|产出)(?:[^\\n]{0,6}(?:请|需)先)?",
+            "ok": false,
+            "detail": "prohibit 命中「无法拆解」"
+          },
+          {
+            "desc": "应明确允许在合理边界内继续",
+            "kind": "require",
+            "pattern": "可继续|先行|暂定|按假设|待补充[:：]",
+            "ok": true,
+            "detail": "命中「待补充:」"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "存在多个 UNKNOWN 时 provenance_ok 仍须为 true，且优化稿不得出现阻塞句式",
+            "ok": false,
+            "detail": "UNKNOWN 不应导致阻塞：期望 provenance_ok=true，实际 false"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "优化器补的排期建议不得变成用户硬约束",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 2
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否在保留未知项的同时仍产出了可执行的任务拆解？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在保留所有未知项为 [待补充] 的同时，仍产出了包含阶段、任务、验收标准与依赖关系的可执行拆解框架。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否没有要求用户必须先回答才能继续？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 明确用 [待补充: …] 标注未定项，并说明 Phase 1、Phase 2 不因排期与人手未确认而阻塞，因此未要求用户必须先回答才能继续。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "shared-unknown-not-blocking",
+          "detail": "发现阻塞式未知项「补充后才能」:UNKNOWN ≠ BLOCKING,未知项应保留为 [待补充: …] 并允许在合理边界内继续"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「已确认」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        }
+      ]
+    },
+    {
+      "fixture_id": "planning-unknown-semantic-dedup",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=planning（期望 planning）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "重复的预算未知项不得以不同措辞各占一条",
+            "kind": "prohibit",
+            "pattern": "预算方面[^\\n]*\\n(?:[^\\n]*\\n){0,4}[^\\n]*预算边界",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "重复的工期/时间未知项不得以不同措辞各占一条",
+            "kind": "prohibit",
+            "pattern": "工期约束[^\\n]*\\n(?:[^\\n]*\\n){0,4}[^\\n]*时间上",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "合并后仍必须保留预算与工期两个未知项",
+            "kind": "require",
+            "pattern": "预算[\\s\\S]{0,120}工期|工期[\\s\\S]{0,120}预算",
+            "ok": true,
+            "detail": "命中「预算、工期」"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-semantic-dedup",
+            "desc": "语义等价的 UNKNOWN 条目（预算 / 工期）必须合并为各一条唯一项",
+            "ok": true,
+            "detail": "UNKNOWN 已去重且保留话题「预算与工期约束」"
+          },
+          {
+            "id": "unknown-not-blocking",
+            "desc": "去重后 UNKNOWN 仍不得阻塞规划产出",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "fail",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否把预算类未知项合并成一条、工期类未知项合并成一条？",
+            "verdict": "fail",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "no",
+                "reason": "预算类未知项仅一条，但工期类未知项包含“本月起止日期”和“时间提示范围”两条，未合并成一条。",
+                "raw_attempt": 1
+              },
+              {
+                "answer": "no",
+                "reason": "优化后的 Prompt 中预算类未知项分散在 Preconditions、Inputs 和待补充多处，工期类未知项同样分散，未合并成一条。",
+                "raw_attempt": 2
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否在去重的同时保留了两种约束的缺失信息？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后 Prompt 在去重的同时，通过 [待补充] 标注和原文引用保留了预算边界未定与工期约束未想好这两项缺失信息。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": true,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNKNOWN_NOT_MARKED",
+          "detail": "未知项「开发对象/项目范围——未说明要规划哪个项目或产品的开发节奏,缺少对象则无法拆解具体任务」未在优化稿的 [待补充: …] 中出现:每个未知项都必须可定位"
+        }
+      ]
+    },
+    {
+      "fixture_id": "research-comfyui-mac-h3",
+      "expected_type": "research",
+      "resolved_type": "research",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=research（期望 research）"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "不得把 H3 写成已确认路线 / 已选定方案",
+            "kind": "prohibit",
+            "pattern": "H3\\s*(?:是|为|已确认|确定|采用|选定|作为(?:最终|确定))",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得把黑鹤001淘汰或判定不可行",
+            "kind": "prohibit",
+            "pattern": "黑鹤001[^\\n]{0,12}(?:不可行|淘汰|放弃|不支持|排除)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得因缺少 Mac 实测案例就判定整体方案不可行",
+            "kind": "prohibit",
+            "pattern": "(?:没有|未找到|不存在)[^\\n]{0,20}(?:案例|先例)[^\\n]{0,12}(?:不可行|无法|不能)",
+            "ok": false,
+            "detail": "prohibit 命中「不存在「因检索不到案例而判定不可行」"
+          },
+          {
+            "desc": "不得凭空发明预算 / 工期硬约束",
+            "kind": "prohibit",
+            "pattern": "(?:预算|工期|周期|时间)[^\\n]{0,6}(?:为|是|不超过|上限)[^\\n]{0,6}[0-9]|万元|¥[0-9]",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "必须把证据缺口显式暴露为 [待补充: …]",
+            "kind": "require",
+            "pattern": "\\[待补充[:：]",
+            "ok": true,
+            "detail": "命中「[待补充:」"
+          },
+          {
+            "desc": "UNKNOWN 不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|回答后才能继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "优化器建议不得以强约束句式混入要求（invariant B）",
+            "kind": "prohibit",
+            "pattern": "(?:建议|可忽略)[^\\n]{0,40}(?:必须|务必|强制要求|硬约束)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "输入含大量未消歧术语与缺失约束，provenance_ok 仍须为 true 且未知项不得阻断下游研究",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "优化器补充的候选维度只能是建议（可忽略），不得进入 explicit/context",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 1
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否比原文更清楚地表达用户想在 Mac M1 Pro 上调研 ComfyUI 视频方案的意图？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 将用户零散表述整理为结构化研究目标、候选方案与待验证点，更清晰地表达了在 Mac M1 Pro 上调研 ComfyUI 视频方案的意图。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否把 H3 与黑鹤001当作待验证候选，而不是已确认路线或淘汰结论？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在候选方案中明确标注两者为待研究候选，且研究问题要求验证其定义与适用性，未作已确认或淘汰结论。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否显式暴露了证据缺口，而不是自行补全未知信息？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 明确列出了证据缺口与待补充项，未自行补全未知信息。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "research-no-unfounded-strong-assertion",
+          "detail": "发现无证据强断言「已确认」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「已确认」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「不可行」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        }
+      ]
+    },
+    {
+      "fixture_id": "research-conflicting-evidence-weighted",
+      "expected_type": "research",
+      "resolved_type": "research",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=research（期望 research）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须并列呈现冲突双方，不得静默择一",
+            "kind": "require",
+            "pattern": "冲突|并列|两方|两边|Conflicting Evidence",
+            "ok": true,
+            "detail": "命中「Conflicting Evidence」"
+          },
+          {
+            "desc": "必须给出证据强度 / 可复现性提示",
+            "kind": "require",
+            "pattern": "证据强度|可复现|权威|一手来源|官方",
+            "ok": true,
+            "detail": "命中「官方」"
+          },
+          {
+            "desc": "不得把任一方说法直接写成已确认结论",
+            "kind": "prohibit",
+            "pattern": "(?:确定|可以确定|已确认|结论是)[^\\n]{0,12}(?:MPS|CUDA)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得在证据不足时判定不可行",
+            "kind": "prohibit",
+            "pattern": "(?:CUDA 是唯一|只有 MPS 可行|只能 CUDA|无法在 Mac)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "conflicting-evidence-weighted",
+            "desc": "真实冲突对必须并列呈现，并按来源权威 + 可复现性给出加权提示",
+            "ok": true,
+            "detail": "冲突双方并列 + 加权提示均在场"
+          },
+          {
+            "id": "unknown-not-blocking",
+            "desc": "冲突未定属于 UNKNOWN，应保留为待验证项而非阻塞提问",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否要求并列核对 MPS 与 CUDA 两种冲突说法，而不是替用户选一个？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在 Conflicting Evidence 中明确要求并列收集 MPS 与 CUDA 两种说法的来源并标注，且规定不得擅自裁决或隐去一方。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否要求标注来源权威与可复现性，以便用户自行判断？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 在 Evidence Requirements 和 Source Priority 中明确要求注明来源权威性、可复现性及硬件/版本/模型等细节，以便用户自行判断。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": []
+    },
+    {
+      "fixture_id": "review-compiler-contract",
+      "expected_type": "review",
+      "resolved_type": "review",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=review（期望 review）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "必须引用原目标 / 原始需求作为审查基线",
+            "kind": "require",
+            "pattern": "Original Goal|原(?:始)?目标|需求基线",
+            "ok": true,
+            "detail": "命中「原目标」"
+          },
+          {
+            "desc": "必须列出偏离项",
+            "kind": "require",
+            "pattern": "Deviations|偏离",
+            "ok": true,
+            "detail": "命中「偏离」"
+          },
+          {
+            "desc": "必须基于证据",
+            "kind": "require",
+            "pattern": "Evidence|证据",
+            "ok": true,
+            "detail": "命中「证据」"
+          },
+          {
+            "desc": "不得把审查发散成新功能设计",
+            "kind": "prohibit",
+            "pattern": "(?:建议|应该)(?:新增|增加|添加)[^\\n]{0,12}(?:功能|模块|UI)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得无证据直接下结论",
+            "kind": "prohibit",
+            "pattern": "(?:我(?:个人)?认为|显然|毫无疑问)[^\\n]{0,10}(?:应该|一定|肯定)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得把审查对象扩大到 UI",
+            "kind": "prohibit",
+            "pattern": "(?:审查|检查)[^\\n]{0,10}(?:client|UI\\s*组件|ResultDock)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "UNKNOWN 不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "审查中信息不足应标为待确认，而非阻塞式追问",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": true,
+      "evaluator": {
+        "evaluator_prompt_id": "intent-fidelity-v1",
+        "temperature": 0,
+        "verdict": "pass",
+        "questions": [
+          {
+            "question": "优化后的 Prompt 是否锚定 P04 四段协议与 provenance 契约作为审查标准？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 明确将 P04 四段协议与 provenance 契约列为 R1/R2 审查标准，虽具体条款待补充，但锚定关系已建立。",
+                "raw_attempt": 1
+              }
+            ]
+          },
+          {
+            "question": "优化后的 Prompt 是否避免发散到 UI 或新增功能设计？",
+            "verdict": "pass",
+            "stable": true,
+            "attempts": [
+              {
+                "answer": "yes",
+                "reason": "优化后的 Prompt 明确将审查范围限定于任务契约，并声明 UI 相关事项不在审查范围内，且未引入新增功能设计。",
+                "raw_attempt": 1
+              }
+            ]
+          }
+        ]
+      },
+      "reference_mismatch": false,
+      "problems": []
+    }
+  ]
+}

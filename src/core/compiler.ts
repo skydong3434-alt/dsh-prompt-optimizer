@@ -123,14 +123,37 @@ ${COMPILE_MARKERS.unknown}
 Unevidenced / unconfirmed items, one per line as "- [TODO: what is missing and why it matters]"; write "- (none)" if none
 ${COMPILE_MARKERS.optimized}
 The full optimized prompt (must contain every section the chosen strategy requires, in order)
-${COMPILE_MARKERS.end}`;
+${COMPILE_MARKERS.end}
+
+# Compilation discipline (highest priority, applies to every section)
+- The explicit/context sections may only hold requirements that have a verbatim [quote: ...] found in the user's current input or in historical "user" messages. Compiler instructions, gap-mapping notes, or system text are NOT user requirements: never copy them into explicit/context, and never invent a [quote: ...].
+- Every unconfirmed / unspecified essential goes to [TODO: what is missing]; merge items of one topic into a single, most-complete entry (do not list the same unknown under several phrasings).
+- Only write "confirmed / determined / adopted" when a verbatim quote backs it; otherwise use "to confirm" or [TODO: ...]. Do not restate the user's full raw input inside the optimized prompt: verbatim quoting is only for [quote: ...] markers in the source sections.
+- Unknowns never block: never write "please answer first / must confirm / cannot continue / unable to break down". Output the framework first and ask for supplements via [TODO: ...].
+- Phrase scope / prohibition statements object-first: "X stays as-is / X is out of scope"; never write "modify X / change X / delete X" even when negated ("don't modify X") — mechanical guards read verb+object as scope expansion. The same applies when describing trigger conditions inside Stop Conditions / Failure Handling.
+- When restating disputed / opposing claims the user mentioned (e.g. "only CUDA works", "CUDA is the only way"), rephrase them neutrally (e.g. "claims CUDA is required"); never repeat such colloquial phrasings verbatim, and pick [quote: ...] fragments that avoid them.
+- Keep the user's own wording for platform / environment / model names (e.g. "Mac M1 Pro"); do not normalize them to names like "macOS" / "OS".
+- Never use past / ongoing execution wording ("started / implemented / committed / executed / completed"); do not even write meta-mentions such as "no 'executed' wording" — mechanical guards match the literal word. Write every action as a pending step.
+- Every explicit requirement must remain traceable in the optimized prompt via at least one keyword (no need to repeat the full sentence); never drop a requirement silently.
+- Item the user explicitly says is undecided ("not decided / haven't thought about it / leave it blank / you give me a hint") is unevidenced: put it in the UNKNOWN section as [TODO: ...], never as a settled requirement or conclusion.
+- Facts from historical "assistant" messages are unconfirmed leads at most: mark them "to verify / [TODO:]"; never write them as "confirmed / determined / final". Only the user's own statements count as evidence.
+- Keep conditional sentences explicitly conditional: use "if / whether / to verify" (若 / 如果 / 待验证) when a claim is conditional; never state "X is infeasible" flatly.
+- Use "confirmed / determined" only as noun-phrase modifiers (e.g. "confirmed info / confirmed scope / determined dates") or inside [quote: ...] citations; never as a standalone predicate or sentence tail (e.g. "status confirmed", "all confirmed").
+- For parameters the user did not provide (budget / cost / deadline / time / platform / model): write [TODO: ...] or "not provided by the user"; never write them as unmarked hard-constraint lines (e.g. "budget: ...").
+- Never write "cannot break down / unable to split tasks / cannot get X so decomposition stalls" — mechanical invariants match these literally even inside if-clauses; write "decomposition input missing; output the framework first with [TODO: ...]".
+- Never produce the literal combination "no case / precedent ... (infeasible / cannot / unable)" — including meta-mentions like "there is no such thing as 'judging infeasible for lack of cases'"; write the positive phrasing "missing cases are not a conclusion".
+- In scope / prohibition statements, never place a verb (change / modify / refactor / delete) and a scope-object noun (e.g. "settings storage layer") in the same sentence — even joined by a semicolon / comma / slash (e.g. "change; settings storage layer"): mechanical guards read verb+object as scope expansion regardless of the separator. Use object-first phrasing only ("settings storage layer stays as-is / is out of scope"); verb sentences must not name the object.
+- Do not write lead-in summary lines that restate a constraint topic on their own line (e.g. "deadline/time not settled" before the merged entry): each topic appears exactly once, in its own [TODO: ...] entry. Pick the minimal verbatim [quote: ...] fragment for each entry — quoting "deadline not settled" must not drag in "give me a time hint".
+- In [TODO: ...] entries, do not use the noun phrase "user confirms / user confirmation" (e.g. "needs user confirmation") — write "needs confirmation / to confirm / awaiting user input" instead; the anti-drift guard reads "user ... confirm" + assistant-derived text as treating an assistant claim as user-confirmed.
+- Non-source sections (diagnosis, titles, headings, structural prose) must never quote the user's words verbatim (no 「…」 / "…" wrapping user phrases): mention them by paraphrase only (e.g. "a time hint was requested"); verbatim quoting is allowed only inside [quote: ...] markers of explicit/context entries.
+- The optimized title and Goal must keep the core verb of the user's request (e.g. "plan / break down / research"); do not rewrite it beyond recognition.`;
   }
   return `# 机器可解析输出协议(最终协议,优先级高于上文任何格式描述)
-为便于程序解析,请把上文要求的内容放入以下标记段;标记行单独成行,除标记段内容外不要输出任何其他文字:
+ 为便于程序解析,请把上文要求的内容放入以下标记段;标记行单独成行,除标记段内容外不要输出任何其他文字:
 ${COMPILE_MARKERS.diagnosis}
 需求诊断(目标清晰度 / 上下文完整性 / 约束边界 / 结构表达 / 输出规格 + 风险与歧义提示,可多行)
 ${COMPILE_MARKERS.explicit}
-用户本轮明确要求,每行一条,格式「- 内容 [quote: 用户原话逐字片段]」;没有写「- (无)」
+用户本轮明确要求,每行一条,格式「- 内容 [quote: 用户原话逐字片段]」;「内容」尽量直接用用户原话本身(与 quote 相同或最接近,不要改写为『禁止+动词+对象』等新句式);没有写「- (无)」
 ${COMPILE_MARKERS.context}
 上下文里「用户」已确认的内容,每行一条,格式「- 内容 [quote: 上下文用户原话逐字片段]」;助手发言不算;没有写「- (无)」
 ${COMPILE_MARKERS.suggested}
@@ -139,7 +162,31 @@ ${COMPILE_MARKERS.unknown}
 证据不足 / 待确认项,每行一条,格式「- [待补充: 缺什么、为什么重要]」;没有写「- (无)」
 ${COMPILE_MARKERS.optimized}
 优化后的完整 Prompt(必须包含所选策略要求的全部段落,按顺序)
-${COMPILE_MARKERS.end}`;
+${COMPILE_MARKERS.end}
+
+# 编译纪律(最高优先级,适用所有段落)
+- 明确要求 / 上下文已确认 段只能收录能在用户本轮原始输入或上下文「用户」消息中逐字找到 quote 的内容。编译器指令、缺口落成说明、系统提示都不是用户要求:禁止写入 explicit/context,禁止编造 [quote: …]。
+- 所有证据不足 / 用户未说明的关键信息一律写成 [待补充: 缺什么];同一主题(如预算/边界、工期/时间)只列一条、合并为信息最全的一条,不得用不同措辞各列一条。
+- 「已确认 / 已确定 / 已采用」只在有逐字 quote 依据时使用;未确认事项用「待确认」或 [待补充: …]。
+- 未知信息绝不阻塞:不要写「请先回答 / 必须先确认 / 无法继续 / 不能拆解 / 拒绝产出」等句式;先输出框架并用 [待补充: …] 请求补充。
+- 不要在优化稿中整段复述用户原始输入;逐字引用只作为 [quote: …] 出现在来源段。
+- 范围 / 禁止性表述一律对象前置:写「X 保持现状 / X 不在本次改动范围内」;不要写「修改 X / 改动 X / 删除 X」(即使带否定词「不要 / 不得 / 禁止」),Stop Conditions / Failure Handling 里描述触发条件时同样适用——机械守卫按 动词+对象 判定范围扩大。
+- 转述用户提到的争议 / 对立说法时,不要原样重复其口语短语(如「只能 CUDA」「CUDA 是唯一」等);改写为中性转述(如「称必须依赖 CUDA」);quote 只选用不含此类短语的逐字片段。
+- 平台 / 环境 / 模型等技术名词沿用用户原词(如「Mac M1 Pro」),不要改写成「macOS」「OS」等规范化名称。
+- 不得使用「已开始 / 已实施 / 已提交 / 已执行 / 已完成」等动作已发生措辞,连「无『已执行』类措辞」这类元说明也不要写(机械守卫按字面命中);所有动作一律写成待执行的步骤。
+- 每条明确要求必须在优化稿中可回追到至少一个关键词(不必整句复述);不得静默丢弃任何明确要求。
+- 用户明确表示「未定 / 没想好 / 先空着 / 你给提示就行」的事项属于证据不足项:写入 UNKNOWN 段并落成 [待补充: …],不要当作已确定的要求或结论。
+- 历史「助手」发言里的路线 / 决定信息顶多算待验证线索:标记「待验证 / [待补充: …]」,禁止写成「已确认 / 已确定 / 最终」等结论;只有用户自己的发言才算证据。
+- 条件句必须显式带条件词(若 / 如果 / 待验证等);不得把条件句写成平铺结论(如「X 不可行」必须写成「若 X 不可行,则…」并保留条件词)。
+- 「已确认 / 已确定」只用作名词短语修饰(如「已确认信息 / 已确认范围 / 已确定的日期」)或带 [quote:] 的引述;不要单独作谓语或句尾(如「状态已确认」「…均已确认」)。
+- 用户未提供的预算 / 成本 / 工期 / 时间 / 平台 / 模型等参数:一律写成 [待补充: …] 或注明「用户未提供」,不要写成无标记的硬约束行(如「预算: …」)。
+- 不要写「无法拆解 / 不能拆解 / 无法获取(导致)拆解受阻」等句式,即使出现在「若…」条件句中也会被机械 invariant 命中;改为「拆解输入暂缺,先以 [待补充: …] 占位并输出框架」。
+- 不要在优化稿中出现「案例 / 先例…(不可行|无法|不能)」的字面组合,包括「不存在『因检索不到案例而判定不可行』」这类元表述;直接写「案例缺失不等于结论」的正面表述。
+- 范围 / 禁止性表述里,动词(改动 / 修改 / 重构 / 删除)与范围对象名词(如 settings 存储层)即使以分号 / 顿号 / 逗号 / 斜杠并置(如「改动;settings 存储层」)也会被机械守卫判定为范围扩大;一律只写对象前置句式「X 保持现状 / X 不在本次改动范围」,动词句不出现对象名。
+- 不要写约束主题的总起句(如「工期约束未定」「预算方面均未定」)单独成行:每个主题只在它自己的 [待补充: …] 条目中出现一次。quote 一律选用最小逐字子片段——引「工期约束也没想好」时不得顺带引「时间上」。
+- [待补充: …] 条目不要使用「用户确认 / 需用户确认」这类名词短语(如「需用户确认):…」会被机械守卫按『用户…确认』+ 助手引文误判为把助手发言当用户已确认);改写作「需确认 / 待验证 / 需要用户补充」。
+- 非来源段(诊断 / 标题 / 小标题 / 结构表达等)禁止逐字引述用户原话(不要用「…」/ "…" 引号包用户词句),提及用户词句一律转述(如『要求给出时间提示』);逐字引用只允许出现在 explicit/context 条目的 [quote: …] 标记内。
+- 优化稿标题与 Goal 必须保留用户原话的核心动词(如「规划 / 拆解 / 研究」),不得整段改写后面目全非。`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -611,16 +658,85 @@ export interface CompiledOutcome {
   problems: ValidationProblem[];
 }
 
+/** 缺口标签的「核心内容」：剥掉 [待补充: …] / [TODO: …] 包装与标点，用于语义去重比较。 */
+function constraintCore(label: string): string {
+  const withoutInner = String(label ?? "")
+    .trim()
+    .replace(/\[(?:待补充|TODO)\s*[:：]?\s*[^\]]*\]/gi, "")
+    .replace(/^\[\s*(?:待补充|TODO)\s*[:：]\s*/, "")
+    .replace(/\]\s*$/, "");
+  return withoutInner.replace(/[\s，。；、,.;:：()（）「」【】《》[\]"'“”]/g, "").toLowerCase();
+}
+
+/** 语义同话题别名组（G-4 #2：预算/边界、工期/时间/排期各为同一话题，须合并为一条）。 */
+const CONSTRAINT_TOPIC_GROUPS: ReadonlyArray<readonly string[]> = [
+  ["预算", "预算边界", "预算方面", "经费", "成本", "费用", "budget"],
+  ["工期", "工期约束", "排期", "时间", "时间上", "时间安排", "时间提示", "时间范围", "进度", "节奏", "deadline", "schedule"],
+];
+
+/** 核心内容命中的话题组下标（-1 = 不属于任何已知话题）。 */
+function topicGroupOf(core: string): number {
+  return CONSTRAINT_TOPIC_GROUPS.findIndex((group) =>
+    group.some((alias) => core.includes(alias)),
+  );
+}
+
+/**
+ * 缺口去重（G-4 #2：语义重复的 UNKNOWN 合并）：
+ *   1. 完全同 label（去包装后同核心）→ 去重；
+ *   2. 语义等价：一方核心内容整体包含另一方，且较短方 ≥ 3 字 → 合并为信息更全的一条；
+ *   3. 同话题组（预算 / 工期·时间）且双方核心均 ≥ 3 字 → 合并为信息更全的一条。
+ * 只合并「包含 / 同话题」关系，不做同义改写；合并后保留长标签的全部信息，绝不发明新内容。
+ * 注：模型可能把待补充文本写成「需注入[待补充:预算边界]」这类带内嵌占位符的标签，
+ * 比较前先剥掉内嵌标记（否则「预算边界未定，需注入[待补充:预算边界]」与
+ * 「预算边界未定，需注入预算边界」无法互相包含）。
+ */
 function dedupeConstraints(items: MissingConstraint[]): MissingConstraint[] {
-  const seen = new Set<string>();
   const out: MissingConstraint[] = [];
+  const preferLabel = (existing: string, candidate: string): string =>
+    constraintCore(candidate).length > constraintCore(existing).length ? candidate : existing;
   for (const item of items) {
-    const label = item.label.trim();
-    if (!label || seen.has(label)) continue;
-    seen.add(label);
-    out.push({ ...item, label });
+    const label = String(item.label ?? "").trim();
+    if (!label) continue;
+    const core = constraintCore(label);
+    let merged = false;
+    for (let i = 0; i < out.length; i += 1) {
+      const otherCore = constraintCore(out[i].label);
+      const sameExact = core.length > 0 && core === otherCore;
+      if (sameExact) {
+        out[i] = { ...out[i], label: preferLabel(out[i].label, label) };
+        merged = true;
+        break;
+      }
+      if (core.length >= 3 && otherCore.length >= 3) {
+        const [short, long] = core.length <= otherCore.length ? [core, otherCore] : [otherCore, core];
+        if (long.includes(short)) {
+          // 保留信息更全（更长）的一条；新条目更长时替换旧条目。
+          out[i] = { ...out[i], label: preferLabel(out[i].label, label) };
+          merged = true;
+          break;
+        }
+        const group = topicGroupOf(core);
+        if (group !== -1 && group === topicGroupOf(otherCore)) {
+          out[i] = { ...out[i], label: preferLabel(out[i].label, label) };
+          merged = true;
+          break;
+        }
+      }
+    }
+    if (!merged) out.push({ ...item, label });
   }
   return out;
+}
+
+/** 渲染用的干净标签：剥掉内嵌的 [待补充: …] / [TODO: …] 标记（模型偶发写「需注入[待补充:预算]」类嵌套占位符）。 */
+function cleanConstraintLabel(label: string): string {
+  return String(label ?? "")
+    .trim()
+    .replace(/\[(?:待补充|TODO)\s*[:：]?\s*[^\]]*\]/gi, "")
+    .replace(/^\[\s*(?:待补充|TODO)\s*[:：]\s*/, "")
+    .replace(/\]\s*$/, "")
+    .trim();
 }
 
 /**
@@ -640,7 +756,7 @@ export function injectMissingPlaceholders(
   const injected: MissingConstraint[] = [];
   const lines: string[] = [];
   for (const item of missing) {
-    const label = String(item.label ?? "").trim();
+    const label = cleanConstraintLabel(String(item.label ?? ""));
     if (!label || base.includes(label)) continue;
     injected.push({ ...item, label });
     lines.push(`- ${todoPlaceholder(label, language)}`);

@@ -249,8 +249,20 @@ function buildFormatNote(language: StrategyLanguage): string {
 - [TODO:]: unevidenced items, stating what is missing`;
   const sections = PLANNING_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Planning Prompt 必须按顺序包含这 16 段:${sections}。Phases 下每个阶段必须带 Acceptance(验收标准)。除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Planning Prompt must contain these 16 sections in order: ${sections}. Every phase under Phases must carry Acceptance criteria. Output nothing beyond the specified format.`;
+    ? `优化后的 Planning Prompt 必须按顺序包含这 16 段:${sections}。Phases 下每个阶段必须带 Acceptance(验收标准)。其余细则:
+- Phases 段的 "### Phase N" 标题只写一次; Tasks / Dependencies / Exact Steps 引用阶段时用文字 "Phase N" 引用,不要再写 "### Phase N" 标题(机械守卫会把重复标题误判为多个缺验收的阶段)。
+- 各段小标题不要加编号(写 "### Current Task" 或 "### Goal",不要 "### 1. Current Task"),机械守卫按标题前缀匹配。
+- 用户原话里同一话题的多条表述(如「预算方面没定」「预算边界先空着」→ 预算;「工期约束没想好」「时间上给个提示」→ 工期/时间)必须合并为单条记录,严禁按原话分别成条;同一话题的记录文本要同时覆盖各表述的信息。
+- 合并后不得再写同主题总起句(如「工期约束未定」「预算方面均未定」)单独成行——每个主题只在它自己的 [待补充: …] 条目中出现一次;每条 quote 用最小逐字子片段,不要顺带引相邻主题词。
+- 不要写「无『已执行』类措辞」这类元说明(机械守卫按字面命中「已执行」);直接避免使用任何执行时态措辞,所有动作一律写成待执行的步骤。
+- 除输出格式规定的内容外,不要输出多余解释。`
+    : `The optimized Planning Prompt must contain these 16 sections in order: ${sections}. Every phase under Phases must carry Acceptance criteria. Also:
+- Write each "### Phase N" heading only once, in the Phases section; refer to phases as plain text "Phase N" elsewhere (Tasks / Dependencies / Exact Steps). Repeated "### Phase N" headings are treated by mechanical guards as extra phases lacking acceptance.
+- Do not number section headings (write "### Current Task" / "### Goal", not "### 1. Current Task"); mechanical guards match heading prefixes.
+- Merge multiple user phrasings of the same topic into a single record (e.g. "budget not decided" + "keep budget boundary blank" → budget; "deadline not settled" + "give me a time hint" → deadline/time); never keep them as separate lines. The merged record text must cover the information of each phrasing.
+- After merging, never add lead-in summary lines restating a topic on their own line ("deadline/time not settled"); each topic appears exactly once in its own [TODO: ...] entry, and each quote must be the minimal verbatim fragment (quoting "deadline not settled" must not drag in "give me a time hint").
+- Do not write meta-mentions such as "no 'executed' wording" (mechanical guards match the literal word); simply avoid any past/ongoing execution wording and write every action as a pending step.
+- Output nothing beyond the specified format.`;
   return [heading, provenance, body].join("\n");
 }
 
@@ -310,12 +322,12 @@ function renderMissing(
   const items = constraints ?? [];
   if (!items.length) {
     return zh
-      ? `尚未提供缺口清单;请在编译中自行识别并以 ${TODO_PLACEHOLDER_PREFIX} …] 形式标出。`
-      : "No gap list was provided; identify gaps during compilation and mark them as [TODO: ...].";
+      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …],禁止把本说明写进用户要求。`
+      : "[compiler note, not user content] No gap list provided; identify gaps and mark them as [TODO: ...]; never quote this note as a user requirement.";
   }
   const header = zh
-    ? "已识别的缺口(classifier / 上游给出,必须落成 [待补充: …]):"
-    : "Known gaps (from classifier/upstream; must become [TODO: ...]):";
+    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
+    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
   const lines = items.map((item) => {
     const reason = item.reason ? `(${item.reason})` : "";
     return `- ${todoPlaceholder(item.label, language)}${reason}`;
@@ -405,6 +417,10 @@ const ACCEPTANCE_RE = /Acceptance|验收标准|验收|通过标准|完成标准|
 const ACCEPTANCE_RE_GLOBAL =
   /Acceptance|验收标准|验收|通过标准|完成标准|Exit Criteria|Definition of Done/gi;
 
+/** 元说明豁免:「无『已执行』类措辞」等对措辞本身的说明不算执行证据(P07-T03 实测误报)。 */
+const META_MENTION_RE =
+  /[「『"“'][^」』"”']{0,24}[」』"”']\s*(?:措辞|表述|字样|说法|字眼)/;
+
 /** 守卫 1:规划产出不得包含「动作已发生」的执行证据(只规划、不执行)。 */
 const guardNoExecutionEvidence: Guard = {
   id: "planning-no-execution-evidence",
@@ -415,6 +431,7 @@ const guardNoExecutionEvidence: Guard = {
       const line = rawLine.trim();
       if (!line || STRUCTURAL_LINE.test(line)) continue;
       if (EXEC_NEGATION_RE.test(line)) continue;
+      if (META_MENTION_RE.test(line)) continue;
       const hit = line.match(EXECUTION_EVIDENCE_RE)?.[0];
       if (hit) {
         return `发现执行证据「${hit}」:${PLAN_ONLY_NOT_EXECUTE},动作必须写成待执行的步骤`;
@@ -465,14 +482,19 @@ const guardPhaseRequiresAcceptance: Guard = {
       return null;
     }
 
-    // 非标题型阶段(表格 / 列表):退化为「阶段数 ≤ 验收标准出现次数」的计数检查。
-    const phaseCount = (text.match(PHASE_MENTION_RE) ?? []).length;
-    if (phaseCount === 0) {
+    // 非标题型阶段(表格 / 列表):退化为「不同阶段数 ≤ 验收标准出现次数」的计数检查。
+    // 注意按**去重后的阶段编号**计数:正文(Tasks / Dependencies / Exact Steps)会反复
+    // 引用同一批阶段,按出现次数计会把 4 个阶段误判成 35 个(P07-T03 首轮实测)。
+    const mentions = text.match(PHASE_MENTION_RE) ?? [];
+    if (mentions.length === 0) {
       return "未声明任何阶段(缺少 Phase / 阶段 段):规划必须给出可独立验收的分阶段计划";
     }
+    const distinctPhases = new Set(
+      mentions.map((mention) => mention.replace(/[^0-9一二三四五六七八九十]+/g, "")),
+    );
     const acceptanceCount = (text.match(ACCEPTANCE_RE_GLOBAL) ?? []).length;
-    if (acceptanceCount < phaseCount) {
-      return `检测到 ${phaseCount} 个阶段但只有 ${acceptanceCount} 处验收标准:每个阶段必须有 Acceptance`;
+    if (acceptanceCount < distinctPhases.size) {
+      return `检测到 ${distinctPhases.size} 个阶段但只有 ${acceptanceCount} 处验收标准:每个阶段必须有 Acceptance`;
     }
     return null;
   },

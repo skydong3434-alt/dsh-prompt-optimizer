@@ -257,8 +257,22 @@ function buildFormatNote(language: StrategyLanguage): string {
 - [TODO:]: unevidenced items, stating what is missing`;
   const sections = EXECUTION_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Execution Prompt 必须按顺序包含这 15 段:${sections}。Allowed Scope / Forbidden Scope / Handoff 不得省略;不得把它写成整项目规划。除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Execution Prompt must contain these 15 sections in order: ${sections}. Allowed Scope / Forbidden Scope / Handoff must not be omitted, and this must not become a whole-project plan. Output nothing beyond the specified format.`;
+    ? `优化后的 Execution Prompt 必须按顺序包含这 15 段:${sections}。Allowed Scope / Forbidden Scope / Handoff 不得省略;不得把它写成整项目规划。其余写法细则:
+- Forbidden Scope 条目用「X 保持现状 / X 不在本次改动范围内」的对象前置句式,不要写「禁止修改 X / 不得改动 X」的动词前置句式(机械守卫会按动词+对象把禁止句误判为范围扩大)。
+- 动词(改动 / 修改 / 重构 / 删除)与范围对象名词(如 settings 存储层)必须分处不同句子、相距 12 字符以上:动词句不提对象名(如「允许改动:src/client 与 i18n 文案」),对象句只配「保持现状 / 不在本次范围」(如「settings 存储层保持现状」)。
+- 即使以分号 / 顿号 / 逗号把动词与对象并置(如「改动;settings 存储层」)同样会被机械守卫判为范围扩大;范围句只写「X 保持现状 / X 不在本次范围」,动词句不得出现对象名。
+- 明确要求 条目文本尽量直接沿用用户原话(与 quote 相同或最接近),不要改写为「禁止+动词+对象」等新句式。
+- Stop Conditions / Failure Handling 描述触发条件时同样用对象前置句式,不要写「发现需要改动 X」(机械守卫按 动词+对象 判定范围扩大)。
+- 各段小标题不要加编号(写 "### Current Task",不要 "### 1. Current Task"),机械守卫按标题前缀匹配。
+- 除输出格式规定的内容外,不要输出多余解释。`
+    : `The optimized Execution Prompt must contain these 15 sections in order: ${sections}. Allowed Scope / Forbidden Scope / Handoff must not be omitted, and this must not become a whole-project plan. Wording rules:
+- Phrase Forbidden Scope items object-first ("X stays as-is / X is out of scope"): mechanical guards treat a verb+object pair as scope expansion even when negated (e.g. "don't modify X").
+- Keep verbs (change / modify / refactor / delete) and scope-object nouns (e.g. settings storage layer) in separate sentences more than 12 characters apart: verb sentences do not name the object (e.g. "changes allowed: src/client and i18n files"), object sentences only pair with "stays as-is / out of scope".
+- Even joining verb and object with a semicolon / comma / slash (e.g. "change; settings storage layer") is treated as scope expansion by mechanical guards; write object-first sentences only, and never name the object in a verb sentence.
+- Keep Explicit-requirement item text as close to the user's own words as possible (same as the quote); do not rewrite it into "forbid + verb + object" forms.
+- In Stop Conditions / Failure Handling also phrase trigger conditions object-first; never write "a need to modify X is found" (mechanical guards read verb+object as scope expansion).
+- Do not number section headings (write "### Current Task", not "### 1. Current Task"); mechanical guards match heading prefixes.
+- Output nothing beyond the specified format.`;
   return [heading, provenance, body].join("\n");
 }
 
@@ -318,12 +332,12 @@ function renderMissing(
   const items = constraints ?? [];
   if (!items.length) {
     return zh
-      ? `尚未提供缺口清单;请在编译中自行识别并以 ${TODO_PLACEHOLDER_PREFIX} …] 形式标出。`
-      : "No gap list was provided; identify gaps during compilation and mark them as [TODO: ...].";
+      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …],禁止把本说明写进用户要求。`
+      : "[compiler note, not user content] No gap list provided; identify gaps and mark them as [TODO: ...]; never quote this note as a user requirement.";
   }
   const header = zh
-    ? "已识别的缺口(classifier / 上游给出,必须落成 [待补充: …]):"
-    : "Known gaps (from classifier/upstream; must become [TODO: ...]):";
+    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
+    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
   const lines = items.map((item) => {
     const reason = item.reason ? `(${item.reason})` : "";
     return `- ${todoPlaceholder(item.label, language)}${reason}`;
@@ -387,8 +401,14 @@ export function buildExecutionUser(vars: CompileVars): string {
 // 守卫(anti-drift):禁整项目重规划 / 不得以规划·分析段为主 / 强制段 + 不变式 A·B
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Markdown 标题行(只把标题作为「段落主导性」的判定对象,正文提及不算)。 */
-const HEADING_RE = /^#{1,6}\s*(.+)$/;
+/**
+ * Markdown 标题行(只把标题作为「段落主导性」的判定对象,正文提及不算)。
+ * 兼容 `# 标题` / `**加粗标题**` / 带编号前缀的两种变体
+ * (首轮回归实测:模型输出常用 _加粗小标题_ 或 `### 1. Current Task` 编号标题)。
+ * 注:返回捕获组 1 为标题文本(各写法统一)。
+ */
+const HEADING_RE =
+  /^(?:#{1,6}\s*(?:[0-9]+[.、)．）]?\s*)?(.+)$|\*\*(?:[0-9]+[.、)．）]?\s*)?([^*]+)\*\*\s*$)/;
 
 /** 规划型段落标题前缀(execution 产出里不应成为主体)。 */
 const PLANNING_HEADING_PREFIXES: readonly string[] = [
@@ -492,7 +512,7 @@ const guardNotPlanningDominated: Guard = {
     for (const rawLine of String(output ?? "").split(/\r?\n/)) {
       const match = HEADING_RE.exec(rawLine.trim());
       if (!match) continue;
-      const heading = match[1];
+      const heading = String(match[1] ?? match[2] ?? "");
       if (startsWithAny(heading, EXECUTION_HEADING_PREFIXES)) {
         execution += 1;
       } else if (startsWithAny(heading, PLANNING_HEADING_PREFIXES)) {

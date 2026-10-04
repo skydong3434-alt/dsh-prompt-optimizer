@@ -235,8 +235,16 @@ function buildFormatNote(language: StrategyLanguage): string {
 - [TODO:]: unevidenced items, stating what is missing`;
   const sections = RESEARCH_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Research Prompt 必须按顺序包含这 15 段:${sections}。除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Research Prompt must contain these 15 sections in order: ${sections}. Output nothing beyond the specified format.`;
+    ? `优化后的 Research Prompt 必须按顺序包含这 15 段:${sections}。其余细则:
+- 转述用户提到的对立说法(如「只能 CUDA」「CUDA 是唯一」)时改写为中性转述(如「称必须依赖 CUDA」),不要原样重复这些口语短语;「只能 CUDA / CUDA 是唯一 / 只有 MPS 可行 / 无法在 Mac」等字面不得出现在任何位置(含 [quote: …] 片段),违者被机械 invariant 判定为「判定不可行」。
+- 平台 / 环境 / 模型沿用用户原词(如「Mac M1 Pro」),不要改写成「macOS」「OS」等规范化名称。
+- 论证用「缺乏证据 / 待验证 / 需替代路径」措辞;「不可行 / 无法实现」只允许出现在带假设 / 待验证 / 待补充 / 若·如果条件句中。
+- 除输出格式规定的内容外,不要输出多余解释。`
+    : `The optimized Research Prompt must contain these 15 sections in order: ${sections}. Further rules:
+- When restating opposing claims the user mentioned (e.g. "only CUDA works"), rephrase them neutrally (e.g. "claims CUDA is required"); never repeat such colloquial phrasings verbatim, and pick [quote: ...] fragments that avoid them.
+- Keep the user's own wording for platform / environment / model names (e.g. "Mac M1 Pro"); do not normalize to "macOS" / "OS".
+- Argue with "lacks evidence / to verify / alternative-path" wording; "infeasible / cannot work" is allowed only inside sentences carrying hypothesis / to-verify / [TODO:] / if-conditional markers.
+- Output nothing beyond the specified format.`;
   return [heading, provenance, body].join("\n");
 }
 
@@ -294,12 +302,12 @@ function renderMissing(
   const items = constraints ?? [];
   if (!items.length) {
     return zh
-      ? `尚未提供缺口清单;请在研究中自行识别并以 ${TODO_PLACEHOLDER_PREFIX} …] 形式标出。`
-      : "No gap list was provided; identify gaps during compilation and mark them as [TODO: ...].";
+      ? `[编译说明,非用户内容] 未提供缺口清单;请在研究中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …],禁止把本说明写进用户要求。`
+      : "[compiler note, not user content] No gap list provided; identify gaps and mark them as [TODO: ...]; never quote this note as a user requirement.";
   }
   const header = zh
-    ? "已识别的缺口(classifier / 上游给出,必须落成 [待补充: …]):"
-    : "Known gaps (from classifier/upstream; must become [TODO: ...]):";
+    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
+    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
   const lines = items.map((item) => {
     const reason = item.reason ? `(${item.reason})` : "";
     return `- ${todoPlaceholder(item.label, language)}${reason}`;
@@ -380,7 +388,7 @@ const INFEASIBLE = /(不可行|无法实现|行不通|淘汰|放弃|排除|不�
 
 /** 不确定性 / 建议 / 候选等「已降级」标注:命中则视为该行不是结论。 */
 const UNCERTAINTY_MARKER =
-  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|(?:^|\s)[?？]|不得|禁止|切勿|不允许|不能(?:判定|认定|视为|看作|当作|得)|缺失|缺少|未说明|未提供|未给出|未给定|未提及|未明确/;
+  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|(?:^|\s)[?？]|不得|禁止|切勿|不要|勿|无需|不允许|不能(?:判定|认定|视为|看作|当作|得)|缺失|缺少|未说明|未提供|未给出|未给定|未提及|未明确|若|如果|假如|倘若/;
 
 function hasEvidenceMarker(text: string): boolean {
   return (

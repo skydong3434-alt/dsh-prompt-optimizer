@@ -66,6 +66,28 @@ export function stripSuggestionLabel(text: string): string {
   return value.replace(/^(?:建议|suggestion)\s*[:：]\s*/i, "").trim();
 }
 
+/**
+ * 去掉「建议」条目的触发理由子句(「触发理由: …」/「理由: …」/「原因: …」)。
+ * P07-T03 实测:建议的触发理由常引用用户原话(如「符合『先小步、每步可回退』的要求」),
+ * 若带着理由与 explicit 记录做子串比对,会误判「建议被升级为用户要求」。比对前先剥离。
+ * 注:触发理由常以「（触发理由: …）」包裹,前导括号一并剥除。
+ */
+export function stripSuggestionReason(text: string): string {
+  return String(text ?? "")
+    .replace(/[；;。]?\s*[（(]?\s*(?:触发理由|理由|原因)\s*[:：].*$/s, "")
+    .replace(/[（(]\s*$/, "")
+    .trim();
+}
+
+/**
+ * 去掉「建议」正文里以「」/『』包裹的用户原话引用片段。
+ * P07-T03 实测:建议常引用用户词句(如「作为『每步可回退』的落地机制」),
+ * 引用片段不是建议自己的断言,与 explicit 记录比对前先剥离,避免子串误判。
+ */
+export function stripSuggestionQuotedRefs(text: string): string {
+  return String(text ?? "").replace(/[「『][^」』]*[」』]/g, "").trim();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 保真自检清单(常量组;各策略 system prompt 引用同一份)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -388,7 +410,7 @@ const CANDIDATE_CONFIRMED_RE =
 
 /** 已被降级 / 建议 / 候选 / 假设等标注:命中则视为该行不是「无证据结论」。 */
 const DOWNGRADE_MARKER_RE =
-  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|不得|禁止|切勿|不允许|不能(?:判定|认定|视为|看作|当作)|缺失|缺少|未说明|未提供|未给出|未提及|未明确/;
+  /待补充|待确认|待验证|待定|待复核|假设|候选|可能|建议|需研究|需验证|需核实|存疑|未经证实|无法确认|不排除|研究问题|不得|禁止|切勿|不要|勿|无需|不允许|不能(?:判定|认定|视为|看作|当作)|缺失|缺少|未说明|未提供|未给出|未提及|未明确|上下文已确认|已确认(?:约束|值|信息|事项|清单|口径|范围|条件|标准|前提|的|项|内容|事实|要求|需求|方案|路线|状态|配置|硬件|环境|参数|目标|假定|基础|材料|资料|细节|结论|结果)|若|如果|假如|倘若/;
 
 /** 逐字证据标记(quote / 证据)。 */
 const EVIDENCE_MARKER_RE = /\[quote:|\[证据:|【证据:/;
@@ -436,10 +458,10 @@ function evidenceBacks(
   );
 }
 
-/** 两条记录文本是否指向同一条语义单元(去建议前缀后逐字比较;短串要求全等)。 */
+/** 两条记录文本是否指向同一条语义单元(去建议前缀、触发理由与原话引用后逐字比较;短串要求全等)。 */
 function matchesRecordText(left: string, right: string): boolean {
-  const a = stripSuggestionLabel(left);
-  const b = stripSuggestionLabel(right);
+  const a = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(left)));
+  const b = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(right)));
   if (!a || !b) return false;
   if (a === b) return true;
   const [short, long] = a.length <= b.length ? [a, b] : [b, a];
@@ -500,7 +522,7 @@ export function suggestedNotInExplicit(
         ...(result?.context_requirements ?? []),
       ];
       for (const record of suggested) {
-        const text = stripSuggestionLabel(record?.text ?? "");
+        const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(record?.text ?? "")));
         if (!text) continue;
         const hit = explicit.find((item) =>
           matchesRecordText(text, item?.text ?? ""),
@@ -514,7 +536,7 @@ export function suggestedNotInExplicit(
       const requirementText = extractRequirementText(output);
       if (requirementText) {
         for (const record of suggested) {
-          const text = stripSuggestionLabel(record?.text ?? "");
+          const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(record?.text ?? "")));
           if (text && requirementText.includes(text)) {
             return `优化器建议「${text}」出现在优化稿的要求段:建议必须独立成段并带「${SUGGESTION_LABEL_ZH}」前缀`;
           }
@@ -623,7 +645,7 @@ export function suggestedNotUpgraded(
         }
         if (!UPGRADE_REQUIREMENT_RE.test(line)) continue;
         for (const record of suggested) {
-          const text = stripSuggestionLabel(record?.text ?? "");
+          const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(record?.text ?? "")));
           if (text && line.includes(text)) {
             const marker = line.match(UPGRADE_REQUIREMENT_RE)?.[0] ?? "必须";
             return `建议「${text}」以强约束句式「${marker}」出现在要求语境:建议不得无痕升级为用户要求 / 硬约束 / 已确认路线`;

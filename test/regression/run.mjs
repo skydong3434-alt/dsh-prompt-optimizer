@@ -121,6 +121,10 @@ export function parseArgs(argv = process.argv.slice(2)) {
     writeReport: true,
     language: 'zh',
     timeoutMs: 60000,
+    // 编译输出上限必须镜像 host（src/index.ts）：默认 8192 + 跟随输入长度，
+    // 否则 2048 会在 planning/research 的 16 段产物上截断（P07-T03 首轮实测 finish_reason=length）。
+    maxTokens: 8192,
+    autoMaxTokens: true,
     verbose: false,
     help: false,
   }
@@ -183,6 +187,17 @@ export function parseArgs(argv = process.argv.slice(2)) {
       case '--timeout-ms':
         options.timeoutMs = Number(next())
         break
+      case '--max-tokens': {
+        const value = Number(next())
+        if (!Number.isInteger(value) || value < 1024 || value > 32768) {
+          throw new Error('--max-tokens 需为 1024..32768 的整数（与 host Config 同区间）')
+        }
+        options.maxTokens = value
+        break
+      }
+      case '--no-auto-max-tokens':
+        options.autoMaxTokens = false
+        break
       case '--verbose':
         options.verbose = true
         break
@@ -202,7 +217,21 @@ export function parseArgs(argv = process.argv.slice(2)) {
 
 export const USAGE = `用法: node test/regression/run.mjs [--mode deterministic|all] [--fixture id,id]
   [--adapter mock|live|external] [--external <path>] [--provider p] [--model m]
-  [--api-key-env NAME] [--credentials <yaml>] [--report <path>] [--no-report] [--verbose]`
+  [--api-key-env NAME] [--credentials <yaml>] [--report <path>] [--no-report] [--verbose]
+  [--max-tokens N] [--no-auto-max-tokens]`
+
+/**
+ * 编译调用输出上限——逐字镜像 host `src/index.ts`：
+ *   autoMaxTokens ? min(32768, max(base, ceil(inputTokens × 2))) : base
+ * host 的 `mode` 在回归里恒为 'full'（compilePrompt 亦传 'full'），故系数固定 2。
+ * 这是 P07-T03 修掉的「回归保真度」缺陷：旧实现漏传 maxTokens 落到 2048，
+ * planning 16 段产物被 finish_reason=length 截断，误判成策略缺段。
+ */
+export function compileMaxTokens(fixture, { maxTokens = 8192, autoMaxTokens = true } = {}) {
+  if (!autoMaxTokens) return maxTokens
+  const inputTokens = estimateTokens(String(fixture?.raw_input ?? ''))
+  return Math.min(32768, Math.max(maxTokens, Math.ceil(inputTokens * 2)))
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 确定性文本面 + invariant / invariant_checks 判定
@@ -284,7 +313,13 @@ export function runInvariantCheck(check, ctx) {
     }
 
     case 'suggested-not-upgraded': {
-      const suggested = (result.suggested_requirements ?? []).map((record) => String(record.text ?? ''))
+      // 触发理由子句常引用用户原话(如「符合『先小步、每步可回退』的要求」),
+      // 必须剥离后再比对,否则会把「建议的理由引用」误判为「建议混入要求段」(P07-T03 实测)。
+      const stripReason = (text) =>
+        String(text ?? '').replace(/[；;。]?\s*[（(]?\s*(?:触发理由|理由|原因)\s*[:：].*$/s, '').trim()
+      const suggested = (result.suggested_requirements ?? []).map((record) =>
+        stripReason(String(record.text ?? '')),
+      )
       const requirementText = [...(result.explicit_requirements ?? []), ...(result.context_requirements ?? [])]
         .map((record) => String(record.text ?? ''))
         .join('\n')
@@ -808,7 +843,7 @@ export function classificationAccepted(fixture, plan) {
  * 跑单例（纯编排；adapter 可注入）。
  * 返回结构化结果，供报告与 run.test.mjs 断言复用。
  */
-export async function runFixture(fixture, { adapter, mode = 'deterministic', language = 'zh', timeoutMs = 60000 } = {}) {
+export async function runFixture(fixture, { adapter, mode = 'deterministic', language = 'zh', timeoutMs = 60000, maxTokens = 8192, autoMaxTokens = true } = {}) {
   const problems = []
   const contextTurns = fixture.context ?? []
   const strategyLabel = fixture.manual_override ?? fixture.expected_type
@@ -848,16 +883,54 @@ export async function runFixture(fixture, { adapter, mode = 'deterministic', lan
     mode: 'full',
     legacy: isLegacyGeneral(defaultStrategyRegistry.get(strategyLabel)),
   })
-  const compileCall = await adapter.call({
-    phase: 'compile',
-    fixture,
-    strategy: plan.strategy.type,
-    system: plan.system,
-    user: plan.user,
-    plan,
-    legacy: plan.legacy,
-    temperature: 0,
-  })
+  const compileTokens = compileMaxTokens(fixture, { maxTokens, autoMaxTokens })
+  let compileCall = null
+  let transportProblem = null
+  try {
+    compileCall = await adapter.call({
+      phase: 'compile',
+      fixture,
+      strategy: plan.strategy.type,
+      system: plan.system,
+      user: plan.user,
+      plan,
+      legacy: plan.legacy,
+      temperature: 0,
+      maxTokens: compileTokens,
+    })
+  } catch (error) {
+    // 真机长耗时/断连:该例按传送失败 fail-closed 记 FAIL,绝不回落 mock、不伪造产物;
+    // 也不能让单个慢调用把整轮回归进程打挂(P07-T03 实测 60s/120s 超时中断)。
+    transportProblem = {
+      severity: 'error',
+      rule: 'REGRESSION_TRANSPORT_FAIL',
+      detail: `compile 真实调用失败(该例 fail-closed): ${String(error?.message ?? error)}`,
+    }
+  }
+  if (transportProblem) {
+    return {
+      ...base,
+      resolved_type: plan.strategy.type,
+      overridden: plan.overridden,
+      legacy: plan.legacy,
+      compile_max_tokens: compileTokens,
+      wellFormed: false,
+      provenance_ok: false,
+      classification,
+      overall: 'FAIL',
+      evaluator_used: false,
+      evaluator: null,
+      reference_mismatch: false,
+      deterministic: {
+        ok: false,
+        invariants: [],
+        invariant_checks: [],
+        violations: 1,
+      },
+      result: null,
+      problems: [...problems, transportProblem],
+    }
+  }
   const rawOutput = String(compileCall?.text ?? '')
 
   // 3. finalize + validate（与 host 同序：非 legacy 以三层校验覆盖 provenance_ok）。
@@ -902,13 +975,29 @@ export async function runFixture(fixture, { adapter, mode = 'deterministic', lan
   // 5. evaluator 层（仅 --mode all；参考线，绝不覆盖 deterministic）。
   let evaluator = null
   if (mode === 'all') {
-    evaluator = await runEvaluator(adapter, {
-      fixture,
-      result: outcome.result,
-      language,
-      strategy: plan.strategy.type,
-      deterministicOk,
-    })
+    try {
+      evaluator = await runEvaluator(adapter, {
+        fixture,
+        result: outcome.result,
+        language,
+        strategy: plan.strategy.type,
+        deterministicOk,
+      })
+    } catch (error) {
+      // evaluator 纯参考线：调用失败不得打挂整轮（deterministic 判定不受影响）。
+      evaluator = {
+        evaluator_prompt_id: EVALUATOR_PROMPT_ID,
+        temperature: 0,
+        verdict: 'error',
+        error: String(error?.message ?? error),
+        questions: [],
+      }
+      problems.push({
+        severity: 'warn',
+        rule: 'REGRESSION_EVALUATOR_TRANSPORT',
+        detail: `evaluator 调用失败(参考线跳过): ${String(error?.message ?? error)}`,
+      })
+    }
   }
 
   const deterministic = {
@@ -933,6 +1022,7 @@ export async function runFixture(fixture, { adapter, mode = 'deterministic', lan
     resolved_type: plan.strategy.type,
     overridden: plan.overridden,
     legacy: plan.legacy,
+    compile_max_tokens: compileTokens,
     wellFormed: outcome.wellFormed,
     provenance_ok: outcome.result.provenance_ok,
     classification,
@@ -958,13 +1048,17 @@ export async function runRegression({
   mode = 'deterministic',
   language = 'zh',
   timeoutMs = 60000,
+  maxTokens = 8192,
+  autoMaxTokens = true,
 } = {}) {
   if (!adapter) throw new Error('runRegression 需要 adapter')
   const costRecords = []
   const instrumented = instrumentAdapter(adapter, costRecords, adapter.name)
   const results = []
   for (const fixture of fixtures) {
-    results.push(await runFixture(fixture, { adapter: instrumented, mode, language, timeoutMs }))
+    results.push(
+      await runFixture(fixture, { adapter: instrumented, mode, language, timeoutMs, maxTokens, autoMaxTokens }),
+    )
   }
   const deterministicPass = results.filter((item) => item.deterministic.ok).length
   const evaluatorItems = results.flatMap((item) => item.evaluator?.questions ?? [])
@@ -985,7 +1079,7 @@ export async function runRegression({
   }
 }
 
-export function buildReport({ mode, adapterName, run, generatedAt = new Date().toISOString() }) {
+export function buildReport({ mode, adapterName, run, generatedAt = new Date().toISOString(), config = null }) {
   return {
     schema: REPORT_SCHEMA,
     generated_at: generatedAt,
@@ -996,6 +1090,8 @@ export function buildReport({ mode, adapterName, run, generatedAt = new Date().t
     threshold: null,
     threshold_status: THRESHOLD_STATUS,
     gate: 'deterministic',
+    // 编译输出上限策略（镜像 host）；P07-T03 harness 保真度证据。
+    config,
     totals: run.totals,
     costs: run.costs,
     results: run.results.map((item) => ({
@@ -1004,6 +1100,7 @@ export function buildReport({ mode, adapterName, run, generatedAt = new Date().t
       resolved_type: item.resolved_type,
       overridden: item.overridden,
       legacy: item.legacy,
+      compile_max_tokens: item.compile_max_tokens,
       wellFormed: item.wellFormed,
       provenance_ok: item.provenance_ok,
       classification: item.classification,
@@ -1158,8 +1255,21 @@ export async function main(argv = process.argv.slice(2)) {
   const all = loadFixtures()
   const fixtures = selectFixtures(all, options.fixtures)
   const adapter = await createAdapter(options)
-  const run = await runRegression({ fixtures, adapter, mode: options.mode, language: options.language, timeoutMs: options.timeoutMs })
-  const report = buildReport({ mode: options.mode, adapterName: adapter.name, run })
+  const run = await runRegression({
+    fixtures,
+    adapter,
+    mode: options.mode,
+    language: options.language,
+    timeoutMs: options.timeoutMs,
+    maxTokens: options.maxTokens,
+    autoMaxTokens: options.autoMaxTokens,
+  })
+  const report = buildReport({
+    mode: options.mode,
+    adapterName: adapter.name,
+    run,
+    config: { max_tokens: options.maxTokens, auto_max_tokens: options.autoMaxTokens, host_fidelity: true },
+  })
 
   for (const item of run.results) {
     const mark = item.overall === 'PASS' ? '✓' : '✗'
@@ -1182,7 +1292,8 @@ export async function main(argv = process.argv.slice(2)) {
       (options.mode === 'all'
         ? `；evaluator 参考线 ${run.totals.evaluator_pass}/${run.totals.evaluator_questions}（inconsistent ${run.totals.evaluator_inconsistent}）`
         : '') +
-      `；threshold=${THRESHOLD_STATUS}`,
+      `；threshold=${THRESHOLD_STATUS}` +
+      `；compile max_tokens=${options.maxTokens}${options.autoMaxTokens ? '(+auto)' : ''}`,
   )
   if (adapter.name === 'mock') {
     console.log(

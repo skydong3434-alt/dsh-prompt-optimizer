@@ -12,13 +12,20 @@
  * 本文件不读写 fixture 目录、不发网络请求、不依赖真实模型。
  */
 import assert from 'node:assert/strict'
-import { COMPILE_MARKERS } from '../../lib/core/compiler.js'
+import { COMPILE_MARKERS, buildCompilerProtocol, finalizeCompile } from '../../lib/core/compiler.js'
+import { defaultStrategyRegistry, isLegacyGeneral } from '../../lib/core/registry.js'
+import { normalizeQuoteText } from '../../lib/core/provenance.js'
+import {
+  stripSuggestionQuotedRefs,
+  stripSuggestionReason,
+} from '../../lib/core/strategies/_shared.js'
 import {
   DEFAULT_REPORT_DIR,
   EVALUATOR_PROMPT_ID,
   REPORT_SCHEMA,
   THRESHOLD_STATUS,
   buildReport,
+  compileMaxTokens,
   defaultReportPath,
   evaluateInvariant,
   loadFixtures,
@@ -361,6 +368,183 @@ const fakeFixture = (overrides = {}) => ({
   assert.ok(fixtures.every((fixture) => Array.isArray(fixture.context)))
   assert.ok(fixtures.some((fixture) => fixture.id === 'assistant-only-context-not-user-decision'))
   console.log('✓ rr10 loadFixtures:14 例语料可加载（context 已归一化）')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r11. compile maxTokens 必须镜像 host（默认 8192 + 跟随输入长度，32768 封顶）
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  // 默认下限 = host Config.maxTokens(8192)；短输入不得低于它。
+  assert.equal(compileMaxTokens({ raw_input: '短输入' }), 8192)
+  // 跟随输入长度：ASCII 长草稿按 4 字符/token 估算 ×2，抬高上限。
+  const long = 'x'.repeat(20000)
+  assert.equal(compileMaxTokens({ raw_input: long }), Math.max(8192, Math.ceil(20000 / 4) * 2))
+  assert.ok(compileMaxTokens({ raw_input: long }) > 8192)
+  // autoMaxTokens 关闭 → 固定值（host cfg.autoMaxTokens === false 分支）。
+  assert.equal(compileMaxTokens({ raw_input: long }, { maxTokens: 4096, autoMaxTokens: false }), 4096)
+  // 32768 封顶。
+  assert.equal(compileMaxTokens({ raw_input: 'x'.repeat(1000000) }), 32768)
+  // CLI 解析：默认镜像 host；显式覆盖；非法值 fail-fast。
+  assert.equal(parseArgs([]).maxTokens, 8192)
+  assert.equal(parseArgs([]).autoMaxTokens, true)
+  assert.equal(parseArgs(['--max-tokens', '4096']).maxTokens, 4096)
+  assert.equal(parseArgs(['--no-auto-max-tokens']).autoMaxTokens, false)
+  assert.throws(() => parseArgs(['--max-tokens', '1']), /max-tokens/)
+
+  // 端到端：compile 调用必须真的带上该上限（旧实现漏传 → live adapter 落 2048 截断）。
+  let compileCtx = null
+  const adapter = scriptedAdapter({
+    classify: () => classifierJson('research'),
+    compile: (ctx) => {
+      compileCtx = ctx
+      return asOutput('OK')
+    },
+  })
+  const run = await runRegression({
+    fixtures: [fakeFixture({ id: 'fake-maxtokens', invariants: [{ desc: 'r', require: 'OK' }] })],
+    adapter,
+  })
+  assert.equal(compileCtx.maxTokens, 8192, 'compile 调用必须显式携带 host 保真的 maxTokens')
+  assert.equal(run.results[0].compile_max_tokens, 8192)
+  console.log('✓ rr11 compile maxTokens 镜像 host（8192 + auto，未再落 2048 截断）')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r12. finalizeCompile 未知项同话题去重（G-4 #2 落地证据）
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const strategy = defaultStrategyRegistry.get('planning')
+  const rawText = [
+    '<<<EXPLICIT>>>',
+    '- 帮我规划 [quote: 帮我规划]',
+    '<<<CONTEXT>>>',
+    '- (无)',
+    '<<<SUGGESTED>>>',
+    '- (无)',
+    '<<<UNKNOWN>>>',
+    '预算方面我还没定，预算边界先空着，需注入[待补充:预算边界]',
+    '工期约束也没想好',
+    '时间上你给个提示就行',
+    '<<<OPTIMIZED>>>',
+    '# Goal（目标）\n仅框架',
+    '<<<END>>>',
+  ].join('\n')
+  const outcome = finalizeCompile(strategy, rawText, {
+    rawInput: '帮我规划。预算方面我还没定，预算边界先空着，工期约束也没想好，时间上你给个提示就行。',
+    contextTurns: [],
+    classifier: { confidence_internal: 0.9 },
+    missing: [],
+    mode: 'full',
+    legacy: isLegacyGeneral(strategy),
+  })
+  const labels = outcome.result.missing_constraints.map((m) => m.label)
+  assert.equal(
+    labels.filter((l) => l.includes('预算')).length,
+    1,
+    `预算话题只保留一条，实际 ${labels.join(' | ')}`,
+  )
+  assert.equal(
+    labels.filter((l) => /工期|时间/.test(l)).length,
+    1,
+    `工期/时间同一话题只保留一条，实际 ${labels.join(' | ')}`,
+  )
+  assert.ok(
+    !outcome.result.optimized_prompt.includes('需注入[待补充'),
+    '注入占位符必须剥离内嵌 [待补充: …] 标记',
+  )
+  console.log('✓ rr12 未知项同话题去重（预算/工期·时间各一条 + 剥内嵌占位符）')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r13. 建议条目剥离触发理由 / 用户原话引用（P07-T03 实测：理由引用导致误判升级）
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  assert.equal(stripSuggestionReason('回退用 git 恢复（触发理由：「失败就回退」未指明粒度）'), '回退用 git 恢复')
+  assert.equal(stripSuggestionReason('按周拆分。理由：用户要求按月'), '按周拆分')
+  assert.equal(stripSuggestionQuotedRefs('作为「每步可回退」的落地机制'), '作为的落地机制')
+  console.log('✓ rr13 建议条目剥离触发理由与引号引用片段')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r14. 编译纪律文案落盘（P07-T03 修复轮：对象前置 / 争议转述 / 平台原词 / 执行时态 / 可追溯）
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const zh = buildCompilerProtocol('zh')
+  const en = buildCompilerProtocol('en')
+  for (const kw of ['对象前置', '只能 CUDA', 'Mac M1 Pro', '已执行', '可回追']) {
+    assert.ok(zh.includes(kw), `zh 编译纪律应包含「${kw}」`)
+  }
+  for (const kw of ['object-first', 'only CUDA', 'Mac M1 Pro', 'execution wording', 'traceable']) {
+    assert.ok(en.includes(kw), `en 编译纪律应包含「${kw}」`)
+  }
+  console.log('✓ rr14 编译纪律文案落盘（对象前置/争议转述/平台原词/执行时态/可追溯）')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r15. execution 守卫：编号标题也能识别执行段骨架；纯规划标题仍触发
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const guards = defaultStrategyRegistry.get('execution').guards
+  const guard = guards.find((g) => g.id === 'execution-not-planning-dominated')
+  assert.ok(guard, 'execution 守卫应存在')
+  const minimal = { explicit_requirements: [], context_requirements: [] }
+  const good =
+    '### 1. Current Task\n### 2. Goal\n### 3. Allowed Scope\n### 4. Exact Actions\n### 5. Forbidden Scope\n### 6. Handoff'
+  assert.equal(guard.check(good, minimal, ''), null, '编号标题应识别为执行段骨架')
+  const bad = '### 1. Goals\n### 2. Milestones\n### 3. Roadmap'
+  assert.ok(guard.check(bad, minimal, ''), '纯规划标题应触发守卫')
+  console.log('✓ rr15 execution 守卫支持编号标题（### 1. Current Task）')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r16. planning 守卫：元说明豁免 + 阶段去重计数（P07-T03 实测两处误报）
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const guards = defaultStrategyRegistry.get('planning').guards
+  const execGuard = guards.find((g) => g.id === 'planning-no-execution-evidence')
+  const phaseGuard = guards.find((g) => g.id === 'planning-phase-requires-acceptance')
+  assert.ok(execGuard && phaseGuard, 'planning 守卫应存在')
+  const minimal = { explicit_requirements: [], context_requirements: [] }
+  assert.equal(
+    execGuard.check('# Goal\n保证 16 段齐全且无「已执行」类措辞。', minimal, ''),
+    null,
+    '「无『已执行』类措辞」元说明不得触发执行证据守卫',
+  )
+  assert.ok(execGuard.check('# Goal\n上周已完成实现。', minimal, ''), '真实执行证据仍应触发')
+  const repeated =
+    [
+      'Phase 1 任务一',
+      'Phase 2 任务二',
+      'Phase 3 任务三',
+      'Phase 4 任务四',
+      'Phase 1 步骤',
+      'Phase 2 步骤',
+      'Phase 3 步骤',
+      'Phase 4 步骤',
+      'Acceptance 1',
+      'Acceptance 2',
+      'Acceptance 3',
+      'Acceptance 4',
+    ].join('\n')
+  assert.equal(phaseGuard.check(repeated, minimal, ''), null, '去重后 4 阶段均有验收，不得误判')
+  console.log('✓ rr16 planning 守卫：元说明豁免 + 阶段去重计数')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// r17. provenance 全角/半角标点归一（P07-T03 实测：模型引原话时转半角导致误判）
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  assert.equal(
+    normalizeQuoteText('我看到一半说法是 MPS 可以,另一半说只能 CUDA,到底哪个对?'),
+    normalizeQuoteText('我看到一半说法是 MPS 可以，另一半说只能 CUDA，到底哪个对？'),
+    '全角/半角标点应归一为同一文本',
+  )
+  assert.equal(
+    normalizeQuoteText('“预算、边界”'),
+    normalizeQuoteText('「预算、边界」'),
+    '引号/书名号类角标应作为边缘噪声剥离',
+  )
+  console.log('✓ rr17 provenance 全角/半角标点归一（quote 字面比对不再误判）')
 }
 
 console.log('\ntest/regression/run.test.mjs: all regression runner tests passed')

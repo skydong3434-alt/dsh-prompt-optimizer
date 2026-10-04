@@ -87,14 +87,62 @@ const EDGE_NOISE = new Set([
   "?",
   ";",
   "；",
+  "「",
+  "」",
+  "『",
+  "』",
+  "《",
+  "》",
+  "【",
+  "】",
 ]);
 
 /**
- * 文本规范化:折叠连续空白为单空格 → trim → 反复剥离首尾引号/句读。
+ * 全角 ↔ 半角标点映射(逐字比对前的规范化噪声;P07-T03 实测:模型引用用户原话时
+ * 常把全角「，。：」转成半角,导致 quote 字面比对误判 PROVENANCE_EVIDENCE_NOT_IN_RAW)。
+ */
+const PUNCT_FULL_TO_HALF: Record<string, string> = {
+  "，": ",",
+  "。": ".",
+  "、": ",",
+  "；": ";",
+  "：": ":",
+  "！": "!",
+  "？": "?",
+  "（": "(",
+  "）": ")",
+  "［": "[",
+  "］": "]",
+  "｛": "{",
+  "｝": "}",
+  "＂": '"',
+  "‘": "'",
+  "’": "'",
+  "“": '"',
+  "”": '"',
+  "〔": "(",
+  "〕": ")",
+  "【": "[",
+  "】": "]",
+  "《": "<",
+  "》": ">",
+  "～": "~",
+};
+
+function normalizePunctuation(text: string): string {
+  let out = "";
+  for (const char of String(text ?? "")) {
+    out += PUNCT_FULL_TO_HALF[char] ?? char;
+  }
+  return out;
+}
+
+/**
+ * 文本规范化:全角标点 → 半角 → 折叠连续空白为单空格 → trim → 反复剥离首尾引号/句读。
  * **不做大小写折叠**——逐字要求,保守优先(大小写变体判为不匹配)。
  */
 export function normalizeQuoteText(text: string): string {
-  let out = text.replace(/\s+/g, " ").trim();
+  let out = normalizePunctuation(text).replace(/\s+/g, " ").trim();
   while (out.length > 0 && EDGE_NOISE.has(out.charAt(0))) {
     out = out.slice(1).trim();
   }

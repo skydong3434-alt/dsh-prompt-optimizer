@@ -1,0 +1,674 @@
+{
+  "schema": "apo-regression-report-v1",
+  "generated_at": "2026-10-04T00:23:42.113Z",
+  "mode": "deterministic",
+  "adapter": "opencode-go:deepseek-v4-flash",
+  "evaluator_prompt_id": "intent-fidelity-v1",
+  "threshold": null,
+  "threshold_status": "DEFERRED_TO_P07_CALIBRATION",
+  "gate": "deterministic",
+  "config": {
+    "max_tokens": 8192,
+    "auto_max_tokens": true,
+    "host_fidelity": true
+  },
+  "totals": {
+    "fixtures": 5,
+    "deterministic_pass": 1,
+    "deterministic_fail": 4,
+    "classification_pass": 5,
+    "evaluator_used": false,
+    "evaluator_questions": 0,
+    "evaluator_pass": 0,
+    "evaluator_inconsistent": 0
+  },
+  "costs": {
+    "execution": {
+      "classify": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 141,
+          "avg": 141,
+          "max": 141
+        },
+        "total_input_tokens": {
+          "min": 620,
+          "avg": 620,
+          "max": 620
+        },
+        "latency_ms": {
+          "min": 2630,
+          "avg": 2630,
+          "max": 2630
+        },
+        "actual_prompt_tokens": {
+          "min": 620,
+          "avg": 620,
+          "max": 620
+        }
+      },
+      "compile": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 3171,
+          "avg": 3171,
+          "max": 3171
+        },
+        "context_tokens": {
+          "min": 822,
+          "avg": 822,
+          "max": 822
+        },
+        "total_input_tokens": {
+          "min": 3391,
+          "avg": 3391,
+          "max": 3391
+        },
+        "latency_ms": {
+          "min": 23189,
+          "avg": 23189,
+          "max": 23189
+        },
+        "actual_prompt_tokens": {
+          "min": 3391,
+          "avg": 3391,
+          "max": 3391
+        }
+      },
+      "_total": {
+        "calls": 2,
+        "system_tokens": {
+          "min": 538,
+          "avg": 1854.5,
+          "max": 3171
+        },
+        "context_tokens": {
+          "min": 141,
+          "avg": 481.5,
+          "max": 822
+        },
+        "total_input_tokens": {
+          "min": 620,
+          "avg": 2005.5,
+          "max": 3391
+        },
+        "latency_ms": {
+          "min": 2630,
+          "avg": 12909.5,
+          "max": 23189
+        }
+      }
+    },
+    "planning": {
+      "compile": {
+        "calls": 3,
+        "system_tokens": {
+          "min": 3061,
+          "avg": 3061,
+          "max": 3061
+        },
+        "context_tokens": {
+          "min": 681,
+          "avg": 710.67,
+          "max": 746
+        },
+        "total_input_tokens": {
+          "min": 3149,
+          "avg": 3174.67,
+          "max": 3203
+        },
+        "latency_ms": {
+          "min": 18767,
+          "avg": 25357.33,
+          "max": 34280
+        },
+        "actual_prompt_tokens": {
+          "min": 3149,
+          "avg": 3174.67,
+          "max": 3203
+        }
+      },
+      "classify": {
+        "calls": 2,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 65,
+          "avg": 71,
+          "max": 77
+        },
+        "total_input_tokens": {
+          "min": 554,
+          "avg": 557,
+          "max": 560
+        },
+        "latency_ms": {
+          "min": 1594,
+          "avg": 1722,
+          "max": 1850
+        },
+        "actual_prompt_tokens": {
+          "min": 554,
+          "avg": 557,
+          "max": 560
+        }
+      },
+      "_total": {
+        "calls": 5,
+        "system_tokens": {
+          "min": 538,
+          "avg": 2051.8,
+          "max": 3061
+        },
+        "context_tokens": {
+          "min": 65,
+          "avg": 454.8,
+          "max": 746
+        },
+        "total_input_tokens": {
+          "min": 554,
+          "avg": 2127.6,
+          "max": 3203
+        },
+        "latency_ms": {
+          "min": 1594,
+          "avg": 15903.2,
+          "max": 34280
+        }
+      }
+    },
+    "research": {
+      "classify": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 538,
+          "avg": 538,
+          "max": 538
+        },
+        "context_tokens": {
+          "min": 75,
+          "avg": 75,
+          "max": 75
+        },
+        "total_input_tokens": {
+          "min": 565,
+          "avg": 565,
+          "max": 565
+        },
+        "latency_ms": {
+          "min": 1552,
+          "avg": 1552,
+          "max": 1552
+        },
+        "actual_prompt_tokens": {
+          "min": 565,
+          "avg": 565,
+          "max": 565
+        }
+      },
+      "compile": {
+        "calls": 1,
+        "system_tokens": {
+          "min": 2922,
+          "avg": 2922,
+          "max": 2922
+        },
+        "context_tokens": {
+          "min": 733,
+          "avg": 733,
+          "max": 733
+        },
+        "total_input_tokens": {
+          "min": 2995,
+          "avg": 2995,
+          "max": 2995
+        },
+        "latency_ms": {
+          "min": 18516,
+          "avg": 18516,
+          "max": 18516
+        },
+        "actual_prompt_tokens": {
+          "min": 2995,
+          "avg": 2995,
+          "max": 2995
+        }
+      },
+      "_total": {
+        "calls": 2,
+        "system_tokens": {
+          "min": 538,
+          "avg": 1730,
+          "max": 2922
+        },
+        "context_tokens": {
+          "min": 75,
+          "avg": 404,
+          "max": 733
+        },
+        "total_input_tokens": {
+          "min": 565,
+          "avg": 1780,
+          "max": 2995
+        },
+        "latency_ms": {
+          "min": 1552,
+          "avg": 10034,
+          "max": 18516
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "fixture_id": "execution-scoped-change",
+      "expected_type": "execution",
+      "resolved_type": "execution",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=execution（期望 execution）"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "必须给出 Allowed Scope",
+            "kind": "require",
+            "pattern": "Allowed Scope|允许(?:修改)?范围",
+            "ok": true,
+            "detail": "命中「Allowed Scope」"
+          },
+          {
+            "desc": "必须给出 Forbidden Scope",
+            "kind": "require",
+            "pattern": "Forbidden Scope|禁止(?:修改)?范围",
+            "ok": true,
+            "detail": "命中「Forbidden Scope」"
+          },
+          {
+            "desc": "必须要求真实运行测试",
+            "kind": "require",
+            "pattern": "npm test|Tests",
+            "ok": true,
+            "detail": "命中「npm test」"
+          },
+          {
+            "desc": "不得把改动范围扩大到存储层",
+            "kind": "prohibit",
+            "pattern": "(?:修改|改动|重构)[^\\n]{0,12}(?:settings\\s*存储|存储层|settings\\.ts)",
+            "ok": false,
+            "detail": "prohibit 命中「改动存储层」"
+          },
+          {
+            "desc": "不得引入自动发送 / 自动执行 / 自动决策（NON-GOAL）",
+            "kind": "prohibit",
+            "pattern": "自动(?:发送|执行|决策)|自动替换输入框",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得在未运行测试时声称通过",
+            "kind": "prohibit",
+            "pattern": "测试通过[^\\n]{0,10}(?:（无需运行|不用运行）)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "UNKNOWN 不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "执行细节缺失时保留为待补充，而非阻塞式提问",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 1
+      },
+      "evaluator_used": false,
+      "evaluator": null,
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "execution-not-planning-dominated",
+          "detail": "产出中没有任何执行段(Current Task / Allowed Scope / Forbidden Scope / Exact Actions / Handoff):execution 策略必须以执行段为骨架"
+        }
+      ]
+    },
+    {
+      "fixture_id": "planning-manual-override-contract",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": true,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "manual override=planning"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "优化稿必须包含四段协议中的可解析标记",
+            "kind": "require",
+            "pattern": "<<<EXPLICIT>>>|## 明确要求|来自你的明确要求",
+            "ok": true,
+            "detail": "命中「<<<EXPLICIT>>>」"
+          },
+          {
+            "desc": "优化稿必须给出规划契约段落锚点",
+            "kind": "require",
+            "pattern": "Goal|Preconditions|Exact Steps|Acceptance Criteria|Next Step Condition",
+            "ok": true,
+            "detail": "命中「Exact Steps」"
+          },
+          {
+            "desc": "不得有任何无 quote 支撑的 explicit 条目（provenance 必须通过）",
+            "kind": "prohibit",
+            "pattern": "\\[quote:\\s*\\]|\\[quote:\\s*（?无）?\\]",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "手动 override 时不得再触发 AUTO 分类行为",
+            "kind": "prohibit",
+            "pattern": "正在识别任务类型|AUTO\\s*分类|分类结果[:：]",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "planning-override-contract",
+            "desc": "手动 Planning override 必须仍严格产出 16 段契约 + 四段协议，且 provenance 校验通过",
+            "ok": false,
+            "detail": "期望 provenance_ok=true，实际 false"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "手动 override 场景下，建议项仍不得升级为用户要求",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 1
+      },
+      "evaluator_used": false,
+      "evaluator": null,
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "VALIDATION_REQUIREMENT_NOT_TRACEABLE",
+          "detail": "要求「手动按 Planning 帮我规划」在优化稿中找不到任何可寻关键词:疑似丢失或改写用户要求"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「已确认」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        }
+      ]
+    },
+    {
+      "fixture_id": "planning-unknown-non-blocking",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=planning（期望 planning）"
+      },
+      "overall": "PASS",
+      "deterministic": {
+        "ok": true,
+        "invariants": [
+          {
+            "desc": "未知信息必须保留为 [待补充: …]",
+            "kind": "require",
+            "pattern": "\\[待补充[:：]",
+            "ok": true,
+            "detail": "命中「[待补充:」"
+          },
+          {
+            "desc": "不得把未知项写成阻塞式前置问题",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|必须先补充|否则无法继续|回答后才能继续|确认后才能继续|等你确认|待你确认",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得因为没有排期就拒绝产出任务拆解",
+            "kind": "prohibit",
+            "pattern": "(?:无法|不能|暂时不能)[^\\n]{0,10}(?:拆解|规划|产出)(?:[^\\n]{0,6}(?:请|需)先)?",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "应明确允许在合理边界内继续",
+            "kind": "require",
+            "pattern": "可继续|先行|暂定|按假设|待补充[:：]",
+            "ok": true,
+            "detail": "命中「待补充:」"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-not-blocking",
+            "desc": "存在多个 UNKNOWN 时 provenance_ok 仍须为 true，且优化稿不得出现阻塞句式",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          },
+          {
+            "id": "suggested-not-upgraded",
+            "desc": "优化器补的排期建议不得变成用户硬约束",
+            "ok": true,
+            "detail": "建议保持建议身份，未升级为要求"
+          }
+        ],
+        "violations": 0
+      },
+      "evaluator_used": false,
+      "evaluator": null,
+      "reference_mismatch": false,
+      "problems": []
+    },
+    {
+      "fixture_id": "planning-unknown-semantic-dedup",
+      "expected_type": "planning",
+      "resolved_type": "planning",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": true,
+      "classification": {
+        "ok": true,
+        "detail": "classified=planning（期望 planning）"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "重复的预算未知项不得以不同措辞各占一条",
+            "kind": "prohibit",
+            "pattern": "预算方面[^\\n]*\\n(?:[^\\n]*\\n){0,4}[^\\n]*预算边界",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "重复的工期/时间未知项不得以不同措辞各占一条",
+            "kind": "prohibit",
+            "pattern": "工期约束[^\\n]*\\n(?:[^\\n]*\\n){0,4}[^\\n]*时间上",
+            "ok": false,
+            "detail": "prohibit 命中「工期约束也没想好 [quote: 工期约束也没想好]\n- 时间上给个提示就行 [quote: 时间上」"
+          },
+          {
+            "desc": "合并后仍必须保留预算与工期两个未知项",
+            "kind": "require",
+            "pattern": "预算[\\s\\S]{0,120}工期|工期[\\s\\S]{0,120}预算",
+            "ok": true,
+            "detail": "命中「预算边界、工期」"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "unknown-semantic-dedup",
+            "desc": "语义等价的 UNKNOWN 条目（预算 / 工期）必须合并为各一条唯一项",
+            "ok": true,
+            "detail": "UNKNOWN 已去重且保留话题「预算与工期约束」"
+          },
+          {
+            "id": "unknown-not-blocking",
+            "desc": "去重后 UNKNOWN 仍不得阻塞规划产出",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 1
+      },
+      "evaluator_used": false,
+      "evaluator": null,
+      "reference_mismatch": false,
+      "problems": []
+    },
+    {
+      "fixture_id": "research-conflicting-evidence-weighted",
+      "expected_type": "research",
+      "resolved_type": "research",
+      "overridden": false,
+      "legacy": false,
+      "compile_max_tokens": 8192,
+      "wellFormed": true,
+      "provenance_ok": false,
+      "classification": {
+        "ok": true,
+        "detail": "classified=research（期望 research）"
+      },
+      "overall": "FAIL",
+      "deterministic": {
+        "ok": false,
+        "invariants": [
+          {
+            "desc": "必须并列呈现冲突双方，不得静默择一",
+            "kind": "require",
+            "pattern": "冲突|并列|两方|两边|Conflicting Evidence",
+            "ok": true,
+            "detail": "命中「并列」"
+          },
+          {
+            "desc": "必须给出证据强度 / 可复现性提示",
+            "kind": "require",
+            "pattern": "证据强度|可复现|权威|一手来源|官方",
+            "ok": true,
+            "detail": "命中「官方」"
+          },
+          {
+            "desc": "不得把任一方说法直接写成已确认结论",
+            "kind": "prohibit",
+            "pattern": "(?:确定|可以确定|已确认|结论是)[^\\n]{0,12}(?:MPS|CUDA)",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          },
+          {
+            "desc": "不得在证据不足时判定不可行",
+            "kind": "prohibit",
+            "pattern": "(?:CUDA 是唯一|只有 MPS 可行|只能 CUDA|无法在 Mac)",
+            "ok": false,
+            "detail": "prohibit 命中「只能 CUDA」"
+          },
+          {
+            "desc": "未知项不得写成阻塞式前置问题（invariant A）",
+            "kind": "prohibit",
+            "pattern": "请先回答|必须先确认|否则无法继续|确认后才能继续",
+            "ok": true,
+            "detail": "prohibit 未命中"
+          }
+        ],
+        "invariant_checks": [
+          {
+            "id": "conflicting-evidence-weighted",
+            "desc": "真实冲突对必须并列呈现，并按来源权威 + 可复现性给出加权提示",
+            "ok": true,
+            "detail": "冲突双方并列 + 加权提示均在场"
+          },
+          {
+            "id": "unknown-not-blocking",
+            "desc": "冲突未定属于 UNKNOWN，应保留为待验证项而非阻塞提问",
+            "ok": true,
+            "detail": "无阻塞句式；UNKNOWN 未被当作阻塞前置"
+          }
+        ],
+        "violations": 1
+      },
+      "evaluator_used": false,
+      "evaluator": null,
+      "reference_mismatch": false,
+      "problems": [
+        {
+          "severity": "error",
+          "rule": "research-no-unfounded-strong-assertion",
+          "detail": "发现无证据强断言「不可行」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNPROVEN_STRONG_CLAIM",
+          "detail": "发现无证据强断言「不可行」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNEVIDENCED_QUANTIFICATION",
+          "detail": "发现无证据量化约束「平台：macOS」(平台/运行环境):用户未提供的量化硬约束必须写成 [待补充: …]"
+        },
+        {
+          "severity": "error",
+          "rule": "VALIDATION_UNEVIDENCED_QUANTIFICATION",
+          "detail": "发现无证据量化约束「模型名称、macOS」(模型/引擎/框架):用户未提供的量化硬约束必须写成 [待补充: …]"
+        }
+      ]
+    }
+  ]
+}

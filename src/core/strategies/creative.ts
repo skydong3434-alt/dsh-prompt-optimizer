@@ -371,12 +371,12 @@ function renderMissing(
   const items = constraints ?? [];
   if (!items.length) {
     return zh
-      ? `尚未提供缺口清单;请在编译中自行识别并以 ${TODO_PLACEHOLDER_PREFIX} …] 形式标出(尤其平台 / 时长 / 画幅 / 目标受众 / 输出格式)。`
+      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …](尤其平台 / 时长 / 画幅 / 目标受众 / 输出格式)。`
       : "No gap list was provided; identify gaps during compilation and mark them as [TODO: ...] (especially platform / duration / aspect ratio / audience / output format).";
   }
   const header = zh
-    ? "已识别的缺口(classifier / 上游给出,必须落成 [待补充: …]):"
-    : "Known gaps (from classifier/upstream; must become [TODO: ...]):";
+    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
+    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
   const lines = items.map((item) => {
     const reason = item.reason ? `(${item.reason})` : "";
     return `- ${todoPlaceholder(item.label, language)}${reason}`;
