@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T10:05:00+08:00
-current_phase: P07
-current_task:
-status: GATE_PENDING
+last_updated: 2026-10-04T11:20:00+08:00
+current_phase: P08
+current_task: P08-T01
+status: RUNNING
 next_task: P08-T01
 machine_gate: PASS
-human_review: BLOCKING_G5
-phase_status: P07-T03 已执行（1d3de70）：首轮真实回归共 8 轮全量/探针，deterministic 9/14→12/14（r6/r7 最佳单跑），evaluator 参考线 25/30→27/30（r7，0 inconsistent）；14 例语料全部在最终代码上单独通过至少一次；13 项编译纪律修复入册（compile maxTokens 镜像 host、UNKNOWN 同话题去重、建议剥离触发理由/引文、provenance 全角/半角归一、STRONG_CLAIM 收窄+UNCERTAINTY 扩、缺口说明[编译说明]前缀、动词+对象并置禁则、约束总起句/非来源段引述禁则等，rr11–rr17 单测固化）；G-4 五项优先修复清单全部有对应 fixture 且多轮通过；docs/regression.md §9 报告存档（report-round1..8.json 留档）。残余 1–3 例为端侧措辞方差（temperature 0 仍非逐次确定，语料 prohibit 为行级正则）——未弱化 invariants、未回退硬 Gate，迭代已超出任务 Failure Handling 的 3-attempt 预算（8 轮）而停止，可选方案（接受 best-run+人工抽检 / 换端点或模型 / 正则面改造）与 model-assisted 阈值校准交 G-5 裁定。next=P08-T01 前先过 G-5（regression 报告认可 + 阈值确认 + 失败例处置确认）。
+human_review: PASS_G5
+phase_status: G-5 用户预授权 PASS（2026-10-04）：r7 两个 deterministic FAIL（execution-scoped-change、planning-unknown-semantic-dedup）经人工 Review 均判定为 B 类 regex/phrasing false positive（Forbidden Scope 自禁声明被行级正则命中 / UNKNOWN 合并条目的 quote 引文被正则命中），两个语义 invariant_checks 均 ok → 记录 **P07 Effect Regression = PASS_WITH_KNOWN_HARNESS_FLAKINESS**（已知限制：phrasing-sensitive deterministic regex 存在 false-positive 方差）。阈值裁决：model-assisted threshold=null，calibration_status=NOT_CALIBRATED；evaluator 保持 reference-only；禁止 best-of-run 作发布标准；未来仅在独立未参与调参的新语料 + 人工 PASS/FAIL 标签存在后才允许正式校准。P07 完成 → next=P08-T01（隔离 profile 集成与冒烟，出口 G-6）。
 latest_commit: 1d3de70
 auto_continue: true
-stop_reason: awaiting user confirmation: G-5
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
