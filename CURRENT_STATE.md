@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T11:40:00+08:00
+last_updated: 2026-10-04T12:00:00+08:00
 current_phase: P08
-current_task:
-status: GATE_PENDING
+current_task: P08-T02
+status: RUNNING
 next_task: P08-T02
 machine_gate: PASS
-human_review: BLOCKING_G6
-phase_status: **P08-T01 完成**（2026-10-04）：隔离 profile apo-dev 安装插件包 + 真实 DSH Desktop 2.0.15 boot（[dsh-prompt-optimizer] loaded, POST /dsh-prompt-optimizer/optimize）+ 冒烟清单 12 项全景通过（CSRF 403 / 405 / 400 / SSE streaming meta→411delta→done / AUTO research High / execution override 647delta / context 388delta / test-model opencode-go pong 1.9s；button·dropdown·cancel·replace·undo·settings·fallback 由 npm test 全绿覆盖）。S-09 PASS：desktop profile 五文件 sha256+mtime 前后快照零改动。问题清单 1 项明确降级：research provenance_ok=false 经逐行审计为 B 类 regex/phrasing 假阳性（[待补充:] 前缀式与「取决于」转述被 INVENTED_QUANTITY 误命中，与 G-5 裁定同源；不在 P08-T01 范围修，记档 docs/p08-smoke.md 待模块修订/G-6 复核）。next=P08-T02（桌面端实测与回归证据），出口 **G-6**（awaiting user confirmation: G-6）。
+human_review: PASS_G6
+phase_status: G-6 已通过（2026-10-04 用户裁决 A）：隔离 profile 真实加载成功；正式 desktop profile S-09 零污染（sha256+mtime 一致）；SSE/AUTO/override/context/cancel/replace/undo/dropdown/settings/fallback 全部真实或既定自动化验证通过；唯一 provenance_ok=false 属 G-5 已识别的 phrasing-sensitive regex false positive（KNOWN_NON_BLOCKING_HARNESS_LIMITATION，本轮不修，后续单独治理 deterministic regex 边界）。 P08-T02 经用户裁决新增两项真实桌面验收（已入任务契约）：①Follow DSH model route——真实 UI session 必须实际调用 opencode-go/deepseek-v4-flash，区分"直接 HTTP smoke 无 session context"（回落第一 provider 属测试入口行为）与"真实 DSH UI session"（若回落 = BLOCKING route defect，G-7 前必须修）；②Fallback billing safety——fallback 仅显式 fallbackModel 时启用，默认空时主模型失败必须明确报错，不得隐式 fallback 到任何其他 provider（尤其 deepseek-official）。 plus 三槽位渲染/双版本设置/SSE/replace·undo/BASELINE 版本矩阵。出口 G-7（唯一正式修改 desktop profile 的许可点）。
 latest_commit: 73b5425
 auto_continue: true
-stop_reason: awaiting user confirmation: G-6
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
