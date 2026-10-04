@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T13:54:50+08:00
+last_updated: 2026-10-04T14:30:00+08:00
 current_phase: P09
-current_task: 
-status: GATE_PENDING
+current_task: P09-T02
+status: RUNNING
 next_task: P09-T01
 machine_gate: PASS
-human_review: BLOCKING_G7
-phase_status: P08 完成（P08-T02 桌面端实测/回归证据）：真实 DSH Desktop 2.0.15（apo-dev 隔离 profile）四项真机探针全过——T-1 无会话 smoke 回落第一 provider（deepseek-official→QUOTA）=测试入口行为（记录，非缺陷）；T-2 Follow DSH model route 真实会话等价载荷 done=opencode-go/deepseek-v4-flash + 758 帧真实流式（真实 UI 会话不回落第一 provider，无 route defect，G-7 前无需修）；T-3 默认 fallbackModel 空 → 无效主路由明确 SSE error 不静默换 provider；T-4 显式 fallbackModel（--patch 覆盖层，profile 本体零改动）→ fallbackUsed=true+fallbackReason（回退仅显式配置启用）。KNOWN_NON_BLOCKING_HARNESS_LIMITATION 记档（research provenance_ok=false 同一 deterministic regex 假阳性族，本次表面「声称支持…但无实测」条件句，不修、不重开 P02/P04）。全量 npm test 26 文件 exit 0；BASELINE 附录 B 版本矩阵追加（docs/p08-desktop.md 证据存档）；正式 desktop profile 零触碰（S-09 口径）。出口 G-7（唯一正式修改 desktop profile 的许可点）。
+human_review: PASS_G7
+phase_status: G-7 已通过（2026-10-04 用户桌面 UI 确认 6 项全 PASS：优化按钮+AUTO 下拉 / AUTO+SSE+ResultDock / 手动 Research override / replace·undo·Esc / 插件 Settings / 其他插件与 DSH 稳定）。正式安装状态：desktop node_modules link 建立、bundles=21、默认模型路由 opencode-go 未改、其他 20 插件配置零改动、备份留存 ~/.dsh/backups/apo/g7-install-20261004-140136/ 可回滚、未发生回滚。P09-T02 已授权执行：release / tag(v0.1.0-apo) / CHANGELOG / NOTICE(license 边界与污染检查) / README / DoD 终检；完成后停在最终 Human Product Acceptance（用户验收，AI 不代过）。
 latest_commit: e26f960
 auto_continue: true
-stop_reason: awaiting user confirmation: G-7
+stop_reason: none
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
