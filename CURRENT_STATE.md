@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T14:30:00+08:00
+last_updated: 2026-10-04T15:30:00+08:00
 current_phase: P09
-current_task: P09-T02
-status: RUNNING
-next_task: P09-T01
+current_task:
+status: GATE_PENDING
+next_task: NONE
 machine_gate: PASS
-human_review: PASS_G7
-phase_status: G-7 已通过（2026-10-04 用户桌面 UI 确认 6 项全 PASS：优化按钮+AUTO 下拉 / AUTO+SSE+ResultDock / 手动 Research override / replace·undo·Esc / 插件 Settings / 其他插件与 DSH 稳定）。正式安装状态：desktop node_modules link 建立、bundles=21、默认模型路由 opencode-go 未改、其他 20 插件配置零改动、备份留存 ~/.dsh/backups/apo/g7-install-20261004-140136/ 可回滚、未发生回滚。P09-T02 已授权执行：release / tag(v0.1.0-apo) / CHANGELOG / NOTICE(license 边界与污染检查) / README / DoD 终检；完成后停在最终 Human Product Acceptance（用户验收，AI 不代过）。
-latest_commit: e26f960
+human_review: BLOCKING_DOD
+phase_status: P09-T02 发布产物完成（c88e922 + annotated tag v0.1.0-apo）：NOTICE.md（Y1X1n MIT 署名 + Jerry 致谢 / WestFox BSD-3 借鉴 / linshenkx·zhangjiazhi AGPL 仅思想零复制 + 依赖一览）、CHANGELOG.md（v0.1.0-apo 条目）、README 三件套（本 fork 增强章节 + License/NOTICE 引用）、docs/dod.md（DoD §18 十项逐条证据 + 发布交付物 4 项）、scripts/check-license-contamination.mjs（15 指纹 PASS）、scripts/check-dod.mjs（机器子集 43/43 PASS）、scripts/backup-profile.sh（P09-T01 演练产物随发布入库）。门禁：npm test 26 文件 exit 0、apo_state PASS、license 检查 PASS。DoD 机器证据齐备，最终 Human Product Acceptance（DoD 终检）由用户声明 PASS，AI 不代过。
+latest_commit: c88e922
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: DoD 终检（Human Product Acceptance）
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -28,9 +28,9 @@ stop_reason: none
 |---|---|---|---|
 | P00-T01 fork-and-baseline | DONE | 基线（BASELINE.md, da52f28；tag base-y1x1n-v0.4.0） | — |
 | P01-T01 core-contracts | DONE | src/core/types.ts（17f4dee） | — |
-| P01-T02 provenance-validator | DONE | provenance.ts 校验器（e32858f） | **G-1（当前）** |
+| P01-T02 provenance-validator | DONE | provenance.ts 校验器（e32858f） | **G-1** |
 | P01.5-T01 research-strategy | DONE | Research 策略 v0.1（15 段 + 守卫矩阵 + _shared 初版，bb4c6a4） | — |
-| P01.5-T02 vertical-slice-e2e | DONE | 端到端（AUTO→…→Replace），3276e1e | **G-VS（当前）** |
+| P01.5-T02 vertical-slice-e2e | DONE | 端到端（AUTO→…→Replace），3276e1e | **G-VS** |
 | P02-T01 shared-rules | DONE | _shared 完整化：六段规则 + 5 守卫工厂 + invariant A·B（e06bf3b） | — |
 | P02-T02 planning-strategy | DONE | planning 策略 v0.1：16 段 + 三铁律 + 守卫（9784dbe） | — |
 | P02-T03 execution-strategy | DONE | execution 策略 v0.1：15 段 + 三铁律 + 守卫（543f737） | — |
@@ -50,14 +50,15 @@ stop_reason: none
 | P06-T01 | DONE | AUTO 下拉 + 手动覆盖：TYPE_OPTIONS 单一真值源 + 逐类型请求体/重优化沿用（4f515db） | — |
 | P06-T02 | DONE | ResultDock 四组 provenance 定稿 + 缺口清单独立 + 低置信类型黄条（1f3d530） | — |
 | P06-T03 | DONE | settings 新字段（默认类型/分类模型）+ i18n 收尾（3dc97af） | **G-4** |
-| P07-T01 | DONE（G-3 待确认） | 语料固化：12 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
+| P07-T01 | DONE | 语料固化：14 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
 | P07-T02 | DONE | regression runner：双通道 + 开销测量 + 报告（cc3aed0） | — |
-| P07-T03 | 已执行（待 G-5 裁定） | 首轮真实回归 8 轮 + 13 项纪律修复 + 报告存档（1d3de70）；deterministic 12/14 最佳单跑，残余端侧措辞方差 | **G-5（当前）** |
-| P08-T01 | DONE | 隔离 profile apo-dev 安装 + 冒烟 12 项全过 + S-09 零改动证明（docs/p08-smoke.md） | **G-6（已过，2026-10-04 用户裁决 A）** |
+| P07-T03 | DONE（G-5 裁定） | 首轮真实回归 8 轮 + 13 项纪律修复 + 报告存档（1d3de70）；deterministic 12/14 最佳单跑，残余端侧措辞方差；G-5 = PASS_WITH_KNOWN_HARNESS_FLAKINESS | **G-5** |
+| P08-T01 | DONE | 隔离 profile apo-dev 安装 + 冒烟 12 项全过 + S-09 零改动证明（docs/p08-smoke.md） | **G-6** |
 | P08-T02 | DONE | 桌面端实测/回归证据：四项真机探针全过（Follow DSH model route=opencode-go + fallback billing safety 双向验证）+ KNOWN_NON_BLOCKING_HARNESS_LIMITATION 记档 + BASELINE 附录 B（e26f960；docs/p08-desktop.md） | — |
-| P09-T01..T02 | PENDING | 备份演练（**G-7（当前）** 安装许可）/发布 | DoD 用户终检 |
+| P09-T01 | DONE | 备份演练 + G-7 授权正式安装（备份 ~/.dsh/backups/apo/g7-install-20261004-140136/、bundles=21、未回滚；backup-profile.sh 随 P09-T02 入库 c88e922） | **G-7（已过，2026-10-04）** |
+| P09-T02 | DONE | 发布产物 v0.1.0-apo：NOTICE/CHANGELOG/README/DoD 终检 + license 污染检查 + annotated tag（c88e922） | **DoD 终检（当前）** |
 
-Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → **G-7（当前）正式安装许可**（唯一动正式 profile 的开关）→ DoD 终检 PASS。
+Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ **DoD 终检（当前）：用户声明 PASS 即项目完成**（详见 docs/dod.md；AI 不代过）。
 
 ## 无人值守运行说明（简版，详见 docs/runner-ops.md）
 
@@ -67,3 +68,4 @@ Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 
 - 无人值守：不会有人回答提问；需要人工裁决时写 stop_reason 后结束本轮。
 - 边界（NON-GOAL）：不碰正式 DSH profile / ~/.dsh 正式配置 / PAB / Personal AI Brain / AI 视频工作流；不安装 launchd；不复制任何 AGPL 代码（linshenkx / zhangjiazhi）。
 - 本仓库 git remote：upstream = Y1X1n/dsh-prompt-optimizer（只读）；origin 待用户提供自有仓库 URL。
+- **项目里程碑**：P00–P09 全部 Task DONE；tag v0.1.0-apo 已建；DoD 机器证据齐备（docs/dod.md），等待用户最终 Human Product Acceptance 声明 PASS。
