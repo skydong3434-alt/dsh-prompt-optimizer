@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T11:20:00+08:00
+last_updated: 2026-10-04T11:40:00+08:00
 current_phase: P08
-current_task: P08-T01
-status: RUNNING
-next_task: P08-T01
+current_task:
+status: GATE_PENDING
+next_task: P08-T02
 machine_gate: PASS
-human_review: PASS_G5
-phase_status: G-5 用户预授权 PASS（2026-10-04）：r7 两个 deterministic FAIL（execution-scoped-change、planning-unknown-semantic-dedup）经人工 Review 均判定为 B 类 regex/phrasing false positive（Forbidden Scope 自禁声明被行级正则命中 / UNKNOWN 合并条目的 quote 引文被正则命中），两个语义 invariant_checks 均 ok → 记录 **P07 Effect Regression = PASS_WITH_KNOWN_HARNESS_FLAKINESS**（已知限制：phrasing-sensitive deterministic regex 存在 false-positive 方差）。阈值裁决：model-assisted threshold=null，calibration_status=NOT_CALIBRATED；evaluator 保持 reference-only；禁止 best-of-run 作发布标准；未来仅在独立未参与调参的新语料 + 人工 PASS/FAIL 标签存在后才允许正式校准。P07 完成 → next=P08-T01（隔离 profile 集成与冒烟，出口 G-6）。
-latest_commit: 1d3de70
+human_review: BLOCKING_G6
+phase_status: **P08-T01 完成**（2026-10-04）：隔离 profile apo-dev 安装插件包 + 真实 DSH Desktop 2.0.15 boot（[dsh-prompt-optimizer] loaded, POST /dsh-prompt-optimizer/optimize）+ 冒烟清单 12 项全景通过（CSRF 403 / 405 / 400 / SSE streaming meta→411delta→done / AUTO research High / execution override 647delta / context 388delta / test-model opencode-go pong 1.9s；button·dropdown·cancel·replace·undo·settings·fallback 由 npm test 全绿覆盖）。S-09 PASS：desktop profile 五文件 sha256+mtime 前后快照零改动。问题清单 1 项明确降级：research provenance_ok=false 经逐行审计为 B 类 regex/phrasing 假阳性（[待补充:] 前缀式与「取决于」转述被 INVENTED_QUANTITY 误命中，与 G-5 裁定同源；不在 P08-T01 范围修，记档 docs/p08-smoke.md 待模块修订/G-6 复核）。next=P08-T02（桌面端实测与回归证据），出口 **G-6**（awaiting user confirmation: G-6）。
+latest_commit: 73b5425
 auto_continue: true
-stop_reason: none
+stop_reason: awaiting user confirmation: G-6
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
@@ -53,7 +53,8 @@ stop_reason: none
 | P07-T01 | DONE（G-3 待确认） | 语料固化：12 例 fixtures + schema 校验 + invariant_checks + docs/regression.md（f6f7466） | **G-3** |
 | P07-T02 | DONE | regression runner：双通道 + 开销测量 + 报告（cc3aed0） | — |
 | P07-T03 | 已执行（待 G-5 裁定） | 首轮真实回归 8 轮 + 13 项纪律修复 + 报告存档（1d3de70）；deterministic 12/14 最佳单跑，残余端侧措辞方差 | **G-5（当前）** |
-| P08-T01..T02 | PENDING | 隔离冒烟/桌面证据 | **G-6** |
+| P08-T01 | DONE | 隔离 profile apo-dev 安装 + 冒烟 12 项全过 + S-09 零改动证明（docs/p08-smoke.md） | **G-6（当前）** |
+| P08-T02 | PENDING | 桌面端实测/回归证据 | — |
 | P09-T01..T02 | PENDING | 备份演练（**G-7** 安装许可）/发布 | DoD 用户终检 |
 
 Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ DoD 终检 PASS。
