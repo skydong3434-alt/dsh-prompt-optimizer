@@ -2,17 +2,17 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-04T15:30:00+08:00
-current_phase: P09
-current_task:
-status: GATE_PENDING
+last_updated: 2026-10-04T15:00:00+08:00
+current_phase: DONE
+current_task: 
+status: DONE
 next_task: NONE
 machine_gate: PASS
-human_review: BLOCKING_DOD
-phase_status: P09-T02 发布产物完成（c88e922 + annotated tag v0.1.0-apo）：NOTICE.md（Y1X1n MIT 署名 + Jerry 致谢 / WestFox BSD-3 借鉴 / linshenkx·zhangjiazhi AGPL 仅思想零复制 + 依赖一览）、CHANGELOG.md（v0.1.0-apo 条目）、README 三件套（本 fork 增强章节 + License/NOTICE 引用）、docs/dod.md（DoD §18 十项逐条证据 + 发布交付物 4 项）、scripts/check-license-contamination.mjs（15 指纹 PASS）、scripts/check-dod.mjs（机器子集 43/43 PASS）、scripts/backup-profile.sh（P09-T01 演练产物随发布入库）。门禁：npm test 26 文件 exit 0、apo_state PASS、license 检查 PASS。DoD 机器证据齐备，最终 Human Product Acceptance（DoD 终检）由用户声明 PASS，AI 不代过。
+human_review: PASS_DOD
+phase_status: **项目收官（v0.1.0-apo，DoD PASS，2026-10-04 用户最终产品验收通过）**。P00–P09 全部完成，G-1/G-VS/G-2/G-4/G-3/G-5/G-6/G-7 八个人工 Gate + DoD 全部 PASS；正式 desktop 安装落地（link/bundles=21/默认模型 opencode-go 未改/其他插件零改动/备份留存未回滚）；发布产物 v0.1.0-apo（NOTICE/CHANGELOG/README/check-dod/check-license-contamination/tag）。KNOWLEDGE：KNOWN_NON_BLOCKING_HARNESS_LIMITATION（research phrasing regex false positive）为已记录非阻塞已知限制。**Post-v0.1.0 backlog（不阻塞 DONE，未经用户开启不得自动执行）**：① 配置 origin 后决定是否推送远端 release/tag；② 以独立未参与 P07 调参的新语料做 evaluator 人工标注与正式阈值校准（R-2）；③ 后续单独治理 phrasing-sensitive deterministic regex。Runner 已停止（BLOCKING_DOD 后不再 resume）；launchd job com.apo.devrunner 保持安装但处于 not running（不自动启动）。
 latest_commit: c88e922
-auto_continue: true
-stop_reason: awaiting user confirmation: DoD 终检（Human Product Acceptance）
+auto_continue: false
+stop_reason: completed: DoD PASS（user final acceptance 2026-10-04）
 ```
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
