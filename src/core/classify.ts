@@ -275,7 +275,7 @@ function clampConfidence(value: unknown): number {
 }
 
 /** 从原始文本中截出最后一个「已完整出现的顶层 JSON 对象」。 */
-function lastJsonRegion(text: string): string | null {
+export function lastJsonRegion(text: string): string | null {
   const end = text.lastIndexOf("}");
   if (end === -1) return null;
   let depth = 0;
@@ -628,10 +628,15 @@ export type ClassifyFailureKind =
   | "stream-error"
   | "invalid-output";
 
-/** classifyViaLlm 的完整结果(总返回一个 result;失败时为 general 兜底并带标记)。 */
-export interface ClassifyViaLlmOutcome {
-  /** 解析结果或兜底结果(general + 低置信);`usedFallback` 区分二者。 */
-  result: ClassifierResult;
+/**
+ * 结构化 JSON 小调用的完整结果(总返回一个 result;失败时为兜底结果并带标记)。
+ *
+ * 泛型化(P07 后新增分析阶段用):分类与「意图 / 目标 / 分诊分析」共用同一套
+ * 调用机制,避免把流处理 / 超时 / 认证归类逻辑复制两份。
+ */
+export interface JsonCallOutcome<T> {
+  /** 解析结果或兜底结果;`usedFallback` 区分二者。 */
+  result: T;
   /** 解析元信息(兜底路径为合成的降级元信息)。 */
   meta: ClassifierParseMeta;
   /** 是否发生了降级(解析补默认 / 未知类型 / 证据丢弃 / 任何失败兜底)。 */
@@ -658,14 +663,17 @@ export interface ClassifyViaLlmOutcome {
   };
 }
 
+/** 向后兼容别名:分类结果 = 通用结构化调用的结果。 */
+export type ClassifyViaLlmOutcome = JsonCallOutcome<ClassifierResult>;
+
 /** 分类调用输入(AUTO 路径:本轮输入 + 可选上下文)。 */
 export interface ClassifyViaLlmInput {
   raw_input: string;
   context_turns?: readonly ConversationTurn[];
 }
 
-/** classifyViaLlm 选项(全部可选;缺省即最保守行为)。 */
-export interface ClassifyViaLlmOptions<Message = ClassifierLlmMessage> {
+/** 结构化 JSON 小调用选项(全部可选;缺省即最保守行为)。 */
+export interface JsonCallOptions<Message = ClassifierLlmMessage> {
   language?: ClassifierLanguage;
   /** 外部取消信号(客户端断连 / 宿主统一超时)。 */
   signal?: AbortSignal;
@@ -680,6 +688,9 @@ export interface ClassifyViaLlmOptions<Message = ClassifierLlmMessage> {
   /** 逐段回调:思考块已剥离的干净增量(宿主透传 SSE 时可注入)。 */
   onDelta?: (text: string) => void;
 }
+
+/** 向后兼容别名。 */
+export type ClassifyViaLlmOptions<Message = ClassifierLlmMessage> = JsonCallOptions<Message>;
 
 /** 默认 user 消息:结构化最小形态,真实宿主可注入自己的 Message 工厂。 */
 function defaultClassifierMessage(payload: string): ClassifierLlmMessage {
@@ -808,22 +819,53 @@ async function collectClassifierText(
 }
 
 /**
- * classifyViaLlm —— 一次分类小调用(宿主侧调用入口,P03-T02)。
+ * 结构化 JSON 小调用的**规格**:把「怎么问 / 怎么解析 / 失败怎么兜底」参数化,
+ * 让分类(P03-T02)与意图分析(v2 Phase 1)共用同一套调用机制。
+ *
+ * 调用机制(超时 / 取消 / 认证归类 / thinkFilter / 请求快照)完全一致,
+ * 唯一差异是 system / user 文案、解析函数与兜底文案。
+ */
+export interface JsonCallSpec<T> {
+  /** 文案与错误信息里的调用名(如「分类」「意图分析」)。 */
+  label: string;
+  maxTokens: number;
+  temperature: number;
+  buildSystem(language: ClassifierLanguage): string;
+  buildUser(input: ClassifyViaLlmInput, language: ClassifierLanguage): string;
+  parse(
+    raw: string,
+    ctx: { rawInput: string; contextTurns: readonly ConversationTurn[] },
+  ): { result: T | null; meta: ClassifierParseMeta };
+  /** 兜底结果工厂(reason 为用户可读原因;ctx 供需要读原始输入的兜底实现使用)。 */
+  fallback(reason: string, ctx: { rawInput: string; contextTurns: readonly ConversationTurn[] }): T;
+  messages: {
+    abortedBeforeStart: string;
+    invalidOutput: string;
+    timedOut: string;
+    aborted: string;
+    failed: string;
+    truncated: string;
+  };
+}
+
+/**
+ * runJsonCallViaLlm —— 一次结构化 JSON 小调用(宿主侧通用入口)。
  *
  * 语义:
- *   - 正常 → parseClassifierOutput;结果可用即返回,失败(无可用 JSON)→ general 兜底;
- *   - error(AUTH / 传输)→ general + 低置信兜底,`failure` 标注 auth / stream-error;
- *   - 超时(`timeoutMs`)→ `timedOut: true`,调用方应走超时错误通道(与现有宿主风格一致);
+ *   - 正常 → `spec.parse`;结果可用即返回,失败(无可用 JSON)→ `spec.fallback`;
+ *   - error(AUTH / 传输)→ 兜底,`failure` 标注 auth / stream-error;
+ *   - 超时(`timeoutMs`)→ `timedOut: true`,调用方应走超时错误通道;
  *   - 外部 signal 取消 → `aborted: true`;signal 在调用前已取消时立即返回,不发起请求。
  *
- * 本函数不解析路由、不重试、不写 UI、不影响 handler 主路径(P05 才编排)。
+ * 本函数不解析路由、不重试、不写 UI。
  */
-export async function classifyViaLlm<Message = ClassifierLlmMessage>(
+export async function runJsonCallViaLlm<T, Message = ClassifierLlmMessage>(
   llm: ClassifierLlm<Message>,
   route: { provider: string; model: string },
   input: ClassifyViaLlmInput,
-  options: ClassifyViaLlmOptions<Message> = {},
-): Promise<ClassifyViaLlmOutcome> {
+  options: JsonCallOptions<Message>,
+  spec: JsonCallSpec<T>,
+): Promise<JsonCallOutcome<T>> {
   const startedAt = Date.now();
   const language: ClassifierLanguage = options.language ?? "zh";
   const rawInput = input.raw_input ?? "";
@@ -833,15 +875,15 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
     ((payload: string): Message => defaultClassifierMessage(payload) as unknown as Message);
 
   // 请求快照:即使提前取消也给出「本应使用的硬参数」,便于审计与回归。
-  const request: ClassifyViaLlmOutcome["request"] = {
+  const request: JsonCallOutcome<T>["request"] = {
     provider: route.provider,
     model: route.model,
-    maxTokens: CLASSIFIER_MAX_TOKENS,
-    temperature: CLASSIFIER_TEMPERATURE,
+    maxTokens: spec.maxTokens,
+    temperature: spec.temperature,
   };
   const finish = (
-    outcome: Omit<ClassifyViaLlmOutcome, "durationMs" | "request">,
-  ): ClassifyViaLlmOutcome => ({
+    outcome: Omit<JsonCallOutcome<T>, "durationMs" | "request">,
+  ): JsonCallOutcome<T> => ({
     ...outcome,
     durationMs: Date.now() - startedAt,
     request,
@@ -850,7 +892,7 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
   // 1. 调用前已取消:立即生效,绝不发起请求。
   if (options.signal?.aborted) {
     return finish({
-      result: fallbackClassifierResult("分类已取消,回退通用模式;可手动选择任务类型"),
+      result: spec.fallback(spec.messages.abortedBeforeStart, { rawInput, contextTurns }),
       meta: fallbackMeta([CLASSIFY_LLM_ISSUE.aborted]),
       degraded: true,
       aborted: true,
@@ -884,15 +926,15 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
   }
 
   try {
-    const system = buildClassifierSystem(language);
-    const user = buildClassifierUser({ raw_input: rawInput, context_turns: contextTurns }, language);
+    const system = spec.buildSystem(language);
+    const user = spec.buildUser({ raw_input: rawInput, context_turns: contextTurns }, language);
     const stream = llm.stream({
       provider: route.provider,
       model: route.model,
       system,
       messages: [buildMessage(user)],
-      maxTokens: CLASSIFIER_MAX_TOKENS,
-      temperature: CLASSIFIER_TEMPERATURE,
+      maxTokens: spec.maxTokens,
+      temperature: spec.temperature,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       signal: controller.signal,
     });
@@ -900,20 +942,20 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
     const collected = await collectClassifierText(stream, options.onDelta);
     // 中止可能以「正常 end」收尾:半截输出不可信,统一走取消 / 超时语义。
     if (controller.signal.aborted) {
-      throw new ClassifierStreamFailure(timedOut ? "分类调用超时" : "分类调用被中止");
+      throw new ClassifierStreamFailure(timedOut ? `${spec.label}调用超时` : `${spec.label}调用被中止`);
     }
 
-    const outcome = parseClassifierOutput(collected.text, { rawInput, contextTurns });
+    const outcome = spec.parse(collected.text, { rawInput, contextTurns });
     if (outcome.result === null) {
       return finish({
-        result: fallbackClassifierResult("分类输出无法解析,已回退通用模式;可手动选择任务类型"),
+        result: spec.fallback(spec.messages.invalidOutput, { rawInput, contextTurns }),
         meta: fallbackMeta([CLASSIFY_LLM_ISSUE.invalidOutput, ...outcome.meta.issues]),
         degraded: true,
         aborted: false,
         timedOut: false,
         usedFallback: true,
         failure: "invalid-output",
-        reason: "classifier output is not usable JSON",
+        reason: `${spec.label} output is not usable JSON`,
       });
     }
     return finish({
@@ -924,17 +966,13 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
       timedOut: false,
       usedFallback: false,
       failure: "none",
-      reason: collected.truncated ? "classifier output truncated at maxTokens" : undefined,
+      reason: collected.truncated ? spec.messages.truncated : undefined,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (timedOut || controller.signal.aborted) {
       return finish({
-        result: fallbackClassifierResult(
-          timedOut
-            ? "分类调用超时,回退通用模式;可手动选择任务类型"
-            : "分类调用已取消,回退通用模式;可手动选择任务类型",
-        ),
+        result: spec.fallback(timedOut ? spec.messages.timedOut : spec.messages.aborted, { rawInput, contextTurns }),
         meta: fallbackMeta([timedOut ? CLASSIFY_LLM_ISSUE.timedOut : CLASSIFY_LLM_ISSUE.aborted]),
         degraded: true,
         aborted: true,
@@ -946,7 +984,7 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
     }
     const auth = isAuthFailure(message);
     return finish({
-      result: fallbackClassifierResult("分类调用失败,已回退通用模式;可手动选择任务类型"),
+      result: spec.fallback(spec.messages.failed, { rawInput, contextTurns }),
       meta: fallbackMeta([auth ? CLASSIFY_LLM_ISSUE.authFailed : CLASSIFY_LLM_ISSUE.streamError]),
       degraded: true,
       aborted: false,
@@ -959,4 +997,43 @@ export async function classifyViaLlm<Message = ClassifierLlmMessage>(
     if (timer !== undefined) clearTimeout(timer);
     options.signal?.removeEventListener("abort", onExternalAbort);
   }
+}
+
+/**
+ * 分类调用规格:文案与 P03-T02 完全一致(逐字保留,零回归)。
+ * 注意 `messages.truncated` 的原文是 "classifier output truncated at maxTokens"。
+ */
+const CLASSIFIER_SPEC: JsonCallSpec<ClassifierResult> = {
+  label: "分类",
+  maxTokens: CLASSIFIER_MAX_TOKENS,
+  temperature: CLASSIFIER_TEMPERATURE,
+  buildSystem: buildClassifierSystem,
+  buildUser: (input, language) =>
+    buildClassifierUser({ raw_input: input.raw_input, context_turns: input.context_turns }, language),
+  parse: parseClassifierOutput,
+  fallback: fallbackClassifierResult,
+  messages: {
+    abortedBeforeStart: "分类已取消,回退通用模式;可手动选择任务类型",
+    invalidOutput: "分类输出无法解析,已回退通用模式;可手动选择任务类型",
+    timedOut: "分类调用超时,回退通用模式;可手动选择任务类型",
+    aborted: "分类调用已取消,回退通用模式;可手动选择任务类型",
+    failed: "分类调用失败,已回退通用模式;可手动选择任务类型",
+    truncated: "classifier output truncated at maxTokens",
+  },
+};
+
+/**
+ * classifyViaLlm —— 一次分类小调用(宿主侧调用入口,P03-T02)。
+ *
+ * 行为与 P03-T02 完全一致(逐字保留文案与失败归类),实现改为委托
+ * `runJsonCallViaLlm`,与 v2 的意图分析调用共用同一套机制。
+ * 本函数不解析路由、不重试、不写 UI、不影响 handler 主路径。
+ */
+export async function classifyViaLlm<Message = ClassifierLlmMessage>(
+  llm: ClassifierLlm<Message>,
+  route: { provider: string; model: string },
+  input: ClassifyViaLlmInput,
+  options: ClassifyViaLlmOptions<Message> = {},
+): Promise<ClassifyViaLlmOutcome> {
+  return runJsonCallViaLlm(llm, route, input, options, CLASSIFIER_SPEC);
 }

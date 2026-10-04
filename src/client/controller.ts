@@ -51,6 +51,8 @@ export interface OptimizerMeta {
   missingConstraints: MissingConstraintView[]
   rationale: string
   provenanceOk: boolean
+  /** v2 分析结论(intent / target / triage / ledger / gate);旧版 Host 为 null。 */
+  analysisView?: AnalysisView | null
 }
 
 export interface OptimizeResult {
@@ -80,12 +82,26 @@ export interface OptimizeResult {
   strategyVersion: string
   /** validate 机械比对 + anti-drift 守卫是否通过;false 时 UI 顶部警示。 */
   provenanceOk: boolean
+  /** v2 分析结论;旧版 Host 为 null。 */
+  analysisView?: AnalysisView | null
+  /** KEEP 分诊:优化稿逐字等于用户输入(未做任何改写)。 */
+  keep?: boolean
+}
+
+/** discovery_required:存在只有用户本人能决定的阻塞项,本轮不生成。 */
+export interface DiscoveryView {
+  analysis: AnalysisView
+  rationale: string
 }
 
 export interface OptimizerState {
   open: boolean
-  /** cancelled = loading 中被用户取消(O2):面板保持打开,冻结展示已生成的部分。 */
-  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled'
+  /**
+   * cancelled = loading 中被用户取消(O2):面板保持打开,冻结展示已生成的部分。
+   * discovery = 分析发现「只有用户本人能决定」的阻塞项:本轮不生成,
+   * 面板展示待确认清单(v2 §C12:只有 Discovery 能阻断生成)。
+   */
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery'
   error: string | null
   result: OptimizeResult | null
   /** 流式进行中的分段实况,仅 loading/cancelled 期间有值(cancelled 时为取消瞬间的定格)。 */
@@ -96,8 +112,10 @@ export interface OptimizerState {
   applied: { backup: string; text: string } | null
   /** UI 下拉选择的任务类型(auto = AUTO 自动识别)。 */
   typeSelection: TypeSelection
-  /** 阶段一分类结果(meta 事件到达后填充);未到达 = null(仍在识别类型)。 */
+  /** 阶段一分析结果(meta 事件到达后填充);未到达 = null(仍在识别意图)。 */
   meta: OptimizerMeta | null
+  /** discovery_required 载荷(仅 status==='discovery' 时有值)。 */
+  discovery: DiscoveryView | null
 }
 
 const ROUTE = '/dsh-prompt-optimizer/optimize'
@@ -112,6 +130,7 @@ const INITIAL: OptimizerState = {
   applied: null,
   typeSelection: 'auto',
   meta: null,
+  discovery: null,
 }
 
 /** 结构化 provenance 数组(done 事件字段缺失 / 旧版 Host 时返回空数组)。 */
@@ -156,6 +175,147 @@ function asConfidenceLevel(value: unknown): 'High' | 'Medium' | 'Low' {
   return value === 'High' || value === 'Medium' || value === 'Low' ? value : 'Low'
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// v2 分析视图(意图 / 目标 / 分诊 / 台账 / 缺失解析)
+//
+// 全部字段可选:旧版 Host 不下发 v2 字段时这些解析器返回 null,面板行为与
+// v2 之前完全一致(向后兼容优先)。不做任何推断,只做结构化归一化。
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface IntentView {
+  primary: string
+  supporting: string[]
+  workMode: string
+  rationale: string
+}
+
+export interface TargetView {
+  target: string
+  modality: string
+  /** 命中的引擎展示名;未识别或用户没提引擎时为 null。 */
+  engine: string | null
+  confidence: string
+  rationale: string
+}
+
+export interface TriageView {
+  triage: string
+  reasons: string[]
+  keepSafe: boolean
+}
+
+export interface LedgerView {
+  id: string
+  text: string
+  source: string
+  status: string
+  evidence: string[]
+  note?: string
+}
+
+export interface ResolutionView {
+  id: string
+  text: string
+  classification: string
+  blocking: boolean
+  rationale: string
+  question?: string
+}
+
+export interface AnalysisGateView {
+  blocked: boolean
+  blockingItems: ResolutionView[]
+  discoverableItems: ResolutionView[]
+  optionalItems: ResolutionView[]
+  reason: string
+}
+
+export interface AnalysisView {
+  intent: IntentView
+  target: TargetView
+  triage: TriageView
+  ledger: LedgerView[]
+  resolution: ResolutionView[]
+  gate: AnalysisGateView
+}
+
+function asTextArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0) : []
+}
+
+function asResolutionViews(value: unknown): ResolutionView[] {
+  if (!Array.isArray(value)) return []
+  const out: ResolutionView[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    out.push({
+      id: String(record.id ?? ''),
+      text: String(record.text ?? ''),
+      classification: String(record.classification ?? 'UNKNOWN'),
+      blocking: record.blocking === true,
+      rationale: String(record.rationale ?? ''),
+      ...(typeof record.question === 'string' && record.question ? { question: record.question } : {}),
+    })
+  }
+  return out
+}
+
+/** 解析 meta / discovery_required / done 上的 v2 分析字段;旧版 Host 缺字段时返回 null。 */
+export function asAnalysisView(event: Record<string, unknown>): AnalysisView | null {
+  const intent = event.intent
+  if (!intent || typeof intent !== 'object') return null
+  const intentRecord = intent as Record<string, unknown>
+  const target = (event.target ?? {}) as Record<string, unknown>
+  const engine = target.engine && typeof target.engine === 'object' ? (target.engine as Record<string, unknown>) : null
+  const triage = (event.triage ?? {}) as Record<string, unknown>
+  const gate = (event.gate ?? {}) as Record<string, unknown>
+  const ledger: LedgerView[] = []
+  if (Array.isArray(event.ledger)) {
+    for (const item of event.ledger) {
+      if (!item || typeof item !== 'object') continue
+      const record = item as Record<string, unknown>
+      ledger.push({
+        id: String(record.id ?? ''),
+        text: String(record.text ?? ''),
+        source: String(record.source ?? 'UNKNOWN'),
+        status: String(record.status ?? 'OPEN'),
+        evidence: asTextArray(record.evidence),
+        ...(typeof record.note === 'string' && record.note ? { note: record.note } : {}),
+      })
+    }
+  }
+  return {
+    intent: {
+      primary: String(intentRecord.primary ?? 'general'),
+      supporting: asTextArray(intentRecord.supporting),
+      workMode: String(intentRecord.work_mode ?? 'one_shot'),
+      rationale: String(intentRecord.rationale ?? ''),
+    },
+    target: {
+      target: String(target.target ?? 'general'),
+      modality: String(target.modality ?? 'text'),
+      engine: engine ? String(engine.name ?? '') || null : null,
+      confidence: String(target.confidence ?? 'low'),
+      rationale: String(target.rationale ?? ''),
+    },
+    triage: {
+      triage: String(triage.triage ?? 'PATCH'),
+      reasons: asTextArray(triage.reasons),
+      keepSafe: triage.keep_safe === true,
+    },
+    ledger,
+    resolution: asResolutionViews(event.missing_resolution),
+    gate: {
+      blocked: gate.blocked === true,
+      blockingItems: asResolutionViews(gate.blocking_items),
+      discoverableItems: asResolutionViews(gate.discoverable_items),
+      optionalItems: asResolutionViews(gate.optional_items),
+      reason: String(gate.reason ?? ''),
+    },
+  }
+}
+
 /**
  * 拆斜杠命令前缀:「/goal 帮我……」只优化正文,替换时拼回前缀,避免命令词被改写。
  * 正文为空(只敲了命令,如 "/goal")时返回 commandOnly:true,调用方直接提示、
@@ -177,7 +337,7 @@ export function splitCommandPrefix(text: string): { prefix?: string; body: strin
  */
 export function shouldAutoClose(input: {
   open: boolean
-  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled'
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery'
   draft: string
   prevRunning: boolean
   running: boolean
@@ -352,7 +512,7 @@ export function createOptimizerController(
     // 下拉选择在 set(loading) 前读取:auto 不发 promptType(走 AUTO 分类),
     // 其余值作为手动覆盖直达 Host(跳过分类)。
     const typeSelection = state.typeSelection
-    set({ open: true, status: 'loading', error: null, live: { analysis: '', optimized: '' }, last: { text: draft, sessionId, prefix }, applied: null, meta: null })
+    set({ open: true, status: 'loading', error: null, live: { analysis: '', optimized: '' }, last: { text: draft, sessionId, prefix }, applied: null, meta: null, discovery: null })
     try {
       // 复用当前会话的模型选择(每次点击实时查询,会话里换模型立即生效);
       // 查询失败时交给 Host 端回退解析。设置里固定了模型时跳过:Host 端
@@ -478,7 +638,22 @@ export function createOptimizerController(
                 missingConstraints: asMissingConstraints(event.missing_constraints),
                 rationale: String(event.rationale ?? ''),
                 provenanceOk: event.provenance_ok !== false,
+                analysisView: asAnalysisView(event as Record<string, unknown>),
               },
+            })
+          } else if (event.type === 'discovery_required') {
+            // v2:分析发现「只有用户本人能决定」的阻塞项 → 本轮不生成。
+            // terminal=true 让收尾逻辑不再报「连接中断」(响应是正常结束的)。
+            terminal = true
+            clearLiveTimer()
+            const view = asAnalysisView(event as Record<string, unknown>)
+            set({
+              status: 'discovery',
+              live: null,
+              discovery: view
+                ? { analysis: view, rationale: String(event.rationale ?? view.gate.reason) }
+                : null,
+              error: view ? null : '需求确认请求无法解析,请重新优化',
             })
           } else if (event.type === 'done') {
             terminal = true
@@ -507,6 +682,9 @@ export function createOptimizerController(
                 missingConstraints: asMissingConstraints(event.missing_constraints),
                 strategyVersion: String(event.strategy_version ?? ''),
                 provenanceOk: event.provenance_ok !== false,
+                // done 缺 v2 字段时回落到 meta 已下发的分析结论(同一轮分析,不重复请求)。
+                analysisView: asAnalysisView(event as Record<string, unknown>) ?? state.meta?.analysisView ?? null,
+                keep: event.keep === true,
               },
             })
           } else if (event.type === 'error') {

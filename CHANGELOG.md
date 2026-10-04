@@ -4,6 +4,44 @@
 版本号采用 fork 发行线 `v0.x.y-apo`；`package.json` 名义版本沿用上游 `0.4.0`
 （派生包名不变，详见 NOTICE §3）。
 
+## [v0.2.0-apo-dev] — 未发布（v2 升级进行中）
+
+从「固定模板式 Prompt 扩写器」升级为「意图保真自适应提示词编辑器」。
+设计基线与分期方案见 `docs/PLAN-v2-adaptive-editor.md`；本段只记录已落地的阶段。
+
+### Phase 1 —— 分析阶段 + 阻塞门（已完成）
+
+主流程前置四步 + 一个门：**Intent & Work-Mode Analysis**（主意图 + 辅意图 +
+工作模式）、**Prompt Target / Target Engine**、**Edit Triage**
+（KEEP / PATCH / RESTRUCTURE / REBUILD）、**Missing Resolution**
+（UNKNOWN 三分类 + blocking），以及**阻塞即不生成**（唯一允许阻断的出口）。
+
+- 新增 `src/core/targets.ts`：8 目标 + 表驱动引擎目录（DSH / Claude Code / Codex /
+  Midjourney / Flux / SD / 即梦 / 可灵 / Veo / Seedance / Runway …），
+  最长别名优先 + 短 ASCII 别名词边界；**无巨型 if/else**。
+- 新增 `src/core/triage.ts`：KEEP 需机械判据与模型**双方一致**（否则降级 PATCH）；
+  REBUILD 需机械同意（模型无权重写用户成稿）；长段落复读识别。
+- 新增 `src/core/requirements.ts`：UNKNOWN 三分类（USER_REQUIRED /
+  AGENT_DISCOVERABLE / OPTIONAL）+ blocking 单向收紧；需求台账**来源与状态分离**；
+  「按你的判断继续」只可产生 PROVISIONAL / CONDITIONAL / DEFERRED，
+  **永不** CONFIRMED / USER_EXPLICIT；`findLedgerViolations` 不变量自检。
+- 新增 `src/core/analyze.ts`：一次结构化小调用（temp 0 / maxTokens 1024 / lowest
+  reasoning）产出意图 + 目标 + 分诊 + 缺失解析 + 台账；**取代**旧的分类调用
+  （AUTO 路径仍为 2 次调用，不新增开销）；容忍旧 `ClassifierResult` JSON 并
+  确定性派生新字段。
+- `src/core/classify.ts`：抽出通用 `runJsonCallViaLlm`（调用机制复用），
+  `classifyViaLlm` 保留为薄封装，文案与失败归类逐字不变。
+- `src/core/compiler.ts`：KEEP 路径 `finalizeKeepResult`（**零模型调用、零改写**，
+  `optimized_prompt` 逐字等于用户输入）+ `assertKeepFidelity` 机械断言。
+- `src/index.ts`：分析阶段接入两阶段管线；`discovery_required` 事件（阻塞时
+  **不进入编译、不消耗编译 token**）；meta / done 携带 intent / target / triage /
+  ledger / missing_resolution / gate。
+- Client：`status` 新增 `discovery`；需求确认面板（阻塞项 + 建议问法 + 门禁理由）；
+  头部目标 / 分诊徽章；KEEP「已原样保留」提示；中英各 20 条新文案。
+- 测试：新增 `targets` / `triage` / `requirements` / `analyze` / `phase1-gate`
+  五套件；`controller` 增 c26–c28。`npm test` 385 断言全绿，既有 22 套件零回归。
+- 报告：`docs/phase1-report.md`（含验收标准逐条对照与已知限制）。
+
 ## [v0.1.0-apo] — 2026-10-04（首个可发布版本，Release Candidate）
 
 DSH Adaptive Prompt Optimizer 完成全部 9 个阶段（P00–P09），通过 G-1..G-7

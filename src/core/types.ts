@@ -153,6 +153,17 @@ export interface CompileResult {
   strategy_version: string;
   /** validate 机械比对是否通过;false 时 UI 必须顶部警示。 */
   provenance_ok: boolean;
+  // ── v2(全部可选:旧消费方零改动)────────────────────────────────────────
+  /** 意图画像(主/辅 + 工作模式)。 */
+  intent?: IntentProfile;
+  /** 提示词目标 / 目标引擎(目标感知编译的依据)。 */
+  target?: TargetResolution;
+  /** 编辑分诊结果(KEEP 时 optimized_prompt 必须与输入等价)。 */
+  triage?: TriageDecision;
+  /** 需求台账(来源与状态分离)。 */
+  ledger?: RequirementLedgerEntry[];
+  /** 缺失解析结果(UNKNOWN 三分类 + 阻塞判定)。 */
+  missing_resolution?: MissingResolutionItem[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,4 +277,295 @@ export interface OptimizeMetaEvent {
   missing_constraints: MissingConstraint[];
   rationale: string;
   provenance_ok: boolean;
+  // ── v2 加法字段(可选;旧客户端忽略即可)────────────────────────────────
+  intent?: IntentProfile;
+  target?: TargetResolution;
+  triage?: TriageDecision;
+  ledger?: RequirementLedgerEntry[];
+  /** 缺失解析(含阻塞判定);blocked=true 时 meta 不会出现,走 discovery_required。 */
+  missing_resolution?: MissingResolutionItem[];
+  /** 分析门(blocked 时 meta 不会出现;此处供 UI 展示可自查项计数)。 */
+  gate?: AnalysisGate;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2:工作意图(主 + 辅)—— 取代「单一标签」心智,但保留 PromptType 作为投影
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 六种工作意图(不含 general;general 只作为 primary 的兜底取值)。 */
+export type WorkIntent =
+  | "research"
+  | "planning"
+  | "execution"
+  | "diagnostic"
+  | "review"
+  | "creative";
+
+export const WORK_INTENTS: readonly WorkIntent[] = [
+  "research",
+  "planning",
+  "execution",
+  "diagnostic",
+  "review",
+  "creative",
+] as const;
+
+/** 工作模式:下游执行方应以什么节奏工作(影响信息责任与建议,不影响是否可编译)。 */
+export type WorkMode =
+  /** 一次性交付:拿到 prompt 即可产出最终结果。 */
+  | "one_shot"
+  /** 迭代式:需要多轮往返打磨。 */
+  | "iterative"
+  /** 探索式:先调研/试验再定方案。 */
+  | "exploratory"
+  /** 受控式:需要人工审批 / 门禁 / 不可逆操作前确认。 */
+  | "governed";
+
+export const WORK_MODES: readonly WorkMode[] = ["one_shot", "iterative", "exploratory", "governed"] as const;
+
+/** 意图画像:Primary + Supporting(不是单一标签)。 */
+export interface IntentProfile {
+  /** 主工作意图(general = 无法判定;此时沿用既有 general 策略兜底)。 */
+  primary: WorkIntent | "general";
+  /** 辅助意图(按重要性降序;不含 primary 自身;可为空)。 */
+  supporting: WorkIntent[];
+  /** 每个辅助意图的一句话说明(与 supporting 同序;缺失则省略)。 */
+  supporting_notes?: string[];
+  /** 工作模式。 */
+  work_mode: WorkMode;
+  /** 一句话理由(用户可读)。 */
+  rationale: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2:提示词目标 / 目标引擎(表驱动,可扩展)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 提示词的产物目标(与「工作意图」正交:意图=要做什么,目标=给谁/产出什么)。 */
+export type PromptTarget =
+  | "agent_task" // 交给 Agent 执行任务(含控制 Agent 自身)
+  | "research" // 检索 / 调研 / 对比
+  | "coding" // 写码 / 改码
+  | "image_generation" // 图像生成
+  | "video_generation" // 视频生成
+  | "writing" // 文本创作 / 改写
+  | "data_analysis" // 数据分析
+  | "general";
+
+export const PROMPT_TARGETS: readonly PromptTarget[] = [
+  "agent_task",
+  "research",
+  "coding",
+  "image_generation",
+  "video_generation",
+  "writing",
+  "data_analysis",
+  "general",
+] as const;
+
+/** 产物模态:决定编译契约形态(图像/视频不得被编译成 Goal/Phase/Task/Tests)。 */
+export type PromptModality = "text" | "code" | "image" | "video" | "structured_data";
+
+export const PROMPT_MODALITIES: readonly PromptModality[] = [
+  "text",
+  "code",
+  "image",
+  "video",
+  "structured_data",
+] as const;
+
+/** 目标引擎(模型 / 工具)的归一化引用;id 为封闭目录键,不认识的引擎落 raw。 */
+export interface ResolvedEngine {
+  /** 目录 id(如 "dsh" / "claude-code" / "midjourney");未识别时为 null。 */
+  id: string | null;
+  /** 展示名(未识别时为用户原话片段)。 */
+  name: string;
+  /** 该引擎归属的目标(未识别时为 null)。 */
+  target: PromptTarget | null;
+  /** 该引擎的原生产物模态。 */
+  modality: PromptModality | null;
+}
+
+/** 目标解析结果(给路由 / 编译契约 / UI 共用)。 */
+export interface TargetResolution {
+  target: PromptTarget;
+  modality: PromptModality;
+  /** 命中的引擎;用户没提引擎或识别不出时为 null。 */
+  engine: ResolvedEngine | null;
+  /** 判断把握度(不做小数伪精确)。 */
+  confidence: "high" | "medium" | "low";
+  /** 逐字证据(用户在输入里提到的目标/引擎线索)。 */
+  evidence: string[];
+  /** 一句话理由(用户可读)。 */
+  rationale: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2:编辑分诊(KEEP / PATCH / RESTRUCTURE / REBUILD)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 编辑分诊:对「用户已有输入」的最小必要干预级别。
+ *  - KEEP        输入已是高质量成稿 → **原样保留,绝不改写**;
+ *  - PATCH       结构可用,只补少量缺失要求 / 修少量问题;
+ *  - RESTRUCTURE 信息已完整,但组织混乱 → 只重组结构,不新增语义;
+ *  - REBUILD     输入无法构成有效任务(空/寒暄/自相矛盾且无目标)→ 才允许重写。
+ */
+export type EditTriage = "KEEP" | "PATCH" | "RESTRUCTURE" | "REBUILD";
+
+export const EDIT_TRIAGE_LEVELS: readonly EditTriage[] = ["KEEP", "PATCH", "RESTRUCTURE", "REBUILD"] as const;
+
+/** 分诊严重度(数值越大干预越强);用于 LLM 建议与机械判据的合并。 */
+export const TRIAGE_SEVERITY: Record<EditTriage, number> = {
+  KEEP: 0,
+  PATCH: 1,
+  RESTRUCTURE: 2,
+  REBUILD: 3,
+};
+
+export interface TriageDecision {
+  triage: EditTriage;
+  /** 判据说明(用户可读;至少一条)。 */
+  reasons: string[];
+  /** 触发该级别所依据的机械证据(输入片段或结构信号)。 */
+  signals: string[];
+  /** KEEP 才为 true:机械判据确认「原样可用」(含安全阈值)。 */
+  keep_safe: boolean;
+  /** 是否由 LLM 建议参与合并(审计用)。 */
+  llm_advised?: boolean;
+  /** 机械判据给出的级别(审计 / 回归用)。 */
+  mechanical?: EditTriage;
+  /** LLM 给出的级别(审计 / 回归用)。 */
+  llm_suggestion?: EditTriage;
+  /** 结构性缺陷(只有 REBUILD 允许存在)。 */
+  structural_problems?: string[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2:缺失解析(UNKNOWN ≠ ASK_USER)与需求台账(来源 / 状态分离)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 未决项分类(取代「UNKNOWN 一律提问 / 一律 [待补充:]」):
+ *  - USER_REQUIRED       只有用户本人能决定(偏好 / 预算 / 目标受众 / 合规 …);
+ *  - AGENT_DISCOVERABLE  执行方自己能查到(仓库结构 / 依赖版本 / 现有实现 / 官方文档 …);
+ *  - OPTIONAL            有则更好,没有也不影响任务成立。
+ */
+export type RequirementClass = "USER_REQUIRED" | "AGENT_DISCOVERABLE" | "OPTIONAL";
+
+export const REQUIREMENT_CLASSES: readonly RequirementClass[] = [
+  "USER_REQUIRED",
+  "AGENT_DISCOVERABLE",
+  "OPTIONAL",
+] as const;
+
+/** 一条缺失解析结果。 */
+export interface MissingResolutionItem {
+  id: string;
+  /** 未决项描述(用户可读)。 */
+  text: string;
+  classification: RequirementClass;
+  /** 是否阻塞生成:仅 `USER_REQUIRED && 高影响 && 用户专属` 才可为 true。 */
+  blocking: boolean;
+  /** 为什么这样分类(用户可读)。 */
+  rationale: string;
+  /** 对方案的影响面(Solution Impact)。 */
+  impact: "high" | "medium" | "low";
+  /** 是否用户专属决策(User Exclusivity)。 */
+  user_exclusive: boolean;
+  /** 若进入 Discovery,建议的问法(1–2 句;Phase 1 只记录不提问)。 */
+  question?: string;
+}
+
+/** 分析门:是否必须进入 Discovery(只有它允许阻断生成)。 */
+export interface AnalysisGate {
+  /** true = 存在未决的用户专属阻塞项 → 不得进入编译。 */
+  blocked: boolean;
+  /** 阻塞项(blocking=true 的 USER_REQUIRED)。 */
+  blocking_items: MissingResolutionItem[];
+  /** 执行方可自行确认项(不阻塞;编译时标注「由执行方自行确认」)。 */
+  discoverable_items: MissingResolutionItem[];
+  /** 可选项(不阻塞;编译时可选补充)。 */
+  optional_items: MissingResolutionItem[];
+  /** 一句话门禁理由(用户可读)。 */
+  reason: string;
+}
+
+/**
+ * 需求状态与来源**严格分离**:
+ *  - source 回答「这条信息从哪来」;
+ *  - status 回答「这条信息现在的确认程度」。
+ * 「按你的判断继续」这类授权只可产生 PROVISIONAL / CONDITIONAL / DEFERRED,
+ * **永不**产生 CONFIRMED / USER_EXPLICIT。
+ */
+export type RequirementStatus =
+  | "CONFIRMED" // 用户已明确确认
+  | "OPEN" // 尚未解决,等待 Discovery
+  | "DISCOVERABLE" // 由执行方自行确认
+  | "PROVISIONAL" // 用户授权优化器代为暂定
+  | "CONDITIONAL" // 在明确条件下成立
+  | "DEFERRED" // 本轮不决定,后续再说
+  | "REJECTED" // 用户明确否决
+  | "NOT_APPLICABLE"; // 经判定与本任务无关
+
+export const REQUIREMENT_STATUSES: readonly RequirementStatus[] = [
+  "CONFIRMED",
+  "OPEN",
+  "DISCOVERABLE",
+  "PROVISIONAL",
+  "CONDITIONAL",
+  "DEFERRED",
+  "REJECTED",
+  "NOT_APPLICABLE",
+] as const;
+
+/** 只有用户本人表达才能产生的高权威来源(伪造 = 严重缺陷)。 */
+export const USER_AUTHORITY_SOURCES: readonly ProvenanceSource[] = [
+  "USER_EXPLICIT",
+  "CONTEXT_EXPLICIT",
+] as const;
+
+/** 一条需求台账记录:值 + 来源 + 状态(三者独立)。 */
+export interface RequirementLedgerEntry {
+  id: string;
+  /** 需求 / 事实 / 建议的语义单元文本。 */
+  text: string;
+  source: ProvenanceSource;
+  status: RequirementStatus;
+  /** 逐字证据(USER_EXPLICIT / CONTEXT_EXPLICIT 必须非空)。 */
+  evidence: string[];
+  confidence: "high" | "medium" | "low";
+  note?: string;
+}
+
+/** 分析阶段的完整产出(宿主 / UI / 编译器 / 校验器共用)。 */
+export interface AnalysisResult {
+  intent: IntentProfile;
+  target: TargetResolution;
+  triage: TriageDecision;
+  /** 全部 UNKNOWN 及三分类 / 阻塞判定。 */
+  missing_resolution: MissingResolutionItem[];
+  gate: AnalysisGate;
+  ledger: RequirementLedgerEntry[];
+  /** 内部置信度 0..1(UI 不展示小数)。 */
+  confidence_internal: number;
+  rationale: string;
+  evidence_quotes: string[];
+  /** 向后兼容投影:等价于 `intent.primary`(general 兜底)。 */
+  prompt_type: PromptType;
+  /** 向后兼容:分诊为 PATCH/RESTRUCTURE/REBUILD 且可编译时,建议补充项。 */
+  missing_constraints: string[];
+}
+
+/** SSE `discovery_required` 事件:唯一允许「不生成」的出口。 */
+export interface OptimizeDiscoveryRequiredEvent {
+  type: "discovery_required";
+  intent: IntentProfile;
+  target: TargetResolution;
+  triage: TriageDecision;
+  ledger: RequirementLedgerEntry[];
+  gate: AnalysisGate;
+  rationale: string;
+  provenance_ok: boolean;
+}
+

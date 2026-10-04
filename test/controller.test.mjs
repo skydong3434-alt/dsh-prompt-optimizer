@@ -10,6 +10,7 @@ import {
   extractContextTurns,
   shouldAutoClose,
   splitCommandPrefix,
+  asAnalysisView,
   MANUAL_PROMPT_TYPES,
   TYPE_OPTIONS,
 } from '../lib/controller.js'
@@ -817,6 +818,134 @@ const DONE = {
     },
   )
   console.log('✓ c25 四组渲染数据 + 缺口清单分离 + Low 提示 + provenance 警示 + 替换/撤回回归')
+}
+
+// c26. v2 分析视图:meta/done 携带 intent/target/triage/ledger/gate
+{
+  const V2_META = {
+    type: 'meta',
+    prompt_type: 'research',
+    confidence_level: 'High',
+    missing_constraints: [],
+    rationale: '研究路径',
+    provenance_ok: true,
+    intent: { primary: 'research', supporting: ['planning'], work_mode: 'exploratory', rationale: '研究路径' },
+    target: { target: 'coding', modality: 'code', engine: { id: 'dsh', name: 'DSH (DeepSeek Harness)', target: 'agent_task' }, confidence: 'high', rationale: '点名了 DSH' },
+    triage: { triage: 'PATCH', reasons: ['缺产出形式'], keep_safe: false },
+    ledger: [
+      { id: 'l1', text: '在 Mac 上做 AI 视频', source: 'USER_EXPLICIT', status: 'CONFIRMED', evidence: ['Mac'] },
+      { id: 'l2', text: '预算范围', source: 'UNKNOWN', status: 'OPEN', evidence: [] },
+    ],
+    missing_resolution: [
+      { id: 'u1', text: '预算范围', classification: 'USER_REQUIRED', blocking: true, rationale: '只有用户能定', question: '预算多少?' },
+    ],
+    gate: {
+      blocked: false,
+      blocking_items: [],
+      discoverable_items: [],
+      optional_items: [],
+      reason: '没有阻塞项,可以直接生成',
+    },
+  }
+  const { ctx } = makeCtx()
+  const c = createOptimizerController(ctx)
+  await withFetch(
+    () => sseResponse([V2_META, DONE]),
+    async () => {
+      await c.optimize('草稿', 's1')
+      const s = c.getSnapshot()
+      assert.equal(s.status, 'done')
+      const view = s.result.analysisView
+      assert.ok(view, 'done 必须带出 v2 分析视图')
+      assert.equal(view.intent.primary, 'research')
+      assert.deepEqual(view.intent.supporting, ['planning'])
+      assert.equal(view.intent.workMode, 'exploratory')
+      assert.equal(view.target.target, 'coding')
+      assert.equal(view.target.modality, 'code')
+      assert.equal(view.target.engine, 'DSH (DeepSeek Harness)')
+      assert.equal(view.triage.triage, 'PATCH')
+      assert.equal(view.triage.keepSafe, false)
+      assert.equal(view.ledger.length, 2)
+      assert.equal(view.ledger[0].source, 'USER_EXPLICIT')
+      assert.equal(view.ledger[0].status, 'CONFIRMED', '来源与状态必须分离保留')
+      assert.equal(view.resolution.length, 1)
+      assert.equal(view.gate.blocked, false)
+      // meta 阶段也应已填充(loading 期间就能展示目标/分诊)
+      assert.ok(s.meta.analysisView, 'meta 必须带出 v2 分析视图')
+    },
+  )
+  console.log('✓ c26 v2 分析视图落盘(intent/target/triage/ledger/gate)')
+}
+
+// c27. discovery_required:唯一允许「不生成」的出口 —— 不发 delta、状态置 discovery
+{
+  const DISCOVERY = {
+    type: 'discovery_required',
+    rationale: '有 1 项只有你本人能决定的信息缺失',
+    provenance_ok: true,
+    intent: { primary: 'planning', supporting: [], work_mode: 'iterative', rationale: '要方案' },
+    target: { target: 'agent_task', modality: 'text', engine: null, confidence: 'medium', rationale: '线索指向 Agent 任务' },
+    triage: { triage: 'PATCH', reasons: ['缺关键约束'], keep_safe: false },
+    ledger: [{ id: 'l1', text: '预算范围', source: 'UNKNOWN', status: 'OPEN', evidence: [] }],
+    missing_resolution: [
+      { id: 'u1', text: '预算范围', classification: 'USER_REQUIRED', blocking: true, rationale: '只有用户能定', question: '预算多少?' },
+      { id: 'u2', text: '现有实现的路径', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '执行方可查' },
+    ],
+    gate: {
+      blocked: true,
+      blocking_items: [{ id: 'u1', text: '预算范围', classification: 'USER_REQUIRED', blocking: true, rationale: '只有用户能定', question: '预算多少?' }],
+      discoverable_items: [{ id: 'u2', text: '现有实现的路径', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '执行方可查' }],
+      optional_items: [],
+      reason: '有 1 项只有你本人能决定的信息缺失,确认后再生成',
+    },
+  }
+  const { ctx } = makeCtx()
+  const c = createOptimizerController(ctx)
+  await withFetch(
+    () => sseResponse([DISCOVERY]),
+    async () => {
+      await c.optimize('草稿', 's1')
+      const s = c.getSnapshot()
+      assert.equal(s.status, 'discovery', 'discovery_required 必须把状态切到 discovery')
+      assert.equal(s.error, null, '正常结束不得报错')
+      assert.equal(s.result, null, '不得产出结果')
+      assert.equal(s.live, null)
+      assert.ok(s.discovery, '必须带出待确认载荷')
+      assert.equal(s.discovery.analysis.gate.blocked, true)
+      assert.equal(s.discovery.analysis.gate.blockingItems.length, 1)
+      assert.equal(s.discovery.analysis.gate.blockingItems[0].question, '预算多少?')
+      assert.equal(s.discovery.analysis.gate.discoverableItems.length, 1, '可自查项不得混入阻塞')
+      assert.match(s.discovery.rationale, /只有你本人能决定/)
+    },
+  )
+  // 关闭面板后载荷必须清空(不得跨次残留)
+  c.close()
+  assert.equal(c.getSnapshot().discovery, null)
+  assert.equal(c.getSnapshot().status, 'idle')
+  console.log('✓ c27 discovery_required → status=discovery,零结果,载荷可清理')
+}
+
+// c28. asAnalysisView 兼容:旧版 Host 无 v2 字段 → null(不得抛错)
+{
+  assert.equal(asAnalysisView({ type: 'meta', prompt_type: 'research' }), null)
+  assert.equal(asAnalysisView({}), null)
+  const partial = asAnalysisView({
+    intent: { primary: 'review' },
+    target: { target: 'coding' },
+    triage: { triage: 'KEEP', keep_safe: true },
+  })
+  assert.ok(partial, '有 intent 即认为 v2 可用')
+  assert.equal(partial.intent.primary, 'review')
+  assert.deepEqual(partial.intent.supporting, [])
+  assert.equal(partial.intent.workMode, 'one_shot', '缺字段用安全默认')
+  assert.equal(partial.target.modality, 'text')
+  assert.equal(partial.target.engine, null)
+  assert.equal(partial.triage.triage, 'KEEP')
+  assert.equal(partial.triage.keepSafe, true)
+  assert.deepEqual(partial.ledger, [])
+  assert.deepEqual(partial.resolution, [])
+  assert.equal(partial.gate.blocked, false)
+  console.log('✓ c28 asAnalysisView 向后兼容(缺字段安全默认)')
 }
 
 console.log('\ncontroller: all passed')

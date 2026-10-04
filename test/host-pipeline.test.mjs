@@ -21,6 +21,7 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
 import { COMPILE_MARKERS as M } from '../lib/core/compiler.js'
+import { ANALYSIS_MAX_TOKENS, ANALYSIS_SYSTEM_MARKER } from '../lib/core/analyze.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Host harness(与 smoke.mjs 同构:真实 Context + mock llm)
@@ -120,7 +121,6 @@ const chunkText = (text) => [
   { type: 'text-delta', index: 0, text },
   { type: 'finish', reason: { kind: 'stop' } },
 ]
-const CLASSIFIER_MAX_TOKENS = 512
 
 // ─────────────────────────────────────────────────────────────────────────────
 // research 场景(与 P04-T03 集成测试同源的本项目自定义 fixture)
@@ -220,12 +220,12 @@ const LEGACY_OUTPUT = [
   assert.ok(firstDelta > metaIndex, 'delta 必须在 meta 之后')
   assert.ok(doneIndex > firstDelta, 'done 必须在 delta 之后')
 
-  // 两次调用:第 1 次是分类硬参数(temp0/512),第 2 次是编译。
-  assert.equal(calls.length, 2, 'AUTO = 分类 1 次 + 编译 1 次')
-  assert.equal(calls[0].maxTokens, CLASSIFIER_MAX_TOKENS, '分类调用必须 512 token 封顶')
+  // 两次调用:第 1 次是分析硬参数(temp0/1024),第 2 次是编译。
+  assert.equal(calls.length, 2, 'AUTO = 分析 1 次 + 编译 1 次')
+  assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS, '分析调用必须 1024 token 封顶')
   assert.equal(calls[0].temperature, 0)
-  assert.match(calls[0].system, /任务类型分类器/, '第 1 次调用必须是分类器 system')
-  assert.notEqual(calls[1].maxTokens, CLASSIFIER_MAX_TOKENS)
+  assert.ok(calls[0].system.includes(ANALYSIS_SYSTEM_MARKER), '第 1 次调用必须是分析器 system')
+  assert.notEqual(calls[1].maxTokens, ANALYSIS_MAX_TOKENS)
   assert.match(calls[1].system, /<<<DIAGNOSIS>>>/, '编译调用必须下发四段协议 system')
 
   const meta = events[metaIndex]
@@ -266,9 +266,9 @@ const LEGACY_OUTPUT = [
     model: 'm',
   })
   const done = doneOf(res)
-  assert.equal(calls.length, 1, 'override 只能有 1 次编译调用(零 classify)')
-  assert.notEqual(calls[0].maxTokens, CLASSIFIER_MAX_TOKENS, '唯一调用不能是分类调用')
-  assert.doesNotMatch(calls[0].system, /任务类型分类器/, 'override 不得下发分类 system')
+  assert.equal(calls.length, 1, 'override 只能有 1 次编译调用(零分析)')
+  assert.notEqual(calls[0].maxTokens, ANALYSIS_MAX_TOKENS, '唯一调用不能是分析调用')
+  assert.ok(!calls[0].system.includes(ANALYSIS_SYSTEM_MARKER), 'override 不得下发分析 system')
   assert.match(calls[0].system, /<<<DIAGNOSIS>>>/, 'override 直入编译协议')
 
   const meta = sseEvents(res).find((e) => e.type === 'meta')
@@ -281,7 +281,7 @@ const LEGACY_OUTPUT = [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// h3. 分类失败 → general 低置信兜底;编译继续(不阻塞)
+// h3. 分析失败 → general 低置信兜底;编译继续(不阻塞)
 // ─────────────────────────────────────────────────────────────────────────────
 {
   const { handler, calls } = await setup({
@@ -291,16 +291,16 @@ const LEGACY_OUTPUT = [
   const res = await call(handler, { text: '帮我看看这段代码', provider: 'p', model: 'm' })
   const done = doneOf(res)
   const meta = sseEvents(res).find((e) => e.type === 'meta')
-  assert.equal(calls.length, 2, '分类失败也必须继续到编译')
-  assert.equal(calls[0].maxTokens, CLASSIFIER_MAX_TOKENS)
-  assert.equal(meta.prompt_type, 'general', '分类解析失败必须回退 general')
+  assert.equal(calls.length, 2, '分析失败也必须继续到编译')
+  assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS)
+  assert.equal(meta.prompt_type, 'general', '分析解析失败必须回退 general')
   assert.equal(meta.confidence_level, 'Low', '回退 general 必须低置信')
   assert.match(String(meta.rationale), /分类|通用|手动/)
   assert.equal(done.prompt_type, 'general')
   assert.equal(done.analysis, '目标明确,约束清晰', 'legacy 解析零回归')
   assert.equal(done.optimized, '优化后的提示词')
   assert.equal(done.provenance_ok, true, 'legacy general 保持既有语义')
-  console.log('✓ h3 分类失败 → general + Low,编译继续')
+  console.log('✓ h3 分析失败 → general + Low,编译继续')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

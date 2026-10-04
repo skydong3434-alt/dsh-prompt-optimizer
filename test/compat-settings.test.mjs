@@ -15,6 +15,7 @@ import { Readable } from 'node:stream'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
+import { isMetaAnalysisCall, ANALYSIS_MAX_TOKENS } from '../lib/core/analyze.js'
 
 const CANNED = [
   '<<<ANALYSIS>>>',
@@ -245,7 +246,7 @@ function eventsOf(res) {
   const first = await call(handler, { text: 'x', provider: 'p', model: 'm' })
   const calls = getCalls()
   assert.equal(calls.length, 1, '固定默认类型 = 零分类调用(仅 1 次编译)')
-  assert.notEqual(calls[0].maxTokens, 512, '唯一调用必须是编译调用(分类调用固定 512)')
+  assert.ok(!isMetaAnalysisCall(calls[0].system), '唯一调用必须是编译调用(元任务调用带分析 system)')
   const meta = eventsOf(first).find((e) => e.type === 'meta')
   assert.equal(meta.prompt_type, 'planning', 'meta 类型应取设置默认值')
   assert.equal(meta.confidence_level, 'High', '默认类型等价用户指定,应为最高置信')
@@ -262,13 +263,13 @@ function eventsOf(res) {
   const invalid = await boot({ config: { promptType: 'bogus' } })
   const res = await call(invalid.handler, { text: 'x', provider: 'p', model: 'm' })
   const calls = invalid.getCalls()
-  assert.equal(calls.length, 2, '非法默认类型必须回落 AUTO(分类 + 编译)')
-  assert.equal(calls[0].maxTokens, 512, '第 1 次应是分类调用')
+  assert.equal(calls.length, 2, '非法默认类型必须回落 AUTO(分析 + 编译)')
+  assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS, '第 1 次应是分析调用')
   assert.ok(eventsOf(res).find((e) => e.type === 'meta'), '非法默认类型仍应下发 meta')
 
   const absent = await boot({})
   await call(absent.handler, { text: 'x', provider: 'p', model: 'm' })
-  assert.equal(absent.getCalls().length, 2, '未配置默认类型 = AUTO(分类 + 编译)')
+  assert.equal(absent.getCalls().length, 2, '未配置默认类型 = AUTO(分析 + 编译)')
   console.log('✓ cs8 非法/缺省默认类型回落 AUTO')
 }
 
@@ -278,10 +279,10 @@ function eventsOf(res) {
   const res = await call(handler, { text: 'x', provider: 'main-p', model: 'main-m' })
   done(res)
   const calls = getCalls()
-  assert.equal(calls.length, 2, 'AUTO = 分类 1 次 + 编译 1 次')
-  assert.equal(calls[0].provider, 'fast-p', '分类调用应走 classifierModel 指定路由')
+  assert.equal(calls.length, 2, 'AUTO = 分析 1 次 + 编译 1 次')
+  assert.equal(calls[0].provider, 'fast-p', '分析调用应走 classifierModel 指定路由')
   assert.equal(calls[0].model, 'fast-m')
-  assert.equal(calls[0].maxTokens, 512, '分类调用硬参数不变')
+  assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS, '分析调用硬参数不变')
   assert.equal(calls[1].provider, 'main-p', '编译仍走主路由')
   assert.equal(calls[1].model, 'main-m')
   console.log('✓ cs9 classifierModel 仅替换分类路由')

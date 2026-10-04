@@ -17,6 +17,7 @@
  * 纯工具(think 剥离 / legacy 输出解析)。
  */
 import type {
+  AnalysisResult,
   ClassifierResult,
   CompileResult,
   CompileVars,
@@ -649,6 +650,11 @@ export interface FinalizeCompileOptions {
   legacy?: boolean;
   /** 缺口占位符语言(缺省 zh);legacy 路径不注入。 */
   language?: "zh" | "en";
+  /**
+   * v2 分析结果(可选)。提供时会把意图 / 目标 / 分诊 / 台账 / 缺失解析
+   * 附加到 CompileResult 上,供 UI 与校验器使用(旧调用方不传即行为不变)。
+   */
+  analysis?: AnalysisResult;
 }
 
 export interface CompiledOutcome {
@@ -656,6 +662,57 @@ export interface CompiledOutcome {
   wellFormed: boolean;
   /** provenance error + 守卫问题(稳定 rule id,便于回归断言)。 */
   problems: ValidationProblem[];
+}
+
+/** 把 v2 分析结果附加到编译结果上(长度恒为加法;analysis 缺省时不做任何事)。 */
+export function attachAnalysis(result: CompileResult, analysis: AnalysisResult | undefined): void {
+  if (!analysis) return;
+  result.intent = analysis.intent;
+  result.target = analysis.target;
+  result.triage = analysis.triage;
+  result.ledger = analysis.ledger;
+  result.missing_resolution = analysis.missing_resolution;
+}
+
+/**
+ * KEEP 分诊的收尾(v2 §C4 的硬承诺):**不调用模型、不重写**,
+ * `optimized_prompt` 逐字等于用户输入。
+ *
+ * 说明:`wellFormed` 恒为 true(输入原样通过);`provenance_ok` 不做三层校验
+ * ——那三层校验的对象是「模型产出」,KEEP 路径没有模型产出,校验无对象。
+ * 唯一机械不变量由 `assertKeepFidelity` 在宿主侧断言(output === rawInput)。
+ */
+export function finalizeKeepResult(
+  strategy: PromptStrategy,
+  opts: {
+    rawInput: string;
+    classifier: ClassifierResult;
+    analysis?: AnalysisResult;
+    missing?: MissingConstraint[];
+  },
+): CompiledOutcome {
+  const result: CompileResult = {
+    prompt_type: strategy.type,
+    confidence_level: toConfidenceLevel(opts.classifier.confidence_internal),
+    diagnosis:
+      opts.analysis?.intent.rationale?.trim() ||
+      "输入已是可用成稿(分诊 KEEP):原样保留,不改写。",
+    explicit_requirements: [],
+    context_requirements: [],
+    suggested_requirements: [],
+    unknowns: [],
+    missing_constraints: [...(opts.missing ?? [])],
+    optimized_prompt: opts.rawInput,
+    strategy_version: strategy.version,
+    provenance_ok: true,
+  };
+  attachAnalysis(result, opts.analysis);
+  return { result, wellFormed: true, problems: [] };
+}
+
+/** KEEP 保真断言:输出必须与用户输入逐字一致(机械可验证,回归锚点)。 */
+export function assertKeepFidelity(result: CompileResult, rawInput: string): boolean {
+  return result.optimized_prompt === rawInput;
 }
 
 /** 缺口标签的「核心内容」：剥掉 [待补充: …] / [TODO: …] 包装与标点，用于语义去重比较。 */
@@ -799,6 +856,7 @@ export function finalizeCompile(
       strategy_version: strategy.version,
       provenance_ok: true,
     };
+    attachAnalysis(result, opts.analysis);
     return { result, wellFormed: parsed.wellFormed, problems: [] };
   }
 
@@ -817,6 +875,7 @@ export function finalizeCompile(
     strategy_version: strategy.version,
     provenance_ok: true,
   };
+  attachAnalysis(result, opts.analysis);
 
   // 缺口机械注入:保证 missing_constraints 在交付稿中显式可见(不发明、不改写)。
   result.optimized_prompt = injectMissingPlaceholders(

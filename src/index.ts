@@ -8,13 +8,19 @@ import { capConversationContext, createThinkFilter, estimateTokens, type Convers
 import type { ClassifierResult } from './core/types.js'
 import { toConfidenceLevel } from './core/types.js'
 import {
-  classifyViaLlm,
   parsePromptTypeInput,
   PROMPT_TYPES,
   type ClassifierLlm,
 } from './core/classify.js'
+import {
+  analyzeViaLlm,
+  analysisToClassifier,
+  manualAnalysisResult,
+  type AnalyzeViaLlmOutcome,
+} from './core/analyze.js'
+import type { AnalysisResult } from './core/types.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
-import { compilePrompt, finalizeCompile } from './core/compiler.js'
+import { compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
 import { validateCompileResult } from './core/validate.js'
 
 export const name = 'dsh-prompt-optimizer'
@@ -557,14 +563,19 @@ export function apply(ctx: Context, config: Config) {
               content: [{ type: 'text', text: payloadText }],
               source: { kind: 'plugin', plugin: name },
             }) as unknown as Message
-          let classifier: ClassifierResult | null = null
-          let classifyAborted = false
-          if (!manualType) {
-            // ── 阶段一:意图分类(AUTO)──────────────────────────────────────────
-            // classifyViaLlm(P03-T02)封装一次小调用:maxTokens 512 / temperature 0 /
-            // lowest reasoning,JSON 契约 + 逐字证据过滤;调用侧失败 / 解析失败一律
-            // general 兜底(绝不阻塞编译)。手动 override 完全跳过本阶段。
-            const classifyOutcome = await classifyViaLlm<Message>(
+          // ── 阶段一:v2 分析(意图 / 目标 / 分诊 / 缺失解析)─────────────────
+          // AUTO 路径用**一次**结构化小调用取代旧分类调用(不新增调用次数);
+          // 手动覆盖路径跳过 LLM 分析(尊重用户选择),目标仍按确定性线索识别。
+          // 分析失败 / 超时一律走保守兜底(绝不阻塞生成)。
+          let analysis: AnalysisResult | null = null
+          let analysisAborted = false
+          if (manualType) {
+            analysis = manualAnalysisResult(manualType, {
+              rawInput: text,
+              contextTurns: context,
+            })
+          } else {
+            const analysisOutcome: AnalyzeViaLlmOutcome = await analyzeViaLlm<Message>(
               ctx.llm as unknown as ClassifierLlm<Message>,
               classifierRoute,
               { raw_input: text, context_turns: context },
@@ -580,19 +591,20 @@ export function apply(ctx: Context, config: Config) {
                 buildMessage: (payload) => buildOptimizeMessage(payload),
               },
             )
-            if (classifyOutcome.aborted) {
+            if (analysisOutcome.aborted) {
               // 客户端断连 / 超时:交下方既有分支统一处置(不进入编译)。
-              classifyAborted = true
+              analysisAborted = true
             } else {
-              if (classifyOutcome.usedFallback) {
-                const reason = classifyOutcome.reason ?? classifyOutcome.failure
-                console.warn(`[${name}] classify failed, fallback general: ${reason}`)
+              if (analysisOutcome.usedFallback) {
+                const reason = analysisOutcome.reason ?? analysisOutcome.failure
+                console.warn(`[${name}] analyze failed, fallback general: ${reason}`)
               }
-              classifier = classifyOutcome.result
+              analysis = analysisOutcome.result
             }
           }
+          const classifier: ClassifierResult | null = analysis ? analysisToClassifier(analysis) : null
 
-          if (classifyAborted) {
+          if (analysisAborted) {
             // 已超时或客户端断连:不进入编译;超时场景统一回 error 事件。
             if (timedOut) {
               send({
@@ -607,11 +619,86 @@ export function apply(ctx: Context, config: Config) {
                 error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
               })
             }
+          } else if (analysis!.gate.blocked) {
+            // ── v2 分析门(唯一允许「不生成」的出口)──────────────────────────
+            // 存在「只有用户本人能决定」的阻塞项时:不进入编译、不消耗编译 token,
+            // 只下发 discovery_required 让客户端进入需求确认流程。
+            send({
+              type: 'discovery_required',
+              intent: analysis!.intent,
+              target: analysis!.target,
+              triage: analysis!.triage,
+              ledger: analysis!.ledger,
+              gate: analysis!.gate,
+              rationale: analysis!.rationale || analysis!.gate.reason,
+              provenance_ok: true,
+            })
+          } else if (analysis!.triage.triage === 'KEEP') {
+            // ── v2 KEEP 分诊:原样保留,**不调用模型、不改写**────────────────
+            // v2 §C4:KEEP 一旦成立就是硬承诺。这里跳过编译载荷与流式调用,
+            // 直接把用户输入逐字作为交付稿返回,并用机械断言兜底。
+            const keepStrategy = defaultStrategyRegistry.get(analysis!.prompt_type)
+            send({
+              type: 'meta',
+              prompt_type: keepStrategy.type,
+              confidence_level: toConfidenceLevel(classifier!.confidence_internal),
+              missing_constraints: [],
+              rationale: classifier!.rationale,
+              provenance_ok: true,
+              intent: analysis!.intent,
+              target: analysis!.target,
+              triage: analysis!.triage,
+              ledger: analysis!.ledger,
+              missing_resolution: analysis!.missing_resolution,
+              gate: analysis!.gate,
+            })
+            const keepOutcome = finalizeKeepResult(keepStrategy, {
+              rawInput: text,
+              classifier: classifier!,
+              analysis: analysis!,
+              missing: [],
+            })
+            if (!assertKeepFidelity(keepOutcome.result, text)) {
+              // 机械兜底:理论上不可达;一旦发生必须暴露,绝不放行被改写的 KEEP。
+              keepOutcome.result.provenance_ok = false
+              keepOutcome.problems.push({
+                severity: 'error',
+                rule: 'keep-fidelity',
+                detail: 'KEEP 路径输出与用户输入不一致',
+              })
+            }
+            send({
+              type: 'done',
+              analysis: keepOutcome.result.diagnosis,
+              optimized: keepOutcome.result.optimized_prompt,
+              wellFormed: keepOutcome.wellFormed,
+              truncated: false,
+              provider: '',
+              model: '',
+              fallbackUsed: false,
+              keep: true,
+              prompt_type: keepOutcome.result.prompt_type,
+              confidence_level: keepOutcome.result.confidence_level,
+              diagnosis: keepOutcome.result.diagnosis,
+              explicit_requirements: keepOutcome.result.explicit_requirements,
+              context_requirements: keepOutcome.result.context_requirements,
+              suggested_requirements: keepOutcome.result.suggested_requirements,
+              unknowns: keepOutcome.result.unknowns,
+              missing_constraints: keepOutcome.result.missing_constraints,
+              strategy_version: keepOutcome.result.strategy_version,
+              provenance_ok: keepOutcome.result.provenance_ok,
+              intent: analysis!.intent,
+              target: analysis!.target,
+              triage: analysis!.triage,
+              ledger: analysis!.ledger,
+              missing_resolution: analysis!.missing_resolution,
+              gate: analysis!.gate,
+            })
           } else {
             // ── 归一化 + 策略选择 + 编译载荷(compilePrompt 10 步编排)────────
             // override 与 AUTO 共用同一入口:合法 promptType 由 compilePrompt 函数级
-            // 直达 registry(不存在任何分类调用);否则使用上面的 AUTO 分类结果。
-            const effectiveType = manualType ?? classifier!.prompt_type
+            // 直达 registry(不存在任何分类调用);否则使用上面的分析结果。
+            const effectiveType = analysis!.prompt_type
             const legacy = isLegacyGeneral(defaultStrategyRegistry.get(effectiveType))
             const plan = compilePrompt({
               raw_input: text,
@@ -638,6 +725,13 @@ export function apply(ctx: Context, config: Config) {
               missing_constraints: missing,
               rationale: effectiveClassifier.rationale,
               provenance_ok: true,
+              // v2:分析结论先于任何 delta 下发(客户端据此渲染目标 / 分诊 / 台账)。
+              intent: analysis!.intent,
+              target: analysis!.target,
+              triage: analysis!.triage,
+              ledger: analysis!.ledger,
+              missing_resolution: analysis!.missing_resolution,
+              gate: analysis!.gate,
             })
 
             // ── 阶段二:编译流式输出 ─────────────────────────────────────────
@@ -696,6 +790,7 @@ export function apply(ctx: Context, config: Config) {
                 mode,
                 legacy: plan.legacy,
                 language,
+                analysis: analysis!,
               })
               // 非 legacy 策略再跑 P04-T02 三层输出守卫(required_sections / 术语漂移 /
               // 建议升级 / 无证据强断言与量化 / 未知项落位)。done 下发的 provenance_ok
@@ -731,6 +826,13 @@ export function apply(ctx: Context, config: Config) {
                 missing_constraints: outcome.result.missing_constraints,
                 strategy_version: outcome.result.strategy_version,
                 provenance_ok: outcome.result.provenance_ok,
+                // v2 分析结论(供 UI 渲染目标 / 分诊 / 台账 / 缺失解析)。
+                intent: analysis!.intent,
+                target: analysis!.target,
+                triage: analysis!.triage,
+                ledger: analysis!.ledger,
+                missing_resolution: analysis!.missing_resolution,
+                gate: analysis!.gate,
               })
             } else if (timedOut) {
               send({

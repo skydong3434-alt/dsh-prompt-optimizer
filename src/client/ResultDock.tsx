@@ -3,7 +3,13 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // 类型级引入,激活 'conversation.input.dock' 的 SlotMap 合并声明。
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
-import { shouldAutoClose, type MissingConstraintView, type OptimizerController, type ProvenanceView } from './controller.js'
+import {
+  shouldAutoClose,
+  type MissingConstraintView,
+  type OptimizerController,
+  type ProvenanceView,
+  type ResolutionView,
+} from './controller.js'
 import { useT, type MessageKey } from './i18n.js'
 
 export type ResultDockProps = PropsRuntime<'conversation.input.dock'>
@@ -330,6 +336,14 @@ export function createResultDock(controller: OptimizerController) {
 
     if (!owns) return null
     const { result } = state
+    // v2 分析结论:loading 用 meta,完成后用 result;旧版 Host 无该字段 → null。
+    const v2 = result?.analysisView ?? state.meta?.analysisView ?? null
+    const triageLabel = (value: string): string => {
+      const key = `panel.triage.${value}`
+      const label = t(key as never)
+      // 缺译回退:未知分诊值显示原始值,绝不显示空白。
+      return label === key ? value : label
+    }
     // 阶段提示:meta 未到 = 正在识别任务类型(AUTO 两阶段的第一阶段);meta 到达后
     // 按流式段落推进:等待响应 → 分析诊断 → 输出优化稿。
     const stage = !state.meta
@@ -446,6 +460,33 @@ export function createResultDock(controller: OptimizerController) {
       )
     }
 
+    /**
+     * v2 需求确认分组渲染:每条未决项给出分类依据与建议问法,让用户一眼看懂
+     * 「为什么停下」以及「回答什么就能继续」。空组不渲染。
+     */
+    const renderResolutionGroup = (title: string, items: ResolutionView[], blocking: boolean) => {
+      if (items.length === 0) return null
+      return (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...styles.sectionTitle, cursor: 'default', ...(blocking ? { color: '#b45309' } : {}) }}>
+            {title}({items.length})
+          </div>
+          <div style={styles.unknownBox}>
+            {items.map((item) => (
+              <div key={item.id || item.text} style={styles.groupItem} title={item.rationale}>
+                <div>• {item.text}</div>
+                {item.question ? (
+                  <div style={{ opacity: 0.75, marginLeft: 12 }}>
+                    {t('panel.discovery.question')}:{item.question}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div style={styles.panel} role="dialog" aria-label={t('panel.aria')}>
         <div style={styles.header}>
@@ -460,6 +501,17 @@ export function createResultDock(controller: OptimizerController) {
           {(result || state.meta) && (
             <span style={styles.confidenceBadge}>
               {t(CONFIDENCE_KEY[(result?.confidenceLevel ?? state.meta?.confidenceLevel) ?? 'Low'])}
+            </span>
+          )}
+          {v2 && (
+            <span style={styles.modelBadge} title={v2.target.rationale}>
+              {t('panel.target')}: {v2.target.target}
+              {v2.target.engine ? ` · ${v2.target.engine}` : ''}
+            </span>
+          )}
+          {v2 && (
+            <span style={styles.modelBadge} title={v2.triage.reasons.join(';')}>
+              {t('panel.triage')}: {triageLabel(v2.triage.triage)}
             </span>
           )}
           {result && (
@@ -520,8 +572,40 @@ export function createResultDock(controller: OptimizerController) {
           </>
         )}
 
+        {state.status === 'discovery' && (
+          <div style={styles.body}>
+            <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.discovery.title')}</div>
+            <div style={styles.optimizedBox}>{t('panel.discovery.hint')}</div>
+            {state.discovery?.rationale ? (
+              <div style={styles.groupItem}>
+                <strong>{t('panel.discovery.gateReason')}:</strong> {state.discovery.rationale}
+              </div>
+            ) : null}
+            {state.discovery ? renderResolutionGroup(t('panel.discovery.blocking'), state.discovery.analysis.gate.blockingItems, true) : null}
+            {state.discovery ? renderResolutionGroup(t('panel.discovery.discoverable'), state.discovery.analysis.gate.discoverableItems, false) : null}
+            {state.discovery ? renderResolutionGroup(t('panel.discovery.optional'), state.discovery.analysis.gate.optionalItems, false) : null}
+          </div>
+        )}
+        {state.status === 'discovery' && (
+          <div style={styles.actions}>
+            <button className="dsh-po-btn" type="button" style={{ ...styles.actionBtn, ...styles.primaryBtn }} onClick={() => controller.close()}>
+              {t('panel.discovery.revise')}
+            </button>
+            <button className="dsh-po-btn" type="button" style={styles.actionBtn} title={t('panel.reoptimizeTitle')} onClick={() => controller.retry()}>
+              {t('panel.discovery.retry')}
+            </button>
+          </div>
+        )}
+
         {state.status === 'done' && result && (
           <>
+            {/* v2 KEEP:输入被原样保留(未做任何改写),这是最需要先说清的事。 */}
+            {result.keep && (
+              <div style={{ ...styles.warnBanner, marginTop: 0, marginBottom: 8 }}>
+                <span aria-hidden>✓</span>
+                <span>{t('panel.keepNotice')}</span>
+              </div>
+            )}
             {/* provenance 校验失败与低置信提示置于最顶部:替换前必须先被看到。 */}
             {!result.provenanceOk && (
               <div style={{ ...styles.warnBanner, marginTop: 0, marginBottom: 8 }}>

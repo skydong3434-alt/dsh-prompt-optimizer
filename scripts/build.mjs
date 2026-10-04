@@ -228,6 +228,28 @@ await build({
   logLevel: 'info',
 })
 
+// v2 分析层(targets / triage / requirements / analyze):纯函数 + 表驱动目录,
+// 独立 ESM 产物供单测与端到端冒烟直接引用(不经过 Host / UI)。
+await mkdir('lib/core', { recursive: true })
+for (const [entry, outfile] of [
+  ['src/core/types.ts', 'lib/core/types.js'],
+  ['src/core/targets.ts', 'lib/core/targets.js'],
+  ['src/core/triage.ts', 'lib/core/triage.js'],
+  ['src/core/requirements.ts', 'lib/core/requirements.js'],
+  ['src/core/analyze.ts', 'lib/core/analyze.js'],
+]) {
+  await build({
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node18',
+    packages: 'external',
+    logLevel: 'info',
+  })
+}
+
 // Client 半:loader 的 lazy-CJS factory 形态(对齐官方包的产物结构)。
 // react 与 @deepseek-ai/* 是页面运行时外部模块,不打包进 bundle。
 // 注意:loader id 必须等于插件 npm 包名 —— 宿主 client-modules 按包名 serve
@@ -257,4 +279,4 @@ await build({
   logLevel: 'info',
 })
 
-console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/client/settings-face.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/validate.js + lib/core/strategies/_shared.js + lib/core/strategies/research.js + lib/core/strategies/planning.js + lib/core/strategies/execution.js + lib/core/strategies/diagnostic.js + lib/core/strategies/review.js + lib/core/strategies/creative.js + lib/core/strategies/general.js done')
+console.log('[build] lib/index.js + lib/client.js + lib/prompt.js + lib/controller.js + lib/client/settings-face.js + lib/core/provenance.js + lib/core/context.js + lib/core/classify.js + lib/core/registry.js + lib/core/compiler.js + lib/core/validate.js + lib/core/strategies/_shared.js + lib/core/strategies/research.js + lib/core/strategies/planning.js + lib/core/strategies/execution.js + lib/core/strategies/diagnostic.js + lib/core/strategies/review.js + lib/core/strategies/creative.js + lib/core/strategies/general.js + lib/core/targets.js + lib/core/triage.js + lib/core/requirements.js + lib/core/analyze.js done')

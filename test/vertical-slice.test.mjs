@@ -2,7 +2,8 @@
  * Vertical Slice 端到端冒烟(smoke 扩展):真实案例
  *   AUTO classifier → Research strategy → compiler → provenance 校验 →
  *   host SSE(meta→delta→done) → 四组来源
- * 用真实 cordis Context + mock llm(按 maxTokens 区分分类调用 / 编译调用)。
+ * 用真实 cordis Context + mock llm(按 system 文案锚点区分分析调用 / 编译调用;
+ * 分析阶段的预算从 512 改为 1024 后,maxTokens 不再是可靠判据)。
  *
  * 运行:先 `npm run build`,再 `node test/vertical-slice.test.mjs`。
  */
@@ -10,6 +11,7 @@ import { Readable } from 'node:stream'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
+import { isMetaAnalysisCall, ANALYSIS_MAX_TOKENS, ANALYSIS_SYSTEM_MARKER } from '../lib/core/analyze.js'
 
 const REAL_CASE =
   '帮我研究 Mac M1 Pro 32GB 怎么使用 ComfyUI 做 AI 视频,我看到黑鹤001低显流,还有 H3……'
@@ -124,7 +126,7 @@ function sseEvents(res) {
 }
 
 /**
- * mock llm:分类调用(maxTokens === 512)返回 CLASSIFIER_JSON,编译调用返回
+ * mock llm:元任务分析调用(system 含分析器锚点)返回 CLASSIFIER_JSON,编译调用返回
  * COMPILE_OUTPUT;`overrides.stream` 可整体替换。calls 记录全部 GenerateOptions。
  */
 function makeLlm(overrides = {}) {
@@ -133,7 +135,7 @@ function makeLlm(overrides = {}) {
     calls,
     async *stream(options) {
       calls.push(options)
-      if (options.maxTokens === 512) {
+      if (isMetaAnalysisCall(options.system)) {
         yield { type: 'text-delta', index: 0, text: CLASSIFIER_JSON }
         yield { type: 'finish', reason: { kind: 'stop' } }
         return
@@ -216,12 +218,12 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.ok(optimized.includes('Mac M1 Pro 32GB'), '专有名词必须保留')
   assert.ok(!optimized.includes('<<<'), '优化稿不得混入协议标记')
 
-  // 分类调用参数:maxTokens 512 / temperature 0;编译调用另一次
-  assert.equal(llm.calls.length, 2, 'AUTO = 分类调用 + 编译调用')
-  assert.equal(llm.calls[0].maxTokens, 512)
+  // 分析调用参数:maxTokens 1024 / temperature 0;编译调用另一次
+  assert.equal(llm.calls.length, 2, 'AUTO = 分析调用 + 编译调用')
+  assert.equal(llm.calls[0].maxTokens, ANALYSIS_MAX_TOKENS)
   assert.equal(llm.calls[0].temperature, 0)
   assert.equal(llm.calls[0].provider, 'p')
-  assert.ok(llm.calls[0].system.includes('分类'), '分类 system prompt 应存在')
+  assert.ok(llm.calls[0].system.includes(ANALYSIS_SYSTEM_MARKER), '分析 system prompt 应存在')
   // 编译调用注入 research system + 机器可解析协议;user 携带原始输入与上下文
   const compileCall = llm.calls[1]
   assert.ok(compileCall.system.includes('Research 研究型 Prompt 编译器'))
@@ -250,9 +252,9 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.equal(meta.confidence_level, 'High')
   assert.match(String(meta.rationale), /手动/)
   assert.equal(done.provenance_ok, true)
-  assert.equal(llm.calls.length, 1, 'override 不得触发 classify(函数级断言)')
-  assert.notEqual(llm.calls[0].maxTokens, 512, '唯一一次调用应是编译调用')
-  console.log('✓ vs2 手动 override 跳过分类')
+  assert.equal(llm.calls.length, 1, 'override 不得触发分析调用(函数级断言)')
+  assert.ok(!isMetaAnalysisCall(llm.calls[0].system), '唯一一次调用应是编译调用')
+  console.log('✓ vs2 手动 override 跳过分析')
 }
 
 // 3. 非法 promptType 按 AUTO 处理(不能因未知值绕过分类)
@@ -261,16 +263,16 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const res = await call(handler, { text: REAL_CASE, provider: 'p', model: 'm', promptType: 'not-a-type' })
   const done = sseEvents(res).find((e) => e.type === 'done')
   assert.equal(done.prompt_type, 'research')
-  assert.equal(llm.calls.length, 2, '非法 promptType 应回落 AUTO(分类 + 编译)')
+  assert.equal(llm.calls.length, 2, '非法 promptType 应回落 AUTO(分析 + 编译)')
   console.log('✓ vs3 非法 promptType 回落 AUTO')
 }
 
-// 4. 分类失败 → general 兜底(legacy 路径零回归,provenance 为空但 ok=true)
+// 4. 分析失败 → general 兜底(legacy 路径零回归,provenance 为空但 ok=true)
 {
   const { handler } = await setup({
     llmOverrides: {
       async *stream(options) {
-        if (options.maxTokens === 512) {
+        if (isMetaAnalysisCall(options.system)) {
           yield { type: 'text-delta', index: 0, text: 'not a json classifier answer' }
           yield { type: 'finish', reason: { kind: 'stop' } }
           return

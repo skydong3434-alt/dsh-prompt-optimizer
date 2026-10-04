@@ -8,6 +8,7 @@ import { Readable } from 'node:stream'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
+import { isMetaAnalysisCall } from '../lib/core/analyze.js'
 
 const CANNED = [
   '<<<ANALYSIS>>>',
@@ -433,15 +434,16 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 // 13b. 已向客户端推送过 delta 后失败 → 不回退(避免双模型拼接),直接 error 事件
 {
   let calls = 0
-  // 分类调用(maxTokens 512)与编译调用的尝试次数分开计:本用例只关心编译阶段
-  // 「已产出内容后不得回退重试」,分类失败回退 general 属预期行为。
+  // 元任务调用(意图分析)与编译调用的尝试次数分开计:本用例只关心编译阶段
+  // 「已产出内容后不得回退重试」,分析失败回退 general 属预期行为。
+  // 判据用 system 文案锚点(分析阶段预算从 512 改为 1024,maxTokens 不再是判据)。
   let compileCalls = 0
   const { handler } = await setup({
     config: { fallbackModel: 'good-p/good-m' },
     llmOverrides: {
       async *stream(options) {
         calls++
-        if (options.maxTokens !== 512) compileCalls++
+        if (!isMetaAnalysisCall(options.system)) compileCalls++
         if (options.provider === 'bad-p') {
           yield { type: 'text-delta', index: 0, text: '<<<ANALYSIS>>>\n半截输出' }
           yield { type: 'finish', reason: { kind: 'error', failure: { code: 'X', message: 'mid-stream boom' } } }
@@ -457,7 +459,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.ok(!events.some((e) => e.type === 'done'), '不应有 done')
   assert.match(events.find((e) => e.type === 'error')?.error ?? '', /mid-stream boom/)
   assert.equal(compileCalls, 1, '已产出内容后不得回退重试')
-  assert.equal(calls, 2, 'AUTO = 分类调用 1 次 + 编译调用 1 次')
+  assert.equal(calls, 2, 'AUTO = 分析调用 1 次 + 编译调用 1 次')
   console.log('✓ 13b 半截失败后不回退')
 }
 
