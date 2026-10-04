@@ -1,5 +1,12 @@
 # dsh-prompt-optimizer
 
+> ⭐ **本仓库 = DSH Adaptive Prompt Optimizer**（`@y1x1n/dsh-prompt-optimizer` 的派生增强版，MIT）。
+> 在上游「一键分析并优化提示词」基础上，增加 **Intent Classifier（AUTO/手动七类型）→
+> Strategy Registry（七策略）→ Prompt Compiler → Provenance 审计 → 结果面板 → 用户
+> 手动替换** 的完整管线，且**不自动发送 / 不自动执行 / 不自动决策**。
+> 发布版本 `v0.1.0-apo`；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
+> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；DoD 终检清单见 [docs/dod.md](docs/dod.md)。
+
 **中文** | [English](README.en.md) | [🐣 小白版](README.simple.md)
 
 [![CI](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml)
@@ -16,6 +23,7 @@ DeepSeek Harness 插件:在会话输入框(发送栏)旁提供一个「优化」
 
 ## 目录
 
+- [本 fork 增强（DSH Adaptive Prompt Optimizer）](#本-fork-增强dsh-adaptive-prompt-optimizer)
 - [功能](#功能)
 - [安装](#安装)
   - [从 npm 安装(推荐,最简)](#从-npm-安装推荐最简)
@@ -33,6 +41,34 @@ DeepSeek Harness 插件:在会话输入框(发送栏)旁提供一个「优化」
 - [License](#license)
 
 > 🐣 **第一次用 dsh 插件?** 直接看[小白版指南](README.simple.md):三步装好、点按钮就用,全程大白话。
+
+## 本 fork 增强（DSH Adaptive Prompt Optimizer）
+
+本仓库在上游能力之上新增 **自适应 Prompt 编译管线**（本 fork 特有，v0.1.0-apo）：
+
+```
+用户口语输入 → [AUTO ▾][✨ 优化] → Intent Classifier(AUTO/手动覆盖)
+  → Strategy Registry(7 策略 + general 回落) → Prompt Compiler(四段协议)
+  → Provenance 审计(quote 逐字比对) → 结果面板(类型徽章+需求诊断+四组来源+缺口清单)
+  → 用户检查/编辑 → [替换输入框] → 用户自己发送
+```
+
+- **七类型策略**：research / planning / execution / diagnostic / review /
+  creative / general，每策略独立文件 + 独立版本，可单独升级；AUTO 下拉可手动覆盖，
+  override 恒优先且不调 classifier。
+- **Provenance 红线**：明确要求必须有用户原话 quote 证据；优化器建议（可忽略）
+  独立分段永不混入要求段；assistant 发言不作意图证据；证据不足一律
+  `[待补充: …]`，**不替用户发明约束**。
+- **防误判**：当前请求优先 / 当前请求 vs 历史讨论 / assistant 建议≠用户决定；
+  低置信类型黄条提示 + 手动覆盖兜底。
+- **回归证据**：14 例真实语料 deterministic 硬 Gate + evaluator 参考线
+  （见 [docs/regression.md](docs/regression.md)）；隔离 profile 冒烟与桌面端
+  实测（见 [docs/p08-smoke.md](docs/p08-smoke.md) / [docs/p08-desktop.md](docs/p08-desktop.md)）。
+- **安装/卸载同上游**（见下节）；已随 G-7 完成正式 profile 安装（bundles=21，
+  备份 `~/.dsh/backups/apo/g7-install-20261004-140136/` 可回滚，恢复脚本
+  `scripts/backup-profile.sh`）。
+- **License 清洁**：设计来源与致谢见 [NOTICE.md](NOTICE.md)；AGPL 零复制由
+  `scripts/check-license-contamination.mjs` 扫描保证（PASS）。
 
 ![结果面板:五维诊断与优化稿流式上屏,可替换/撤回/复制;徽章显示实际路由与用时](docs/screenshots/optimize-panel.png)
 
@@ -238,4 +274,9 @@ dsh-prompt-optimizer/
 
 ## License
 
-MIT
+MIT（保留上游 [Y1X1n/dsh-prompt-optimizer](https://github.com/Y1X1n/dsh-prompt-optimizer)
+署名与 [@ruijiaang-lab](https://github.com/ruijiaang-lab) 致谢）。
+
+本 fork 设计来源（WestFox BSD-3 借鉴设计 / linshenkx、zhangjiazhi **AGPL 仅思想零复制**）
+与依赖 License 一览见 **[NOTICE.md](NOTICE.md)**；AGPL 污染检查：
+`node scripts/check-license-contamination.mjs`（PASS）。

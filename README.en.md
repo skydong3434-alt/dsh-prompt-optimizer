@@ -1,5 +1,14 @@
 # dsh-prompt-optimizer
 
+> ⭐ **This repository = DSH Adaptive Prompt Optimizer** (a derived, enhanced fork of
+> `@y1x1n/dsh-prompt-optimizer`, MIT). On top of the upstream "analyze and optimize"
+> button it adds a full **Intent Classifier (AUTO / manual seven types) → Strategy
+> Registry (7 strategies) → Prompt Compiler → Provenance audit → Result panel → user
+> manually replaces the input** pipeline, and it **never auto-sends / auto-executes /
+> auto-decides**. Release `v0.1.0-apo`; design provenance & license boundaries in
+> [NOTICE.md](NOTICE.md); changelog in [CHANGELOG.md](CHANGELOG.md); DoD checklist in
+> [docs/dod.md](docs/dod.md).
+
 [中文](README.md) | **English** | 🐣 [Beginner guide (中文)](README.simple.md)
 
 [![CI](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml)
@@ -16,6 +25,7 @@ A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the com
 
 ## Contents
 
+- [This fork's additions (DSH Adaptive Prompt Optimizer)](#this-forks-additions-dsh-adaptive-prompt-optimizer)
 - [Features](#features)
 - [Installation](#installation)
   - [From npm (recommended, simplest)](#from-npm-recommended-simplest)
@@ -33,6 +43,39 @@ A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the com
 - [License](#license)
 
 > 🐣 **First time using dsh plugins?** See the [beginner guide](README.simple.md) (in Chinese): three steps to install, one click to use.
+
+## This fork's additions (DSH Adaptive Prompt Optimizer)
+
+On top of the upstream abilities, this repository adds an **adaptive prompt-compilation
+pipeline** (fork-specific, v0.1.0-apo):
+
+```
+Casual user input → [AUTO ▾][✨ Optimize] → Intent Classifier (AUTO / manual override)
+  → Strategy Registry (7 strategies + general fallback) → Prompt Compiler (four-section protocol)
+  → Provenance audit (verbatim quote matching) → Result panel (type badge + diagnosis + 4 source groups + gap list)
+  → user reviews/edits → [Replace input] → user sends it themselves
+```
+
+- **Seven typed strategies**: research / planning / execution / diagnostic / review /
+  creative / general — each an independent versioned file; the AUTO dropdown supports
+  manual override, and an override always wins without calling the classifier.
+- **Provenance red lines**: explicit requirements must carry verbatim quotes from the
+  user's own words; optimizer suggestions (ignorable) live in their own section and never
+  mix into requirements; assistant speech is not intent evidence; anything without
+  evidence becomes `[待补充: …]` — **the optimizer never invents constraints**.
+- **Mis-classification guards**: current request first / current request vs. past
+  discussion / assistant suggestions ≠ user decisions; low-confidence types show a yellow
+  banner plus manual override as a fallback.
+- **Regression evidence**: 14 real-corpus fixtures with a deterministic hard gate plus an
+  evaluator reference line (see [docs/regression.md](docs/regression.md)); isolated-profile
+  smoke and desktop probes (see [docs/p08-smoke.md](docs/p08-smoke.md) /
+  [docs/p08-desktop.md](docs/p08-desktop.md); note: these docs are in Chinese).
+- **Install/uninstall same as upstream** (below); the formal profile install was completed
+  under gate G-7 (bundles=21, rollback backup at
+  `~/.dsh/backups/apo/g7-install-20261004-140136/`, restore script
+  `scripts/backup-profile.sh`).
+- **License cleanliness**: design provenance and credits in [NOTICE.md](NOTICE.md); zero
+  AGPL copying is enforced by `scripts/check-license-contamination.mjs` (PASS).
 
 ![The result panel: five-dimension diagnosis and the rewrite streamed live, with replace/undo/copy; the badge shows the actual route and duration](docs/screenshots/optimize-panel.png)
 
@@ -231,4 +274,10 @@ Thanks to the following contributors for improvements to this project (see the [
 
 ## License
 
-MIT
+MIT (keeps the upstream [Y1X1n/dsh-prompt-optimizer](https://github.com/Y1X1n/dsh-prompt-optimizer)
+attribution and the [@ruijiaang-lab](https://github.com/ruijiaang-lab) credit).
+
+Design provenance of this fork (WestFox BSD-3 design ideas / linshenkx, zhangjiazhi
+**AGPL — ideas only, zero copied code**) and the dependency-license overview live in
+**[NOTICE.md](NOTICE.md)**; AGPL contamination check:
+`node scripts/check-license-contamination.mjs` (PASS).
