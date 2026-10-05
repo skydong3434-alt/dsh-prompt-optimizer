@@ -31,7 +31,12 @@ import {
   RETIRED_PLACEHOLDER_RE,
   DISPOSITION_SECTION_TITLE,
 } from '../lib/core/responsibilities.js'
-import { classifyUnknown, classifyUnknowns } from '../lib/core/requirements.js'
+import {
+  classifyUnknown,
+  classifyUnknowns,
+  isProductDecision,
+  isEnvironmentFact,
+} from '../lib/core/requirements.js'
 
 const item = (text, classification, extra = {}) => ({
   id: `u-${text}`,
@@ -244,46 +249,57 @@ const item = (text, classification, extra = {}) => ({
   console.log('✓ rc11 回退路径与 resolution 路径判据一致')
 }
 
-// 12. Phase 3 前置断言:取舍型陈述永远不能靠检查环境得到答案
+// 12. Phase 3 prerequisite:真正的用户取舍必须判 USER_REQUIRED + blocking
 //
-// 本块把「现状」与「目标」同时钉住,避免 Phase 3 悄悄跳过:
-//   · 已达成:`isTradeoffStatement` 提供取舍型判据原语;含明确偏好措辞的取舍已判
-//     USER_REQUIRED(如「要不要…」匹配用户专属词表);
-//   · **未达成(Phase 3 必须修)**:纯取舍句式(「只验证一次链路还是建设长期自动化」)
-//     在当前保守 fallback 下仍会落到 AGENT_DISCOVERABLE —— 这正是用户要求记入
-//     Phase 3 的风险。下面的断言写的是**现状**,Phase 3 修好后必须把 expected 改成
-//     'USER_REQUIRED',本次改动即为 Phase 3 的入口证据。
+// Phase 2 留下的风险(取舍型被保守 fallback 吞掉)在本阶段正式解决:
+//   · 取舍 / 产品决策(无客观唯一答案、读项目也得不到、答案显著改变方案)
+//     → USER_REQUIRED + impact=high + blocking=true(由 Discovery 追问);
+//   · 反向保护:环境事实(版本 / 地址 / 路径 / 依赖 / 结构)永远是 AGENT_DISCOVERABLE,
+//     不得被误升格成 USER_REQUIRED;
+//   · 机械规则只是**安全网**,语义第一来源是分析契约里的 PRODUCT_DECISION。
 {
-  for (const text of [
-    '只验证一次链路还是建设长期自动化',
-    '要么先用最小方案要么直接上完整平台',
-    '这个优先级更重要',
-    '方案 A 还是方案 B',
-  ]) {
-    assert.equal(isTradeoffStatement(text), true, `「${text}」必须被取舍型判据识别`)
+  // ① 自然表达全覆盖(不依赖「要不要 / 是否」字样)
+  const decisions = [
+    '我是先验证一下,还是直接把整套自动化做完',
+    '先做 MVP 还是一步到位',
+    '要保持现有架构还是允许重构',
+    '重点是验证能跑还是做成以后长期使用的工具',
+    '只验证一次 DSH → ComfyUI 控制链路,还是建设长期无人值守自动化',
+    '要么先做最小可用版本,要么直接上完整平台',
+  ];
+  for (const text of decisions) {
+    assert.equal(isTradeoffStatement(text), true, `「${text}」必须识别为取舍型`);
+    assert.equal(isProductDecision(text), true, `「${text}」必须识别为产品决策`);
+    const item = classifyUnknown({ text });
+    assert.equal(item.classification, 'USER_REQUIRED', `「${text}」必须判 USER_REQUIRED`);
+    assert.equal(item.impact, 'high', '产品取舍的定义包含「显著改变方案」→ 高影响');
+    assert.equal(item.blocking, true, `「${text}」必须 blocking(由 Discovery 追问)`);
   }
 
-  // 已达成:明确偏好措辞 → USER_REQUIRED
-  assert.equal(
-    classifyUnknown({ text: '要不要保留旧接口' }).classification,
-    'USER_REQUIRED',
-    '「要不要」= 用户决定',
-  );
+  // ② 反向保护:环境事实不得被误升格
+  for (const text of ['ComfyUI 版本', 'API 地址', 'workflow 文件位置', '当前依赖', '项目结构', '接口签名']) {
+    assert.equal(isEnvironmentFact(text), true, `「${text}」必须识别为环境事实`);
+    const item = classifyUnknown({ text, classification: 'USER_REQUIRED' });
+    assert.equal(item.classification, 'AGENT_DISCOVERABLE', `「${text}」不得被升格为 USER_REQUIRED`);
+    assert.equal(item.blocking, false, `「${text}」不得阻塞`);
+  }
 
-  // Phase 3 目标(当前未达成):纯取舍句式必须判 USER_REQUIRED,且高影响时 blocking。
-  const tradeoff = '只验证一次链路还是建设长期自动化'
-  const current = classifyUnknown({ text: tradeoff })
-  assert.equal(
-    current.classification,
-    'AGENT_DISCOVERABLE',
-    'PHASE3-TARGET:现状仍是保守 fallback;Phase 3 必须改为 USER_REQUIRED(见 docs/phase3-prerequisites.md)',
-  );
-  assert.equal(current.blocking, false, 'PHASE3-TARGET:现状不阻塞;Phase 3 必须按影响面决定 blocking')
+  // ③ 安全网方向:只允许「向安全方向纠正」——模型把取舍判成可自查,机械判据纠正;
+  //    模型把环境事实判成 USER_REQUIRED,机械判据也纠正(双向都朝事实与用户决定靠拢)。
+  const corrected = classifyUnknown({
+    text: '先验证控制链路还是建设长期自动化',
+    classification: 'AGENT_DISCOVERABLE',
+  });
+  assert.equal(corrected.classification, 'USER_REQUIRED', '安全网:取舍不得被模型降级为可自查');
+  assert.equal(corrected.blocking, true);
+
+  // ④ 明确偏好措辞仍然成立
+  assert.equal(classifyUnknown({ text: '要不要保留旧接口' }).classification, 'USER_REQUIRED');
   assert.ok(
-    !current.blocking || current.classification === 'USER_REQUIRED',
-    'blocking 只允许出现在 USER_REQUIRED 上(硬不变量,Phase 3 也不得破坏)',
+    !classifyUnknown({ text: '要不要保留旧接口', blocking: false }).blocking,
+    '模型显式 blocking=false 仍能否决阻塞(单向收紧不破坏)',
   );
-  console.log('✓ rc12 Phase 3 前置:取舍型判据已就位,误降级现状已显式钉住')
+  console.log('✓ rc12 Phase 3 prerequisite:取舍 → USER_REQUIRED+blocking;环境事实不被升格')
 }
 
 console.log('responsibilities.test.mjs: ALL PASS')

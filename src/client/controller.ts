@@ -92,10 +92,89 @@ export interface OptimizeResult {
   keep?: boolean
 }
 
+/** 一个可选答案(UI 选项)。 */
+export interface DiscoveryOptionView {
+  id: string
+  label: string
+  description?: string
+  value?: string
+  invalidates?: string[]
+}
+
+/** 本轮要问用户的一个问题。 */
+export interface DiscoveryQuestionView {
+  key: string
+  requirementId: string
+  question: string
+  options: DiscoveryOptionView[]
+  recommendedOptionId?: string
+  recommendationReason?: string
+  why: string
+  dependsOn: string[]
+  allowBlindTrust: boolean
+}
+
+/** 已被问过的问题(回传宿主做去重)。 */
+export interface AskedQuestionView {
+  key: string
+  question: string
+  round: number
+  fingerprint: string
+}
+
+/** 用户的一条回答。 */
+export interface DiscoveryAnswerView {
+  key: string
+  text: string
+  option_id?: string
+  blind_trust?: boolean
+}
+
+/** Requirement Confirmation 摘要。 */
+export interface ConfirmationView {
+  goal: string
+  confirmed: { text: string; value?: string }[]
+  agentResearches: string[]
+  provisional: { text: string; status: string; note?: string }[]
+  fingerprint: string
+}
+
+/**
+ * Discovery 会话(客户端持有 → 每轮回传;宿主重新净化)。
+ * `analysis` 是**宿主给的原始分析结论**,客户端不解读、只原样回传,
+ * 这样「确认并优化」不需要再跑一次分析调用。
+ */
+export interface DiscoverySessionView {
+  round: number
+  triage: string
+  ledger: LedgerView[]
+  asked: AskedQuestionView[]
+  answers: DiscoveryAnswerView[]
+  questions: DiscoveryQuestionView[]
+  analysis?: unknown
+}
+
 /** discovery_required:存在只有用户本人能决定的阻塞项,本轮不生成。 */
 export interface DiscoveryView {
   analysis: AnalysisView
   rationale: string
+  round: number
+  questions: DiscoveryQuestionView[]
+  asked: AskedQuestionView[]
+  agentResearches: string[]
+  stoppedBy?: string
+  session: DiscoverySessionView
+}
+
+/** requirement_confirmation:决策完备,等用户确认后才编译。 */
+export interface ConfirmationStateView {
+  analysis: AnalysisView
+  rationale: string
+  confirmation: ConfirmationView
+  round: number
+  /** 安全保护:为何在仍有未决项时停止追问。 */
+  stoppedBy?: string
+  session: DiscoverySessionView
 }
 
 export interface OptimizerState {
@@ -105,7 +184,7 @@ export interface OptimizerState {
    * discovery = 分析发现「只有用户本人能决定」的阻塞项:本轮不生成,
    * 面板展示待确认清单(v2 §C12:只有 Discovery 能阻断生成)。
    */
-  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery'
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation'
   error: string | null
   result: OptimizeResult | null
   /** 流式进行中的分段实况,仅 loading/cancelled 期间有值(cancelled 时为取消瞬间的定格)。 */
@@ -120,6 +199,8 @@ export interface OptimizerState {
   meta: OptimizerMeta | null
   /** discovery_required 载荷(仅 status==='discovery' 时有值)。 */
   discovery: DiscoveryView | null
+  /** requirement_confirmation 载荷(仅 status==='confirmation' 时有值)。 */
+  confirmation: ConfirmationStateView | null
 }
 
 const ROUTE = '/dsh-prompt-optimizer/optimize'
@@ -135,6 +216,7 @@ const INITIAL: OptimizerState = {
   typeSelection: 'auto',
   meta: null,
   discovery: null,
+  confirmation: null,
 }
 
 /** 结构化 provenance 数组(done 事件字段缺失 / 旧版 Host 时返回空数组)。 */
@@ -265,6 +347,125 @@ function asResolutionViews(value: unknown): ResolutionView[] {
   return out
 }
 
+function asQuestions(value: unknown): DiscoveryQuestionView[] {
+  if (!Array.isArray(value)) return []
+  const out: DiscoveryQuestionView[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const options: DiscoveryOptionView[] = []
+    if (Array.isArray(record.options)) {
+      for (const option of record.options) {
+        if (!option || typeof option !== 'object') continue
+        const entry = option as Record<string, unknown>
+        options.push({
+          id: String(entry.id ?? ''),
+          label: String(entry.label ?? ''),
+          ...(typeof entry.description === 'string' && entry.description ? { description: entry.description } : {}),
+          ...(typeof entry.value === 'string' && entry.value ? { value: entry.value } : {}),
+          ...(Array.isArray(entry.invalidates)
+            ? { invalidates: entry.invalidates.filter((v): v is string => typeof v === 'string') }
+            : {}),
+        })
+      }
+    }
+    out.push({
+      key: String(record.key ?? ''),
+      requirementId: String(record.requirement_id ?? ''),
+      question: String(record.question ?? ''),
+      options,
+      ...(typeof record.recommended_option_id === 'string' && record.recommended_option_id
+        ? { recommendedOptionId: record.recommended_option_id }
+        : {}),
+      ...(typeof record.recommendation_reason === 'string' && record.recommendation_reason
+        ? { recommendationReason: record.recommendation_reason }
+        : {}),
+      why: String(record.why ?? ''),
+      dependsOn: asTextArray(record.depends_on),
+      allowBlindTrust: record.allow_blind_trust !== false,
+    })
+  }
+  return out
+}
+
+function asAsked(value: unknown): AskedQuestionView[] {
+  if (!Array.isArray(value)) return []
+  const out: AskedQuestionView[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    out.push({
+      key: String(record.key ?? ''),
+      question: String(record.question ?? ''),
+      round: typeof record.round === 'number' ? record.round : 1,
+      fingerprint: String(record.fingerprint ?? ''),
+    })
+  }
+  return out
+}
+
+function asLedgerViews(value: unknown): LedgerView[] {
+  if (!Array.isArray(value)) return []
+  const out: LedgerView[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    out.push({
+      id: String(record.id ?? ''),
+      text: String(record.text ?? ''),
+      source: String(record.source ?? 'UNKNOWN'),
+      status: String(record.status ?? 'OPEN'),
+      evidence: asTextArray(record.evidence),
+      ...(typeof record.note === 'string' && record.note ? { note: record.note } : {}),
+    })
+  }
+  return out
+}
+
+export function asConfirmationView(value: unknown): ConfirmationView | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const confirmed = Array.isArray(record.confirmed)
+    ? record.confirmed
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+        .map((item) => ({
+          text: String(item.text ?? ''),
+          ...(typeof item.value === 'string' && item.value ? { value: item.value } : {}),
+        }))
+    : []
+  const provisional = Array.isArray(record.provisional)
+    ? record.provisional
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+        .map((item) => ({
+          text: String(item.text ?? ''),
+          status: String(item.status ?? 'PROVISIONAL'),
+          ...(typeof item.note === 'string' && item.note ? { note: item.note } : {}),
+        }))
+    : []
+  return {
+    goal: String(record.goal ?? ''),
+    confirmed,
+    agentResearches: asTextArray(record.agent_researches),
+    provisional,
+    fingerprint: String(record.fingerprint ?? ''),
+  }
+}
+
+function asSession(
+  event: Record<string, unknown>,
+  triage: string,
+): DiscoverySessionView {
+  return {
+    round: typeof event.round === 'number' ? event.round : 1,
+    triage,
+    ledger: asLedgerViews(event.ledger),
+    asked: asAsked(event.asked),
+    answers: [],
+    questions: asQuestions(event.questions),
+    ...(event.analysis ? { analysis: event.analysis } : {}),
+  }
+}
+
 /** 解析 meta / discovery_required / done 上的 v2 分析字段;旧版 Host 缺字段时返回 null。 */
 export function asAnalysisView(event: Record<string, unknown>): AnalysisView | null {
   const intent = event.intent
@@ -341,7 +542,7 @@ export function splitCommandPrefix(text: string): { prefix?: string; body: strin
  */
 export function shouldAutoClose(input: {
   open: boolean
-  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery'
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation'
   draft: string
   prevRunning: boolean
   running: boolean
@@ -456,6 +657,22 @@ export function createOptimizerController(
   }
 
   async function optimize(text: string, sessionId: SessionId) {
+    return runOptimize(text, sessionId, undefined)
+  }
+
+  /**
+   * v2 Phase 3:Discovery 会话载荷(宿主一律当不可信输入净化)。
+   *  - mode='answer':提交本轮回答 / 「修改理解」的编辑;
+   *  - mode='confirm':用户点了「确认并优化」,宿主不再调用分析,直接编译。
+   */
+  interface DiscoveryPayload {
+    mode: 'answer' | 'confirm'
+    session: DiscoverySessionView
+    edited?: { requirement_id: string; value: string; evidence: string }[]
+    reopened?: string[]
+  }
+
+  async function runOptimize(text: string, sessionId: SessionId, discovery: DiscoveryPayload | undefined) {
     // 斜杠命令只优化正文;前缀记入 last,「替换输入框」时拼回(ResultDock 负责)。
     const split = splitCommandPrefix(text)
     const { prefix, body: draft } = split
@@ -516,7 +733,7 @@ export function createOptimizerController(
     // 下拉选择在 set(loading) 前读取:auto 不发 promptType(走 AUTO 分类),
     // 其余值作为手动覆盖直达 Host(跳过分类)。
     const typeSelection = state.typeSelection
-    set({ open: true, status: 'loading', error: null, live: { analysis: '', optimized: '' }, last: { text: draft, sessionId, prefix }, applied: null, meta: null, discovery: null })
+    set({ open: true, status: 'loading', error: null, live: { analysis: '', optimized: '' }, last: { text: draft, sessionId, prefix }, applied: null, meta: null, discovery: null, confirmation: null })
     try {
       // 复用当前会话的模型选择(每次点击实时查询,会话里换模型立即生效);
       // 查询失败时交给 Host 端回退解析。设置里固定了模型时跳过:Host 端
@@ -580,6 +797,24 @@ export function createOptimizerController(
           context,
           previous,
           ...(typeSelection === 'auto' ? {} : { promptType: typeSelection }),
+          ...(discovery
+            ? {
+                discovery: {
+                  mode: discovery.mode,
+                  round: discovery.session.round,
+                  triage: discovery.session.triage,
+                  ledger: discovery.session.ledger,
+                  asked: discovery.session.asked,
+                  answers: discovery.session.answers,
+                  questions: discovery.session.questions,
+                  ...(discovery.session.analysis !== undefined
+                    ? { analysis: discovery.session.analysis }
+                    : {}),
+                  ...(discovery.edited ? { edited: discovery.edited } : {}),
+                  ...(discovery.reopened ? { reopened: discovery.reopened } : {}),
+                },
+              }
+            : {}),
         }),
         signal: controller.signal,
       })
@@ -649,19 +884,59 @@ export function createOptimizerController(
               },
             })
           } else if (event.type === 'discovery_required') {
-            // v2:分析发现「只有用户本人能决定」的阻塞项 → 本轮不生成。
-            // terminal=true 让收尾逻辑不再报「连接中断」(响应是正常结束的)。
+            // v2 Phase 3:存在只有用户本人能决定的阻塞项 → 本轮不生成。
+            // 面板展示 1–3 个高影响问题;回答后由 answerDiscovery 提交宿主重新分析。
             terminal = true
             clearLiveTimer()
-            const view = asAnalysisView(event as Record<string, unknown>)
-            set({
-              status: 'discovery',
-              live: null,
-              discovery: view
-                ? { analysis: view, rationale: String(event.rationale ?? view.gate.reason) }
-                : null,
-              error: view ? null : '需求确认请求无法解析,请重新优化',
-            })
+            const record = event as Record<string, unknown>
+            const view = asAnalysisView(record)
+            if (!view) {
+              set({ status: 'error', live: null, error: '需求确认请求无法解析,请重新优化' })
+            } else {
+              set({
+                status: 'discovery',
+                live: null,
+                discovery: {
+                  analysis: view,
+                  rationale: String(event.rationale ?? view.gate.reason),
+                  round: typeof event.round === 'number' ? event.round : 1,
+                  questions: asQuestions(event.questions),
+                  asked: asAsked(event.asked),
+                  agentResearches: asTextArray(event.agent_researches),
+                  ...(typeof event.stopped_by === 'string' && event.stopped_by
+                    ? { stoppedBy: event.stopped_by }
+                    : {}),
+                  session: asSession(record, view.triage.triage),
+                },
+                confirmation: null,
+                error: null,
+              })
+            }
+          } else if (event.type === 'requirement_confirmation') {
+            // v2 Phase 3:决策完备 → 等用户确认;确认后才进入编译。
+            terminal = true
+            clearLiveTimer()
+            const record = event as Record<string, unknown>
+            const view = asAnalysisView(record)
+            const confirmation = asConfirmationView(record.confirmation)
+            if (!view || !confirmation) {
+              set({ status: 'error', live: null, error: '需求确认摘要无法解析,请重新优化' })
+            } else {
+              set({
+                status: 'confirmation',
+                live: null,
+                discovery: null,
+                confirmation: {
+                  analysis: view,
+                  rationale: String(event.rationale ?? confirmation.goal),
+                  confirmation,
+                  round: typeof event.round === 'number' ? event.round : 1,
+                  ...(typeof event.stopped_by === 'string' && event.stopped_by ? { stoppedBy: event.stopped_by } : {}),
+                  session: asSession(record, view.triage.triage),
+                },
+                error: null,
+              })
+            }
           } else if (event.type === 'done') {
             terminal = true
             clearLiveTimer()
@@ -736,6 +1011,86 @@ export function createOptimizerController(
     },
     retry() {
       if (state.last) void optimize(state.last.text, state.last.sessionId)
+    },
+    /**
+     * 提交本轮 Discovery 回答(宿主重新分析 → 下一轮问题或确认摘要)。
+     * 回答文本即用户原话,作为 USER_EXPLICIT 的逐字证据来源。
+     */
+    answerDiscovery(answers: DiscoveryAnswerView[]) {
+      const current = state.discovery
+      if (!current || !state.last) return
+      void runOptimize(state.last.text, state.last.sessionId, {
+        mode: 'answer',
+        session: {
+          ...current.session,
+          answers,
+          questions: current.questions,
+        },
+      })
+    },
+    /** 用户点了「按你的判断继续」:同一问题的盲授权(**不会**产生 USER_EXPLICIT)。 */
+    continueWithJudgement(question: DiscoveryQuestionView) {
+      const current = state.discovery
+      if (!current || !state.last) return
+      void runOptimize(state.last.text, state.last.sessionId, {
+        mode: 'answer',
+        session: {
+          ...current.session,
+          answers: [
+            {
+              key: question.key,
+              text: `${question.question}(按你的判断继续)`,
+              blind_trust: true,
+            },
+          ],
+          questions: current.questions,
+        },
+      })
+    },
+    /** 「确认并优化」:复用宿主给的分析结论,不再调用分析,直接进入编译。 */
+    confirmDiscovery() {
+      const current = state.confirmation
+      if (!current || !state.last) return
+      void runOptimize(state.last.text, state.last.sessionId, {
+        mode: 'confirm',
+        session: { ...current.session, answers: [], questions: [] },
+      })
+    },
+    /**
+     * 「修改理解」:把已确认项变为可编辑列表(保持台账,不全部重来)。
+     * 提交后按 mode='answer' 重新分析;若又出现阻塞项则回到 Discovery。
+     */
+    reviseUnderstanding() {
+      const current = state.confirmation
+      if (!current) return
+      set({
+        status: 'discovery',
+        discovery: {
+          analysis: current.analysis,
+          rationale: '修改理解:只改你要改的那几项,其余台账保留',
+          round: current.round,
+          questions: [],
+          asked: current.session.asked,
+          agentResearches: current.confirmation.agentResearches,
+          session: current.session,
+        },
+        confirmation: null,
+      })
+    },
+    /** 提交「修改理解」的编辑(逐项改值 / 重新决定)。 */
+    submitRevision(input: { edited: { requirement_id: string; value: string }[]; reopened: string[] }) {
+      const current = state.discovery
+      if (!current || !state.last) return
+      void runOptimize(state.last.text, state.last.sessionId, {
+        mode: 'answer',
+        session: { ...current.session, answers: [], questions: [] },
+        edited: input.edited.map((item) => ({
+          requirement_id: item.requirement_id,
+          value: item.value,
+          evidence: item.value,
+        })),
+        reopened: input.reopened,
+      })
     },
     markApplied(applied: { backup: string; text: string }) {
       set({ applied })

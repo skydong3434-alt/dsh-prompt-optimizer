@@ -25,7 +25,7 @@ import type {
   RequirementDisposition,
 } from "./types.js";
 import { REQUIREMENT_DISPOSITIONS } from "./types.js";
-import { mechanicalRequirementClass } from "./requirements.js";
+import { isProductDecision, mechanicalRequirementClass } from "./requirements.js";
 import {
   DISPOSITION_SECTION_TITLE,
   RETIRED_PLACEHOLDER_RE,
@@ -80,13 +80,6 @@ const INVESTIGATE_RE =
 const NATURAL_LOCATOR_RE = /路径|目录|文件夹|文件名|位置|在哪个文件|仓库结构/;
 
 /**
- * 取舍型陈述:必须由用户决定,永远不能靠检查环境得到答案
- * (Phase 3 重点反例:「只验证一次链路还是建设长期自动化」)。
- */
-const TRADEOFF_RE =
-  /还是|要么|取舍|不做.{0,6}还是|一次.{0,8}还是|长期.{0,10}还是|方案\s*[AB].{0,6}(?:还是|或)|优先级|更重要/;
-
-/**
  * 机械处置判定。
  *
  * 顺序:
@@ -115,9 +108,12 @@ export function classifyDisposition(item: {
   return "OMIT";
 }
 
-/** 该文本是否为取舍型(Phase 3 Discovery 的必答题判据)。 */
+/**
+ * 该文本是否为取舍型 / 产品决策(Discovery 的必答题判据)。
+ * 单一真源在 `requirements.ts::isProductDecision`,此处仅做转出。
+ */
 export function isTradeoffStatement(text: string): boolean {
-  return TRADEOFF_RE.test(String(text ?? ""));
+  return isProductDecision(text);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -21,6 +21,19 @@ import {
 import type { AnalysisResult } from './core/types.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
 import { compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
+import { computeAnalysisGate } from './core/requirements.js'
+import {
+  buildConfirmation,
+  evaluateSufficiency,
+  findSessionViolations,
+  planQuestions,
+  recordAsked,
+  reopenRequirements,
+  resolveAnswers,
+  reviseRequirement,
+  sanitizeSession,
+  type DiscoveryInput,
+} from './core/discovery.js'
 import { validateCompileResult } from './core/validate.js'
 
 export const name = 'dsh-prompt-optimizer'
@@ -135,6 +148,25 @@ function warnUnknownEnumConfig(cfg: Config): void {
   }
 }
 
+/**
+ * Phase 3:校验客户端回传的分析结论(不可信输入)。
+ * 缺字段 / 结构不符 → null(调用方安全回退到重新分析,而不是信任它)。
+ */
+function parseClientAnalysis(value: unknown): AnalysisResult | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const intent = record.intent as Record<string, unknown> | undefined
+  const target = record.target as Record<string, unknown> | undefined
+  const triage = record.triage as Record<string, unknown> | undefined
+  if (!intent || typeof intent !== 'object') return null
+  if (!target || typeof target !== 'object') return null
+  if (!triage || typeof triage !== 'object') return null
+  if (!Array.isArray(record.missing_resolution)) return null
+  if (!Array.isArray(record.ledger)) return null
+  if (typeof record.prompt_type !== 'string') return null
+  return value as AnalysisResult
+}
+
 interface OptimizeRequestBody {
   text?: unknown
   provider?: unknown
@@ -144,6 +176,59 @@ interface OptimizeRequestBody {
   previous?: unknown
   /** 手动类型覆盖(可选):缺省 = AUTO(先分类再编译);非法值按 AUTO 处理。 */
   promptType?: unknown
+  /**
+   * v2 Phase 3:Requirement Discovery 会话(客户端持有;宿主一律当**不可信输入**净化)。
+   *  - mode='answer':提交本轮回答,宿主重新分析 + 解析回答 + 更新台账;
+   *  - mode='confirm':用户点了「确认并优化」,宿主**不再调用分析**,直接进入编译;
+   *  - 缺省:全新一次优化(首轮分析)。
+   */
+  discovery?: unknown
+}
+
+/** 客户端回传的 Discovery 会话(宽松解析;非法字段静默丢弃)。 */
+function parseDiscoveryInput(value: unknown): {
+  mode: 'answer' | 'confirm'
+  session: DiscoveryInput
+  edited: { requirement_id: string; value: string; evidence: string }[]
+  reopened: string[]
+  analysis: unknown
+} | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const record = value as Record<string, unknown>
+  const mode = record.mode === 'confirm' ? 'confirm' : 'answer'
+  const triage = asOptionalString(record.triage) as DiscoveryInput['triage'] | undefined
+  const edited: { requirement_id: string; value: string; evidence: string }[] = []
+  if (Array.isArray(record.edited)) {
+    for (const item of record.edited) {
+      if (!item || typeof item !== 'object') continue
+      const entry = item as Record<string, unknown>
+      const requirementId = asOptionalString(entry.requirement_id)
+      const nextValue = asOptionalString(entry.value)
+      if (!requirementId || !nextValue) continue
+      edited.push({
+        requirement_id: requirementId,
+        value: nextValue,
+        evidence: asOptionalString(entry.evidence) ?? nextValue,
+      })
+    }
+  }
+  return {
+    mode,
+    session: {
+      raw_input: '',
+      triage: triage ?? 'PATCH',
+      ledger: Array.isArray(record.ledger) ? (record.ledger as DiscoveryInput['ledger']) : [],
+      asked: Array.isArray(record.asked) ? (record.asked as DiscoveryInput['asked']) : [],
+      answers: Array.isArray(record.answers) ? (record.answers as DiscoveryInput['answers']) : [],
+      questions: Array.isArray(record.questions) ? (record.questions as DiscoveryInput['questions']) : [],
+      round: typeof record.round === 'number' ? record.round : 1,
+    },
+    edited,
+    reopened: Array.isArray(record.reopened)
+      ? record.reopened.filter((id): id is string => typeof id === 'string')
+      : [],
+    analysis: record.analysis,
+  }
 }
 
 /** 0.1.2+ settings.installSection 的回调包(仅类型面使用)。 */
@@ -473,6 +558,9 @@ export function apply(ctx: Context, config: Config) {
           return
         }
 
+        // v2 Phase 3:Discovery 会话(客户端持有 → 宿主净化;不可信输入)
+        const discoveryReq = parseDiscoveryInput((body as Record<string, unknown>).discovery)
+
         const cfg = current()
         // 宽松 schema 的配套归一化:未知枚举值一律回落默认,保证旧版设置文档可用
         //(非法值会先告警一次,见 warnUnknownEnumConfig)。
@@ -522,6 +610,10 @@ export function apply(ctx: Context, config: Config) {
         // 手动类型覆盖:请求体显式值优先(UI 永远最高优先级);缺省 / 非法值回落到
         // 设置里的默认类型(默认 'auto' → 走 AUTO 分类;固定类型 → 跳过分类直达策略)。
         const manualType = parsePromptTypeInput(body.promptType) ?? parsePromptTypeInput(cfg.promptType)
+        // 净化后的 Discovery 会话(必须在 context 之后构造:台账净化需要上下文用户消息)
+        const session = discoveryReq
+          ? sanitizeSession({ ...discoveryReq.session, raw_input: text }, context ?? [])
+          : null
         // 输出上限跟随输入长度:优化结果体量与草稿正相关(完整模式还多一段分析),
         // 长草稿撞固定上限会被截断。取配置值与「输入估算 × 模式系数」的较大者,32768 封顶。
         const maxTokens =
@@ -569,7 +661,37 @@ export function apply(ctx: Context, config: Config) {
           // 分析失败 / 超时一律走保守兜底(绝不阻塞生成)。
           let analysis: AnalysisResult | null = null
           let analysisAborted = false
-          if (manualType) {
+          // ── Phase 3:确认轮(mode='confirm')—— 复用客户端回传的分析,不再调用模型 ──
+          // 用户点了「确认并优化」:宿主只做 fail-closed 校验 + 编译;分析结论来自上一轮
+          // (客户端持有,结构无效时安全回退到重新分析,而不是信任客户端结构)。
+          const clientAnalysis = discoveryReq?.mode === 'confirm'
+            ? parseClientAnalysis(discoveryReq.analysis)
+            : null
+          // confirm 是**不可信输入**:先按净化后的台账重算是否仍有阻塞性用户决定。
+          // 只要还有,就绝不允许进入编译(§21 fail-closed),退回 Discovery。
+          let confirmBlocked = false
+          let forceDiscovery = false
+          if (discoveryReq?.mode === 'confirm' && clientAnalysis && session) {
+            const confirmSufficiency = evaluateSufficiency({
+              analysis: clientAnalysis,
+              ledger: session.ledger,
+              asked: session.asked,
+              round: session.round,
+            })
+            confirmBlocked = confirmSufficiency.liveBlocking.length > 0
+            forceDiscovery = confirmBlocked
+            if (confirmBlocked) {
+              console.warn(
+                `[${name}] confirm rejected: ${confirmSufficiency.liveBlocking.length} blocking user decision(s) still open`,
+              )
+            }
+          }
+          if (discoveryReq?.mode === 'confirm' && clientAnalysis && !confirmBlocked) {
+            analysis = {
+              ...clientAnalysis,
+              ...(session && session.ledger.length ? { ledger: session.ledger } : {}),
+            }
+          } else if (manualType) {
             analysis = manualAnalysisResult(manualType, {
               rawInput: text,
               contextTurns: context,
@@ -619,19 +741,166 @@ export function apply(ctx: Context, config: Config) {
                 error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
               })
             }
-          } else if (analysis!.gate.blocked) {
-            // ── v2 分析门(唯一允许「不生成」的出口)──────────────────────────
-            // 存在「只有用户本人能决定」的阻塞项时:不进入编译、不消耗编译 token,
-            // 只下发 discovery_required 让客户端进入需求确认流程。
+          } else if (analysis!.gate.blocked || forceDiscovery) {
+            // ── v2 Phase 3:Requirement Discovery 循环(唯一允许「不生成」的出口)──
+            // forceDiscovery:上一次 confirm 被 fail-closed 拒绝(仍阻塞)——即使重新分析
+            // 看起来没有阻塞项,也必须回到确认/追问流程,绝不静默编译。
+            // 存在「只有用户本人能决定」的阻塞项时:不进入编译、不消耗编译 token。
+            // 每轮**重新计算**:解析回答 → 更新台账 → 充足性 → 规划下一轮问题。
+            const round = session?.round ?? 1
+            const violations = session ? findSessionViolations(session) : []
+            if (violations.length > 0) {
+              // fail-closed:台账不变量被破坏 → 绝不放行编译
+              console.error(`[${name}] discovery session violated ledger invariants:`, violations)
+              send({
+                type: 'error',
+                error: `需求台账校验未通过(${violations.length} 项),已停止以免把非用户确认的内容当成你的决定。请重新优化。`,
+              })
+            } else {
+              // 回答轮:解析回答 → 更新台账(证据 = 用户原话)
+              const resolved = session && discoveryReq?.mode === 'answer'
+                ? resolveAnswers({
+                    raw_input: text,
+                    ledger: session.ledger,
+                    questions: session.questions,
+                    answers: session.answers,
+                  })
+                : { ledger: session?.ledger ?? analysis!.ledger, updates: [] }
+              let ledger = resolved.ledger
+              // 「修改理解」:直接编辑 / 重开某些已确认项(保持台账,不全部重来)
+              for (const edit of discoveryReq?.edited ?? []) {
+                ledger = reviseRequirement(ledger, edit.requirement_id, edit.value, edit.evidence)
+              }
+              if (discoveryReq?.reopened?.length) {
+                ledger = reopenRequirements(ledger, discoveryReq.reopened)
+              }
+              // 「修改理解」重开的项:清掉其 asked 记录(允许再次询问),其余记录保留
+              const reopenedIds = new Set(
+                (discoveryReq?.reopened ?? []).map((id) => (id.startsWith('ledger-') ? id.slice(7) : id)),
+              )
+              const askedForRound = (session?.asked ?? []).filter(
+                (record) => !reopenedIds.has(String(record.key).split('::')[0]),
+              )
+              const sufficiency = evaluateSufficiency({
+                analysis: analysis!,
+                ledger,
+                asked: askedForRound,
+                round,
+              })
+              // 门的分组必须保留**全部**未决项(可自查 / 可选也要展示);只有 blocked
+              // 与 blocking_items 用充足性重算后的 live 结论(结合台账当前状态)。
+              const fullGate = computeAnalysisGate(analysis!.missing_resolution, analysis!.triage.triage)
+              const gate = {
+                ...fullGate,
+                blocked: sufficiency.liveBlocking.length > 0,
+                blocking_items: sufficiency.liveBlocking,
+                reason: sufficiency.ready ? fullGate.reason : sufficiency.reason,
+              }
+              if (sufficiency.ready) {
+                // ── 决策完备 → Requirement Confirmation(仍不编译)──────────────
+                const confirmation = buildConfirmation({
+                  analysis: analysis!,
+                  ledger,
+                  raw_input: text,
+                })
+                send({
+                  type: 'requirement_confirmation',
+                  intent: analysis!.intent,
+                  target: analysis!.target,
+                  triage: analysis!.triage,
+                  ledger,
+                  gate,
+                  confirmation,
+                  rationale: confirmation.goal,
+                  provenance_ok: true,
+                  round,
+                  asked: session?.asked ?? [],
+                  analysis: analysis!,
+                })
+              } else {
+                // ── 继续追问:1–2(≤3)个高影响问题,依赖分轮、不重复问 ──────────
+                const planned = planQuestions({
+                  raw_input: text,
+                  triage: analysis!.triage.triage,
+                  ledger,
+                  blocking: sufficiency.liveBlocking,
+                  asked: askedForRound,
+                  answers: session?.answers ?? [],
+                  candidates: analysis!.questions ?? [],
+                  round,
+                })
+                if (planned.verdict === 'READY_TO_CONFIRM') {
+                  // 循环安全保护:问不出更有价值的新问题 → 停止追问,交用户确认。
+                  const confirmation = buildConfirmation({ analysis: analysis!, ledger, raw_input: text })
+                  send({
+                    type: 'requirement_confirmation',
+                    intent: analysis!.intent,
+                    target: analysis!.target,
+                    triage: analysis!.triage,
+                    ledger,
+                    gate,
+                    confirmation,
+                    rationale: planned.rationale,
+                    provenance_ok: true,
+                    round,
+                    asked: askedForRound,
+                    ...(planned.stopped_by ? { stopped_by: planned.stopped_by } : {}),
+                    analysis: analysis!,
+                  })
+                } else {
+                  const asked = recordAsked(planned, askedForRound)
+                  send({
+                    type: 'discovery_required',
+                    intent: analysis!.intent,
+                    target: analysis!.target,
+                    triage: analysis!.triage,
+                    ledger,
+                    gate,
+                    rationale: planned.rationale,
+                    provenance_ok: true,
+                    round,
+                    questions: planned.questions,
+                    asked,
+                    agent_researches: analysis!.missing_resolution
+                      .filter((item) => item.classification === 'AGENT_DISCOVERABLE')
+                      .map((item) => item.text),
+                    ...(planned.stopped_by ? { stopped_by: planned.stopped_by } : {}),
+                    // 客户端不解读,只在 confirm 时回传(宿主会重新校验)
+                    analysis: analysis!,
+                  })
+                }
+              }
+            }
+          } else if (discoveryReq?.mode === 'answer' && session) {
+            // ── 回答轮:重新分析后已无阻塞项 → 直接进入 Requirement Confirmation ──
+            // (决策完备即停;不为了 UNKNOWN 清零继续追问)
+            const ledger = resolveAnswers({
+              raw_input: text,
+              ledger: session.ledger,
+              questions: session.questions,
+              answers: session.answers,
+            }).ledger
+            const revised = (discoveryReq.edited ?? []).reduce(
+              (acc, edit) => reviseRequirement(acc, edit.requirement_id, edit.value, edit.evidence),
+              ledger,
+            )
+            const finalLedger = discoveryReq.reopened?.length
+              ? reopenRequirements(revised, discoveryReq.reopened)
+              : revised
+            const confirmation = buildConfirmation({ analysis: analysis!, ledger: finalLedger, raw_input: text })
             send({
-              type: 'discovery_required',
+              type: 'requirement_confirmation',
               intent: analysis!.intent,
               target: analysis!.target,
               triage: analysis!.triage,
-              ledger: analysis!.ledger,
+              ledger: finalLedger,
               gate: analysis!.gate,
-              rationale: analysis!.rationale || analysis!.gate.reason,
+              confirmation,
+              rationale: confirmation.goal,
               provenance_ok: true,
+              round: session.round,
+              asked: session.asked,
+              analysis: analysis!,
             })
           } else if (analysis!.triage.triage === 'KEEP') {
             // ── v2 KEEP 分诊:原样保留,**不调用模型、不改写**────────────────

@@ -11,6 +11,7 @@
  */
 import assert from 'node:assert/strict'
 import {
+  contentStableId,
   mechanicalRequirementClass,
   mechanicalImpact,
   classifyUnknown,
@@ -80,7 +81,12 @@ import { makeProvenanceRecord } from '../lib/core/provenance.js'
 {
   const items = classifyUnknowns([{ text: '预算' }, { text: '   ' }, { text: '依赖版本' }])
   assert.equal(items.length, 2)
-  assert.deepEqual(items.map((i) => i.id), ['unknown-1', 'unknown-3'])
+  // v2 Phase 3:id 由**内容**派生(跨轮次稳定),不再是数组下标 —— 否则 Discovery
+  // 每轮重新分析都会让同一个决策换 id,台账与回答就对不上了。
+  assert.equal(items[0].id, contentStableId('预算'))
+  assert.equal(items[1].id, contentStableId('依赖版本'))
+  assert.notEqual(items[0].id, items[1].id)
+  assert.ok(items.every((i) => /^unknown-[0-9a-f]{8}$/.test(i.id)))
   console.log('✓ rq4 classifyUnknowns 稳定 id / 过滤空项')
 }
 

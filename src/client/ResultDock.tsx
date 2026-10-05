@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
 import {
   shouldAutoClose,
+  type DiscoveryQuestionView,
   type MissingConstraintView,
   type OptimizerController,
   type ProvenanceView,
@@ -248,6 +249,13 @@ export function createResultDock(controller: OptimizerController) {
     const [analysisOpen, setAnalysisOpen] = useState(true)
     // O6:撤回后的正向反馈——头部短暂显示「已撤回 ✓」,避免用户以为没生效。
     const [undoneFlash, setUndoneFlash] = useState(false)
+    // v2 Phase 3:Discovery 答题草稿(question.key → {optionId, text})
+    const [answerDraft, setAnswerDraft] = useState<Record<string, { optionId?: string; text: string }>>({})
+    // 「修改理解」的编辑草稿(requirementId → 新值)+ 重开集合
+    const [reviseDraft, setReviseDraft] = useState<{ edited: Record<string, string>; reopened: string[] }>({
+      edited: {},
+      reopened: [],
+    })
     // 宿主双形态:0.1.2 起渲染器提供 useInput/useSession standard hooks;
     // 旧版(0.1.0-rc.x/0.1.1-rc.x)渲染器直传 input/session 快照对象。
     const p = props as ResultDockProps & {
@@ -338,6 +346,12 @@ export function createResultDock(controller: OptimizerController) {
     const { result } = state
     // v2 分析结论:loading 用 meta,完成后用 result;旧版 Host 无该字段 → null。
     const v2 = result?.analysisView ?? state.meta?.analysisView ?? null
+    const discovery = state.discovery
+    const confirmation = state.confirmation
+    // 「修改理解」可编辑项:台账里用户已确认的条目(保持台账,只改这几项)
+    const reviseItems = (discovery?.session.ledger ?? []).filter(
+      (entry) => entry.status === 'CONFIRMED' && (entry.source === 'USER_EXPLICIT' || entry.source === 'CONTEXT_EXPLICIT'),
+    )
     const triageLabel = (value: string): string => {
       const key = `panel.triage.${value}`
       const label = t(key as never)
@@ -460,6 +474,133 @@ export function createResultDock(controller: OptimizerController) {
       )
     }
 
+    /** 题干 + 2–4 个具体选项 + 推荐项 + 其他/自己说明 + 按你的判断继续。 */
+    const renderQuestion = (question: DiscoveryQuestionView) => {
+      const draft = answerDraft[question.key] ?? { text: '' }
+      const pick = (optionId: string) =>
+        setAnswerDraft((prev) => ({
+          ...prev,
+          [question.key]: { optionId, text: prev[question.key]?.text ?? '' },
+        }))
+      return (
+        <div key={question.key} style={{ marginTop: 10 }}>
+          <div style={{ ...styles.groupItem, fontWeight: 600 }}>{question.question}</div>
+          {question.why ? <div style={{ opacity: 0.7, marginLeft: 12 }}>{question.why}</div> : null}
+          {question.options.map((option) => (
+            <label key={option.id} style={{ display: 'block', marginLeft: 12, marginTop: 4, cursor: 'pointer' }}>
+              <input type="radio" name={question.key} checked={draft.optionId === option.id} onChange={() => pick(option.id)} />
+              {' '}
+              {option.label}
+              {option.description ? <span style={{ opacity: 0.7 }}>({option.description})</span> : null}
+              {question.recommendedOptionId === option.id ? (
+                <span style={{ opacity: 0.8 }}> · {t('panel.discovery.recommended')}</span>
+              ) : null}
+            </label>
+          ))}
+          {question.recommendedOptionId && question.recommendationReason ? (
+            <div style={{ opacity: 0.75, marginLeft: 12, marginTop: 2 }}>
+              {t('panel.discovery.recommendReason')}:{question.recommendationReason}
+            </div>
+          ) : null}
+          <input
+            className="dsh-po-input"
+            style={{ width: '100%', marginTop: 6, marginLeft: 12, maxWidth: 'calc(100% - 12px)' }}
+            placeholder={t('panel.discovery.freeform')}
+            value={draft.text}
+            onChange={(event) =>
+              setAnswerDraft((prev) => ({
+                ...prev,
+                [question.key]: { ...(prev[question.key] ?? {}), text: event.target.value },
+              }))
+            }
+          />
+          {question.allowBlindTrust ? (
+            <button
+              className="dsh-po-btn"
+              type="button"
+              style={{ ...styles.actionBtn, marginLeft: 12, marginTop: 4 }}
+              onClick={() => controller.continueWithJudgement(question)}
+            >
+              {t('panel.discovery.blindTrust')}
+            </button>
+          ) : null}
+        </div>
+      )
+    }
+
+    /** 弱显示:执行 Agent 会自行确认的内容(不是待填字段)。 */
+    const renderAgentResearches = (items: string[]) => (
+      <div style={{ marginTop: 12, opacity: 0.72 }}>
+        <div style={{ ...styles.sectionTitle, cursor: 'default', opacity: 0.72 }}>{t('panel.discovery.agentResearches')}</div>
+        <div style={styles.unknownBox}>
+          {items.map((item) => (
+            <div key={item} style={styles.groupItem}>- {item}</div>
+          ))}
+        </div>
+      </div>
+    )
+
+    /** 逐题收集答案并提交(选项优先;自由回答文本即用户原话 = 证据)。 */
+    const submitAnswers = (questions: DiscoveryQuestionView[]) => {
+      const answers = questions.map((question) => {
+        const draft = answerDraft[question.key] ?? { text: '' }
+        const option = question.options.find((item) => item.id === draft.optionId)
+        return {
+          key: question.key,
+          text: (draft.text || option?.label || '').trim(),
+          ...(option ? { option_id: option.id } : {}),
+        }
+      })
+      const missing = answers.filter((answer) => !answer.text)
+      if (missing.length > 0) {
+        setAnswerDraft((prev) => ({ ...prev }))
+        return
+      }
+      controller.answerDiscovery(answers)
+    }
+
+    const renderConfirmGroup = (title: string, items: { text: string; value?: string }[]) =>
+      items.length === 0 ? null : (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}({items.length})</div>
+          <div style={styles.unknownBox}>
+            {items.map((item) => (
+              <div key={item.text} style={styles.groupItem}>
+                - {item.text}
+                {item.value ? <span style={{ opacity: 0.7 }}>({item.value})</span> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+
+    const renderPlainGroup = (title: string, items: string[], weak: boolean) =>
+      items.length === 0 ? null : (
+        <div style={{ marginTop: 8, ...(weak ? { opacity: 0.72 } : {}) }}>
+          <div style={{ ...styles.sectionTitle, cursor: 'default', ...(weak ? { opacity: 0.72 } : {}) }}>{title}({items.length})</div>
+          <div style={styles.unknownBox}>
+            {items.map((item) => (
+              <div key={item} style={styles.groupItem}>- {item}</div>
+            ))}
+          </div>
+        </div>
+      )
+
+    const renderProvisional = (title: string, items: { text: string; status: string; note?: string }[]) =>
+      items.length === 0 ? null : (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}({items.length})</div>
+          <div style={styles.unknownBox}>
+            {items.map((item) => (
+              <div key={item.text} style={styles.groupItem} title={item.note}>
+                - {item.text}
+                <span style={{ opacity: 0.7 }}>[{item.status}]</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+
     /**
      * v2 需求确认分组渲染:每条未决项给出分类依据与建议问法,让用户一眼看懂
      * 「为什么停下」以及「回答什么就能继续」。空组不渲染。
@@ -580,29 +721,108 @@ export function createResultDock(controller: OptimizerController) {
           </>
         )}
 
-        {state.status === 'discovery' && (
-          <div style={styles.body}>
-            <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.discovery.title')}</div>
-            <div style={styles.optimizedBox}>{t('panel.discovery.hint')}</div>
-            {state.discovery?.rationale ? (
-              <div style={styles.groupItem}>
-                <strong>{t('panel.discovery.gateReason')}:</strong> {state.discovery.rationale}
+        {state.status === 'discovery' && discovery && discovery.questions.length > 0 && (
+          <>
+            <div style={styles.body}>
+              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>
+                {t('panel.discovery.remaining', { count: String(discovery.analysis.gate.blockingItems.length) })}
               </div>
-            ) : null}
-            {state.discovery ? renderResolutionGroup(t('panel.discovery.blocking'), state.discovery.analysis.gate.blockingItems, true) : null}
-            {state.discovery ? renderResolutionGroup(t('panel.discovery.discoverable'), state.discovery.analysis.gate.discoverableItems, false) : null}
-            {state.discovery ? renderResolutionGroup(t('panel.discovery.optional'), state.discovery.analysis.gate.optionalItems, false) : null}
-          </div>
+              <div style={styles.optimizedBox}>{t('panel.discovery.hint')}</div>
+              {discovery.stoppedBy ? (
+                <div style={styles.warnBanner}>
+                  <span aria-hidden>ℹ</span>
+                  <span>{t(`panel.discovery.stopped.${discovery.stoppedBy}` as never)}</span>
+                </div>
+              ) : null}
+              {discovery.questions.map((question) => renderQuestion(question))}
+              {discovery.agentResearches.length > 0 ? renderAgentResearches(discovery.agentResearches) : null}
+            </div>
+            <div style={styles.actions}>
+              <button
+                className="dsh-po-btn"
+                type="button"
+                style={{ ...styles.actionBtn, ...styles.primaryBtn }}
+                onClick={() => submitAnswers(discovery.questions)}
+              >
+                {t('panel.discovery.submit')}
+              </button>
+              <button className="dsh-po-btn" type="button" style={styles.actionBtn} onClick={() => controller.close()}>
+                {t('panel.discovery.revise')}
+              </button>
+            </div>
+          </>
         )}
-        {state.status === 'discovery' && (
-          <div style={styles.actions}>
-            <button className="dsh-po-btn" type="button" style={{ ...styles.actionBtn, ...styles.primaryBtn }} onClick={() => controller.close()}>
-              {t('panel.discovery.revise')}
-            </button>
-            <button className="dsh-po-btn" type="button" style={styles.actionBtn} title={t('panel.reoptimizeTitle')} onClick={() => controller.retry()}>
-              {t('panel.discovery.retry')}
-            </button>
-          </div>
+
+        {/* 「修改理解」:只改要改的那几项,台账保留(不全部重来) */}
+        {state.status === 'discovery' && discovery && discovery.questions.length === 0 && reviseItems.length > 0 && (
+          <>
+            <div style={styles.body}>
+              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.revise.title')}</div>
+              <div style={styles.optimizedBox}>{t('panel.revise.hint')}</div>
+              {reviseItems.map((item) => (
+                <div key={item.id} style={{ marginTop: 8 }}>
+                  <div style={styles.groupItem}>{item.text}</div>
+                  <input
+                    className="dsh-po-input"
+                    style={{ width: '100%', marginTop: 4 }}
+                    value={reviseDraft.edited[item.id] ?? item.evidence?.[0] ?? ''}
+                    placeholder={t('panel.revise.placeholder')}
+                    onChange={(event) =>
+                      setReviseDraft((prev) => ({ ...prev, edited: { ...prev.edited, [item.id]: event.target.value } }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={styles.actions}>
+              <button
+                className="dsh-po-btn"
+                type="button"
+                style={{ ...styles.actionBtn, ...styles.primaryBtn }}
+                onClick={() =>
+                  controller.submitRevision({
+                    edited: Object.entries(reviseDraft.edited).map(([requirement_id, value]) => ({ requirement_id, value })),
+                    reopened: reviseDraft.reopened,
+                  })
+                }
+              >
+                {t('panel.revise.submit')}
+              </button>
+              <button className="dsh-po-btn" type="button" style={styles.actionBtn} onClick={() => controller.close()}>
+                {t('panel.close')}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Requirement Confirmation:决策完备,确认后才编译 */}
+        {state.status === 'confirmation' && confirmation && (
+          <>
+            <div style={styles.body}>
+              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.confirm.title')}</div>
+              <div style={styles.optimizedBox}>
+                <strong>{t('panel.confirm.goal')}:</strong> {confirmation.confirmation.goal}
+              </div>
+              {renderConfirmGroup(t('panel.confirm.confirmed'), confirmation.confirmation.confirmed)}
+              {renderPlainGroup(t('panel.confirm.agent'), confirmation.confirmation.agentResearches, true)}
+              {confirmation.confirmation.provisional.length > 0
+                ? renderProvisional(t('panel.confirm.provisional'), confirmation.confirmation.provisional)
+                : null}
+            </div>
+            <div style={styles.actions}>
+              <button
+                className="dsh-po-btn"
+                type="button"
+                style={{ ...styles.actionBtn, ...styles.primaryBtn }}
+                onClick={() => controller.confirmDiscovery()}
+              >
+                {t('panel.confirm.accept')}
+              </button>
+              <button className="dsh-po-btn" type="button" style={styles.actionBtn} onClick={() => controller.reviseUnderstanding()}>
+                {t('panel.confirm.revise')}
+              </button>
+            </div>
+          </>
         )}
 
         {state.status === 'done' && result && (

@@ -642,6 +642,135 @@ export interface AnalysisResult {
   prompt_type: PromptType;
   /** 向后兼容:分诊为 PATCH/RESTRUCTURE/REBUILD 且可编译时,建议补充项。 */
   missing_constraints: string[];
+  // ── v2 Phase 3 加法字段(可选;旧消费方零改动)──────────────────────────
+  /**
+   * 模型判定的**产品取舍 / 用户偏好**型决策(语义第一来源;
+   * 机械判据 `isProductDecision` 只作安全网)。
+   */
+  decisions?: AnalysisDecision[];
+  /** 模型给出的候选问题(面向用户目标 + 2–4 选项 + 推荐 + 依赖)。 */
+  questions?: DiscoveryQuestion[];
+}
+
+/** 分析阶段识别出的一个需要用户决定的事项。 */
+export interface AnalysisDecision {
+  text: string;
+  /** PRODUCT_DECISION = 产品取舍 / 偏好;USER_PREFERENCE = 个人口味;FACT_GAP = 只是缺事实。 */
+  kind: "PRODUCT_DECISION" | "USER_PREFERENCE" | "FACT_GAP";
+  impact: "high" | "medium" | "low";
+  /** 是否必须问用户(模型判断;机械层可向安全方向纠正)。 */
+  needs_user_decision: boolean;
+  note?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2 Phase 3:Requirement Discovery(动态多轮,决策完备即停)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 一个可选答案(面向用户的目标语言,不暴露内部枚举)。 */
+export interface DiscoveryOption {
+  id: string;
+  /** 用户可读的选项文案(业务语言,如「先验证控制链路」)。 */
+  label: string;
+  /** 可选:一句话补充说明。 */
+  description?: string;
+  /** 选中该项时,内部写回 Ledger 的取值(可选;缺省用 label)。 */
+  value?: string;
+  /** 该选项被选中时,哪些 requirement 应失效/不适用(Answer Resolver 用)。 */
+  invalidates?: string[];
+}
+
+/** 本轮要问用户的一个问题。 */
+export interface DiscoveryQuestion {
+  /** 稳定 key(去重 / 防重复询问用;= requirement id 或规范化文本)。 */
+  key: string;
+  /** 对应的 requirement(台账条目 id)。 */
+  requirement_id: string;
+  /** 面向用户的问题正文(业务语言,**不得**暴露内部枚举)。 */
+  question: string;
+  /** 2–4 个具体选项;为空 = 开放回答。 */
+  options: DiscoveryOption[];
+  /** 推荐项(仍是 OPTIMIZER_SUGGESTED,绝不等于用户已决定)。 */
+  recommended_option_id?: string;
+  /** 推荐理由(一句话)。 */
+  recommendation_reason?: string;
+  /** 为什么必须由用户决定(一句话;UI tooltip)。 */
+  why: string;
+  /** 该问题依赖的其他 requirement id:未解决前不得同轮提出(依赖分轮)。 */
+  depends_on: string[];
+  /** 是否允许「按你的判断继续」(默认 true)。 */
+  allow_blind_trust?: boolean;
+}
+
+/** 用户的回答(客户端提交;宿主一律视为不可信输入)。 */
+export interface DiscoveryAnswer {
+  /** 对应 DiscoveryQuestion.key。 */
+  key: string;
+  /** 用户提交的**原话**(逐字证据来源;自由回答或选项文案)。 */
+  text: string;
+  /** 选中的选项 id(自由回答时为空)。 */
+  option_id?: string;
+  /** 用户点了「按你的判断继续」时为 true(只可产生 PROVISIONAL/CONDITIONAL/DEFERRED)。 */
+  blind_trust?: boolean;
+  /** 用户在「修改理解」里重新决定的 requirement id(重开该项)。 */
+  reopen?: boolean;
+}
+
+/** 已被问过的记录(防重复询问)。 */
+export interface AskedQuestion {
+  key: string;
+  question: string;
+  round: number;
+  /** 规范化指纹(同义改写去重用)。 */
+  fingerprint: string;
+}
+
+/** Discovery 轮次的判决。 */
+export type DiscoveryVerdict = "ASK" | "READY_TO_CONFIRM";
+
+/** 一轮 Discovery 的完整结果(宿主下发,客户端保存并回传)。 */
+export interface DiscoveryRound {
+  round: number;
+  verdict: DiscoveryVerdict;
+  /** ASK 时 1–3 个高影响问题(默认 1–2)。 */
+  questions: DiscoveryQuestion[];
+  /** READY 时的确认摘要。 */
+  confirmation?: RequirementConfirmation;
+  /** 判决理由(用户可读)。 */
+  rationale: string;
+  /** 本轮之后仍然阻塞的项数(0 = 决策完备)。 */
+  blocking_count: number;
+  /** 安全保护是否触发(达到最大轮次 / 无新信息 / 无法形成高价值问题)。 */
+  stopped_by?: "max_rounds" | "no_new_information" | "no_high_value_question";
+}
+
+/** Requirement Confirmation 摘要(只给用户看关键三/四组,不是完整台账)。 */
+export interface RequirementConfirmation {
+  /** 一句话:这次要做什么。 */
+  goal: string;
+  /** 你已确认(USER_EXPLICIT / CONTEXT_EXPLICIT → CONFIRMED)。 */
+  confirmed: { text: string; value?: string }[];
+  /** 执行 Agent 自行调查(AGENT_DISCOVERABLE / DISCOVERABLE)。 */
+  agent_researches: string[];
+  /** 暂定 / 条件事项(仅存在时显示)。 */
+  provisional: { text: string; status: RequirementStatus; note?: string }[];
+  /** 摘要指纹(确认时回传,防止「确认了另一个版本」)。 */
+  fingerprint: string;
+}
+
+/** 客户端持有的 Discovery 会话(每轮回传;宿主重新净化)。 */
+export interface DiscoverySessionState {
+  /** 原始 Prompt(逐字;HOST 以 body.text 为准,此字段用于一致性校验)。 */
+  raw_input: string;
+  round: number;
+  triage: EditTriage;
+  ledger: RequirementLedgerEntry[];
+  asked: AskedQuestion[];
+  answers: DiscoveryAnswer[];
+  /** 上一轮实际提出的问题(回答解析需要 options / invalidates)。 */
+  questions: DiscoveryQuestion[];
+  /** 上一次的分析结论(confirm 时直接用于编译,避免重复分析调用)。 */
+  analysis?: AnalysisResult;
 }
 
 /** SSE `discovery_required` 事件:唯一允许「不生成」的出口。 */
@@ -654,5 +783,40 @@ export interface OptimizeDiscoveryRequiredEvent {
   gate: AnalysisGate;
   rationale: string;
   provenance_ok: boolean;
+  // ── Phase 3 加法字段 ────────────────────────────────────────────────────
+  /** 当前轮次(1 起;首轮为 1)。 */
+  round?: number;
+  /** 本轮要问的 1–3 个高影响问题。 */
+  questions?: DiscoveryQuestion[];
+  /** 已问过的问题(客户端保存并回传,防重复询问)。 */
+  asked?: AskedQuestion[];
+  /** 执行 Agent 自行调查项(弱显示,不做待填字段)。 */
+  agent_researches?: string[];
+  /** 安全保护触发原因(达到轮次上限等)。 */
+  stopped_by?: DiscoveryRound["stopped_by"];
+  /**
+   * 本轮分析结论(客户端**不解读**,原样保存并在 confirm 时回传,避免重复分析调用)。
+   * 宿主回传时会重新做结构与不变量校验(不可信输入)。
+   */
+  analysis?: AnalysisResult;
+}
+
+/** SSE `requirement_confirmation` 事件:决策完备,等用户确认后才编译。 */
+export interface OptimizeRequirementConfirmationEvent {
+  type: "requirement_confirmation";
+  intent: IntentProfile;
+  target: TargetResolution;
+  triage: TriageDecision;
+  ledger: RequirementLedgerEntry[];
+  gate: AnalysisGate;
+  confirmation: RequirementConfirmation;
+  rationale: string;
+  provenance_ok: boolean;
+  round: number;
+  asked: AskedQuestion[];
+  /** 安全保护:为何在仍有未决项时停下了追问(达到轮次上限 / 无新信息 / 无高价值问题)。 */
+  stopped_by?: DiscoveryRound["stopped_by"];
+  /** 同 discovery_required:客户端保存并在 confirm 时回传的分析结论(不解读)。 */
+  analysis?: AnalysisResult;
 }
 

@@ -16,8 +16,11 @@
  * 纯函数解析 + 可注入 LLM 结构面,零 @deepseek-ai/* 依赖,可 mock 单测。
  */
 import type {
+  AnalysisDecision,
   AnalysisResult,
   ClassifierResult,
+  DiscoveryOption,
+  DiscoveryQuestion,
   ConversationTurn,
   EditTriage,
   IntentProfile,
@@ -112,6 +115,16 @@ export const ANALYSIS_OUTPUT_FIELDS: readonly { name: string; detail: string }[]
   { name: "confidence_internal", detail: "0..1 之间的小数" },
   { name: "rationale", detail: "一句话理由" },
   { name: "evidence_quotes", detail: "字符串数组:必须逐字来自「用户本人」发言,不得引用助手" },
+  {
+    name: "decisions",
+    detail:
+      "对象数组:{text, kind(PRODUCT_DECISION|USER_PREFERENCE|FACT_GAP), impact(high|medium|low), needs_user_decision(bool), note} —— 需要用户拍板的事项(产品取舍 / 偏好),不是缺事实",
+  },
+  {
+    name: "questions",
+    detail:
+      "对象数组:{requirement_id, question, options:[{id,label,description,value,invalidates}], recommended_option_id, recommendation_reason, why, depends_on:[requirement_id]} —— 面向用户目标的问题(禁止暴露内部枚举),1 个答案能消除最多分支的优先",
+  },
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,6 +167,10 @@ const TRIAGE_CATALOG_ZH = [
 ].join("\n");
 
 const ANALYSIS_RULES_ZH = [
+  "取舍识别(重点):「先验证还是直接做完」「先做 MVP 还是一步到位」「保持现有架构还是允许重构」这类**产品取舍 / 偏好**不是缺事实,而是只有用户能拍板、且不同答案会显著改变方案 → 必须写进 decisions,kind=PRODUCT_DECISION,impact=high,needs_user_decision=true,并给进 unknowns(classification=USER_REQUIRED, blocking=true)。",
+  "反向保护(同样重要):ComfyUI 版本 / API 地址 / workflow 文件位置 / 当前依赖 / 项目结构 / 接口签名这类**环境事实**永远不是用户决定,必须写进 unknowns 的 AGENT_DISCOVERABLE,不得问用户。",
+  "提问纪律:进入 questions 的问题必须用**用户能理解的业务语言**,禁止暴露内部枚举(不要问「这是 Planning 还是 Execution」「请选择 Prompt Target」);每个问题给 2–4 个具体选项 + 有合理推荐时给 recommended_option_id 与一句理由;推荐只是建议,不是用户决定。",
+  "依赖分轮:如果 B 是否需要问取决于 A 的答案,用 depends_on 声明,不要在同一个问题组里自相矛盾地问。",
   "铁律(必须遵守):",
   "1. 判断对象是「用户本轮输入」;历史讨论仅供参考,不得用历史话题覆盖当前请求。",
   "2. 助手 / Agent 的发言不是用户决定:evidence_quotes 与 requirements 的 quote 只能逐字引用用户自己的发言。",
@@ -197,6 +214,8 @@ function outputContractBlock(language: "zh" | "en"): string {
     "- confidence_internal:0..1 之间的小数",
     "- rationale:一句话理由",
     "- evidence_quotes:字符串数组,只含用户本人发言的逐字片段",
+    "- decisions:对象数组 {text, kind: PRODUCT_DECISION|USER_PREFERENCE|FACT_GAP, impact: high|medium|low, needs_user_decision: 布尔, note}",
+    "- questions:对象数组 {requirement_id, question, options:[{id,label,description,value,invalidates}], recommended_option_id, recommendation_reason, why, depends_on}",
   ].join("\n");
 }
 
@@ -472,6 +491,9 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
   });
   const ledger = applyBlindTrust(baseLedger, rawInput);
 
+  const decisions = normalizeDecisions(record.decisions);
+  const questions = remapQuestionRequirements(normalizeQuestions(record.questions), missingResolution);
+
   const confidence = clampConfidence(record.confidence_internal);
   const lowConfidence = confidence < CLASSIFIER_LOW_CONFIDENCE_THRESHOLD;
 
@@ -494,6 +516,8 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
     evidence_quotes: evidenceQuotes,
     prompt_type: toPromptType(primary),
     missing_constraints: missingConstraints,
+    ...(decisions.length ? { decisions } : {}),
+    ...(questions.length ? { questions } : {}),
   };
 
   return {
@@ -508,6 +532,119 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
       multiIntent: supporting.length > 0 || looksMultiIntent(rawInput),
     },
   };
+}
+
+/**
+ * 把问题里的 `requirement_id` 重映射到**内容稳定 id**。
+ *
+ * 模型通常按自己输出的 unknowns 顺序编号(unknown-1 / unknown-2 …),而下标会在每轮
+ * 重新分析时漂移。这里按「下标 → 第 N 个未决项」的约定重映射;已经直接命中稳定 id 的
+ * 保持不变;命中不了的保留原值(由 Discovery 侧按 key 兜底)。
+ */
+function remapQuestionRequirements(
+  questions: DiscoveryQuestion[],
+  resolution: readonly MissingResolutionItem[],
+): DiscoveryQuestion[] {
+  const byId = new Set(resolution.map((item) => item.id));
+  const remapOne = (raw: string): string | undefined => {
+    if (byId.has(raw)) return raw;
+    const positional = /^unknown-(\d+)$/.exec(raw);
+    const index = positional ? Number(positional[1]) - 1 : Number.NaN;
+    return Number.isInteger(index) && index >= 0 ? resolution[index]?.id : undefined;
+  };
+  return questions.map((question) => {
+    const mapped = remapOne(question.requirement_id);
+    // depends_on 同样按「下标 → 第 N 个未决项」的约定重映射(否则依赖分轮会失效)
+    const dependsOn = question.depends_on
+      .map((id) => remapOne(id))
+      .filter((id): id is string => typeof id === "string");
+    if (!mapped) {
+      return dependsOn.length === question.depends_on.length
+        ? { ...question, depends_on: dependsOn }
+        : question;
+    }
+    return {
+      ...question,
+      requirement_id: mapped,
+      key: `${mapped}::${question.key.split("::").slice(1).join("::")}`,
+      depends_on: dependsOn,
+    };
+  });
+}
+
+/** decisions 归一化(kind / impact / needs_user_decision 容错)。 */
+function normalizeDecisions(value: unknown): AnalysisDecision[] {
+  if (!Array.isArray(value)) return [];
+  const out: AnalysisDecision[] = [];
+  for (const entry of value) {
+    if (!isPlainObject(entry)) continue;
+    const text = typeof entry.text === "string" ? entry.text.trim() : "";
+    if (!text) continue;
+    const kind =
+      entry.kind === "PRODUCT_DECISION" || entry.kind === "USER_PREFERENCE" || entry.kind === "FACT_GAP"
+        ? entry.kind
+        : "PRODUCT_DECISION";
+    const impact = entry.impact === "high" || entry.impact === "medium" || entry.impact === "low" ? entry.impact : "high";
+    out.push({
+      text,
+      kind,
+      impact,
+      // 缺省按「必须问用户」处理(安全方向:宁可问,不可替用户决定)
+      needs_user_decision: entry.needs_user_decision !== false,
+      ...(typeof entry.note === "string" && entry.note ? { note: entry.note } : {}),
+    });
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+/** questions 归一化(选项 / 推荐 / 依赖容错,并禁止暴露内部枚举)。 */
+function normalizeQuestions(value: unknown): DiscoveryQuestion[] {
+  if (!Array.isArray(value)) return [];
+  const out: DiscoveryQuestion[] = [];
+  for (const entry of value) {
+    if (!isPlainObject(entry)) continue;
+    const question = typeof entry.question === "string" ? entry.question.trim() : "";
+    const requirementId = typeof entry.requirement_id === "string" ? entry.requirement_id.trim() : "";
+    if (!question || !requirementId) continue;
+    const options: DiscoveryOption[] = [];
+    if (Array.isArray(entry.options)) {
+      for (const option of entry.options) {
+        if (!isPlainObject(option)) continue;
+        const label = typeof option.label === "string" ? option.label.trim() : "";
+        if (!label) continue;
+        options.push({
+          id: typeof option.id === "string" && option.id ? option.id : `opt-${options.length + 1}`,
+          label,
+          ...(typeof option.description === "string" && option.description ? { description: option.description } : {}),
+          ...(typeof option.value === "string" && option.value ? { value: option.value } : {}),
+          ...(Array.isArray(option.invalidates)
+            ? { invalidates: option.invalidates.filter((v): v is string => typeof v === "string") }
+            : {}),
+        });
+        if (options.length >= 4) break;
+      }
+    }
+    out.push({
+      key: `${requirementId}::${question.slice(0, 24)}`,
+      requirement_id: requirementId,
+      question,
+      options,
+      ...(typeof entry.recommended_option_id === "string" && entry.recommended_option_id
+        ? { recommended_option_id: entry.recommended_option_id }
+        : {}),
+      ...(typeof entry.recommendation_reason === "string" && entry.recommendation_reason
+        ? { recommendation_reason: entry.recommendation_reason }
+        : {}),
+      why: typeof entry.why === "string" ? entry.why : "",
+      depends_on: Array.isArray(entry.depends_on)
+        ? entry.depends_on.filter((v): v is string => typeof v === "string")
+        : [],
+      ...(entry.allow_blind_trust === false ? { allow_blind_trust: false } : {}),
+    });
+    if (out.length >= 3) break;
+  }
+  return out;
 }
 
 /** unknown 字段归一化:兼容对象数组 / 字符串数组 / 旧 missing_constraints。 */

@@ -73,6 +73,43 @@
 - **文档**：`docs/phase2-contract.md`（正式契约）、`docs/phase2-report.md`（实施报告）、
   `docs/phase3-prerequisites.md`（Phase 3 准入清单，含用户指定的「取舍型不得被降级」必做项）。
 
+### Phase 3 —— Requirement Discovery 完整闭环（已完成）
+
+把「blocking → 停止」升级成「blocking → Discovery → 回答 → 重新分析 → 台账更新 →
+确认 → Compiler」的**完整闭环**。报告：`docs/phase3-report.md`。
+
+- **Phase 3 prerequisite（正式解决）**：取舍型 / 产品决策（「先验证还是直接做完」
+  「先做 MVP 还是一步到位」「保持架构还是允许重构」）→ `USER_REQUIRED` + `impact=high`
+  + `blocking=true`；**反向保护**：ComfyUI 版本 / API 地址 / workflow 文件位置 / 当前依赖 /
+  项目结构等环境事实永远是 `AGENT_DISCOVERABLE`，不得升格。机械判据只是安全网，
+  语义第一来源是分析契约的 `decisions[].kind = PRODUCT_DECISION`。
+- **新增 `src/core/discovery.ts`**：
+  - Question Planner：四维加权（Solution Impact / User Exclusivity / Blocking /
+    Branch Reduction）、依赖分轮（`depends_on`）、同轮不得问有依赖关系的两项、
+    默认 1–2 最多 3、重复问题（含换措辞）不再问；
+  - Answer Resolver：`confirm / reject / supersede / invalidate / not_applicable / derived`，
+    回答写回台账为 `USER_EXPLICIT` + **逐字证据**；选项声明的 `invalidates` → `NOT_APPLICABLE`；
+  - Sufficiency Evaluator：结合台账**当前状态**重算 live blocking（不是数字段）；
+    `CONFIRMED/REJECTED/NOT_APPLICABLE/PROVISIONAL/CONDITIONAL/DEFERRED` 均视为已安全处理；
+  - 循环安全保护：最大轮次 3 / 无新信息 / 无高价值问题 → 停止追问并给出理由；
+  - Requirement Confirmation：目标 / 你已确认 / Agent 自行调查 / 暂定·条件 + 指纹。
+- **盲授权**（「按你的判断继续」）只产生 `PROVISIONAL` / `CONDITIONAL`，
+  **永不** `USER_EXPLICIT` / `CONFIRMED`（机械测试钉住）。
+- **未决项 id 改为内容派生**（`unknown-<hash>`）：跨轮次稳定，否则第二轮会把已回答的
+  决定当成新问题重复问；模型问题里的 `requirement_id` / `depends_on` 按「下标 → 第 N 项」重映射。
+- **宿主**：`discovery: { mode: 'answer' | 'confirm' }`；新事件 `requirement_confirmation`；
+  **confirm 复用上一轮分析（0 次额外调用）**并在编译前**重算 live blocking**——
+  仍有阻塞即拒绝编译并退回确认流程（fail-closed）；客户端回传的台账一律净化
+  （伪造的 `USER_EXPLICIT` 被降级，绝不以此身份存活）。
+- **UI**：Discovery 答题面板（选项 + 推荐 + 推荐理由 + 自由回答 + 其他 + 按你的判断继续）、
+  Confirmation 四组摘要面板、「修改理解」编辑面板（保持台账，不全部重来）；
+  新增 `discovery` / `confirmation` 两个状态。
+- **LLM 调用预算**：一次分析调用同时产出取舍语义 + 问法/选项；Planner / Sufficiency /
+  Confirmation 全机械；确认后不再分析。总计 = 首轮 1 + 每回答轮 1 + 编译 1。
+- **测试**：新增 `discovery`(13 组) 与 `phase3-e2e`(13 组，含 ComfyUI 完整闭环与 §19 九类场景)；
+  `rc12` 翻转为新行为。`npm test` **436 断言全绿**。
+- **证据工具**：`scripts/phase3-trace.mjs`（输出即 ComfyUI 完整事件流与编译调用次数）。
+
 ## [v0.1.0-apo] — 2026-10-04（首个可发布版本，Release Candidate）
 
 DSH Adaptive Prompt Optimizer 完成全部 9 个阶段（P00–P09），通过 G-1..G-7
