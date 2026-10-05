@@ -59,7 +59,7 @@ stop_reason: completed: DoD PASS（user final acceptance 2026-10-04）
 | P09-T01 | DONE | 备份演练 + G-7 授权正式安装（备份 ~/.dsh/backups/apo/g7-install-20261004-140136/、bundles=21、未回滚；backup-profile.sh 随 P09-T02 入库 c88e922） | **G-7（已过，2026-10-04）** |
 | P09-T02 | DONE | 发布产物 v0.1.0-apo：NOTICE/CHANGELOG/README/DoD 终检 + license 污染检查 + annotated tag（c88e922） | **DoD 终检（已过）** |
 | V2-P1 | DONE | v2 升级 Phase 1：分析阶段（意图/目标/分诊/缺失解析）+ 阻塞门（discovery_required，零编译调用）+ KEEP 零改写；385 断言全绿（docs/PLAN-v2-adaptive-editor.md、docs/phase1-report.md） | — |
-| V2-P2 | DONE | v2 升级 Phase 2（用户裁决选项 A）：`informationResponsibilities` + Target-aware Router + Agent/Image/Video 契约（图像视频不再套 Goal/Phase/Task/Tests）+ 未决项五处置（`[待补充:]` 退役）；411 断言全绿（docs/phase2-contract.md、docs/phase2-report.md、docs/phase3-prerequisites.md） | — |
+| V2-P2 | DONE | v2 升级 Phase 2（用户裁决选项 A）：`informationResponsibilities` + Target-aware Router + Agent/Image/Video 契约（图像视频不再套 Goal/Phase/Task/Tests）+ 未决项五处置（`[待补充:]` 退役）；412 断言全绿（docs/phase2-contract.md、docs/phase2-report.md、docs/phase3-prerequisites.md） | — |
 
 Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ **DoD 终检（当前）：用户声明 PASS 即项目完成**（详见 docs/dod.md；AI 不代过）。
 

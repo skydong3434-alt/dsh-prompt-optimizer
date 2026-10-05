@@ -69,7 +69,7 @@
   「缺口未在正文出现」不再报问题（省略是合法处置，可见性由台账 / 面板承担）。
 - **UI**：meta/done 透传 `contract`，新增「编译契约」徽章（图像描述式 / 视频描述式 / Agent 任务指令）。
 - **测试**：新增 `responsibilities` / `router` / `phase2-fixtures`（验收 A/C/D/E）三套件；
-  10 处既有 fixture/golden 按新契约更新。`npm test` 411 断言全绿。
+  10 处既有 fixture/golden 按新契约更新。`npm test` 412 断言全绿。
 - **文档**：`docs/phase2-contract.md`（正式契约）、`docs/phase2-report.md`（实施报告）、
   `docs/phase3-prerequisites.md`（Phase 3 准入清单，含用户指定的「取舍型不得被降级」必做项）。
 

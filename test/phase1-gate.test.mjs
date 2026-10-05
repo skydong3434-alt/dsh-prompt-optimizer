@@ -347,4 +347,80 @@ const COMPLETE_PROMPT = [
   console.log('✓ p1g6 分析失败 → 兜底继续,绝不误阻断')
 }
 
+// 7. v2 Phase 2 端到端:图像目标经宿主 → 描述式契约 + 零 [待补充:] + contract 下发
+{
+  const IMAGE_ANALYSIS = JSON.stringify({
+    primary_intent: 'execution',
+    supporting_intents: [],
+    work_mode: 'one_shot',
+    target: 'image_generation',
+    target_engine: 'Midjourney',
+    edit_triage: 'PATCH',
+    unknowns: [
+      { text: '当前可用的出图链路与依赖版本', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '执行方自查' },
+      { text: '现有实现的路径', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '自然获得' },
+    ],
+    requirements: [],
+    suggestions: [],
+    confidence_internal: 0.9,
+    rationale: '用户要出图',
+    evidence_quotes: [],
+  })
+  const IMAGE_BODY = [
+    '<<<DIAGNOSIS>>>',
+    '目标明确:出图',
+    '<<<EXPLICIT>>>',
+    '(无)',
+    '<<<CONTEXT>>>',
+    '(无)',
+    '<<<SUGGESTED>>>',
+    '(无)',
+    '<<<UNKNOWN>>>',
+    '(无)',
+    '<<<OPTIMIZED>>>',
+    '## Subject（主体）',
+    '- 雨夜霓虹街道上的撑伞人',
+    '## Scene（场景与环境）',
+    '- 赛博朋克城市夜景',
+    '## Style（风格）',
+    '- 赛博朋克插画',
+    '## Composition（构图与镜头）',
+    '- 竖版低机位',
+    '## Lighting & Color（光线与色调）',
+    '- 冷青主调 + 品红霓虹',
+    '## Aspect Ratio（画幅与画质）',
+    '- 9:16',
+    '## Negative（排除项）',
+    '- 不要文字水印',
+    '<<<END>>>',
+  ].join('\n')
+  const { handler, calls, compileCalls } = await setup({
+    respond: (_options, index) => chunkText(index === 0 ? IMAGE_ANALYSIS : IMAGE_BODY),
+  })
+  const res = await call(handler, { text: '帮我画一张赛博朋克城市夜景海报', provider: 'p', model: 'm' })
+  const events = sseEvents(res)
+  const meta = events.find((e) => e.type === 'meta')
+  const done = events.find((e) => e.type === 'done')
+  assert.equal(calls.length, 2, '分析 1 次 + 编译 1 次')
+  assert.equal(compileCalls().length, 1)
+  assert.equal(meta.prompt_type, 'execution', 'prompt_type 仍表达工作意图')
+  assert.equal(meta.contract, 'image', 'meta 必须下发编译契约')
+  assert.equal(done.contract, 'image')
+  assert.ok(done.optimized.includes('Subject'), '图像契约正文照常返回')
+  assert.doesNotMatch(done.optimized, /\[(?:待补充|TODO)\s*[:：]/, 'v2:宿主产出不得含退役占位符')
+  assert.ok(
+    done.optimized.includes('动手前先确认:当前可用的出图链路与依赖版本'),
+    'v2:可自查项落成动作式执行责任',
+  )
+  assert.equal(done.optimized.includes('现有实现的路径'), false, 'v2:自然获得项省略')
+  for (const heading of ['Goal', 'Phases', 'Tasks', 'Acceptance Criteria']) {
+    assert.doesNotMatch(
+      done.optimized,
+      new RegExp(`(?:^|\\n)\\s*#{0,6}\\s*\\**${heading}\\b`, 'i'),
+      `v2:图像成品不得出现任务模板标题「${heading}」`,
+    )
+  }
+  console.log('✓ p1g7 图像目标端到端:描述式契约 + contract 下发 + 零占位符')
+}
+
 console.log('phase1-gate.test.mjs: ALL PASS')

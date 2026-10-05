@@ -49,13 +49,14 @@
 
 ## 4. 测试与验收证据
 
-`npm test` → **exit 0，411 个断言全绿**（较 Phase 1 的 385 增加 26；既有套件全部更新到新契约）。
+`npm test` → **exit 0，412 个断言全绿**（较 Phase 1 的 385 增加 27；既有套件全部更新到新契约）。
 
 | 套件 | 覆盖 |
 |---|---|
 | `responsibilities.test.mjs`（新） | 6 条规则逐条可执行断言 / 反膨胀（禁止机械改写句式）/ 去重与上限 / I-1·I-2 / 回退路径与 resolution 一致 / **Phase 3 前置 rc12** |
 | `router.test.mjs`（新） | 路由优先级（手动 > 视觉 > Agent > 意图 > 兜底）/ 注册表分离 / 视觉守卫拒绝模板标题 / 与 `TARGET_CATALOG` 单一真源一致 |
 | `phase2-fixtures.test.mjs`（新） | **C 图像**（描述式、无 Goal/Phase/Task/Tests、零占位符、自然获得项省略）/ **D 视频**（条件式分支 + 用户决定项不注入）/ **A ComfyUI→DSH**（Agent 契约含停止条件）/ **E 乱但完整**（RESTRUCTURE + 处置照常） |
+| `phase1-gate`（扩展 p1g7） | 宿主端到端:图像目标 → 描述式契约 + `contract` 随 meta/done 下发 + 零占位符 + 无任务模板标题 |
 | 既有 7 个策略套件 | 文案由「必须按顺序包含 N 段」改为「逐项交代 N 项信息责任」；缺口相关 golden 更新为新契约 |
 | `compiler` / `compiler-integration` / `validate` / `host-pipeline` / `vertical-slice` | 缺口注入改为处置注记；新增 I-1/I-2 校验；退役占位符相关 golden 更新 |
 

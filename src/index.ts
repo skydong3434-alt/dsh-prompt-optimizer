@@ -678,6 +678,7 @@ export function apply(ctx: Context, config: Config) {
               fallbackUsed: false,
               keep: true,
               prompt_type: keepOutcome.result.prompt_type,
+              ...(keepOutcome.result.contract ? { contract: keepOutcome.result.contract } : {}),
               confidence_level: keepOutcome.result.confidence_level,
               diagnosis: keepOutcome.result.diagnosis,
               explicit_requirements: keepOutcome.result.explicit_requirements,
@@ -818,6 +819,7 @@ export function apply(ctx: Context, config: Config) {
                 ...(fallbackReason ? { fallbackReason } : {}),
                 // 新增字段(可选):类型 / 置信度 / 四组 provenance / 缺口 / 校验。
                 prompt_type: outcome.result.prompt_type,
+                ...(outcome.result.contract ? { contract: outcome.result.contract } : {}),
                 confidence_level: outcome.result.confidence_level,
                 diagnosis: outcome.result.diagnosis,
                 explicit_requirements: outcome.result.explicit_requirements,
