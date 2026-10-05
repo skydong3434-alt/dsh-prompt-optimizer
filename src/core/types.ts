@@ -12,7 +12,15 @@
 // 任务类型(封闭枚举,含 fallback)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 插件支持的提示词任务类型。`general` 是 AUTO 无法判定时的兜底,不单独出现在 UI 下拉。 */
+/**
+ * 插件支持的提示词类型。
+ *
+ * - 前七个是**工作意图**(classifier 闭集,`PROMPT_TYPES` 仍只含这七个;
+ *   `general` 是 AUTO 无法判定时的兜底,不单独出现在 UI 下拉)。
+ * - 后三个是 v2 的**目标派生编译契约**(不以「意图」形式出现在分类结果里,
+ *   只由 Target-aware Router 按 Prompt Target 选出):图像 / 视频 / Agent 任务。
+ *   它们承载完全不同的信息责任(图像/视频不得被套进 Goal/Phase/Task/Tests)。
+ */
 export type PromptType =
   | "research"
   | "planning"
@@ -20,7 +28,13 @@ export type PromptType =
   | "diagnostic"
   | "review"
   | "creative"
-  | "general";
+  | "general"
+  | "image"
+  | "video"
+  | "agent";
+
+/** 目标派生的编译契约类型(不含在分类器闭集里)。 */
+export const TARGET_CONTRACT_TYPES: readonly PromptType[] = ["agent", "image", "video"] as const;
 
 /** A.分类输出(classifier 的 JSON 契约;LLM 必须逐字段输出,解析层容错降级)。 */
 export interface ClassifierResult {
@@ -162,6 +176,8 @@ export interface CompileResult {
   triage?: TriageDecision;
   /** 需求台账(来源与状态分离)。 */
   ledger?: RequirementLedgerEntry[];
+  /** v2:实际采用的编译契约 id(Target-aware Router 的裁决结果)。 */
+  contract?: string;
   /** 缺失解析结果(UNKNOWN 三分类 + 阻塞判定)。 */
   missing_resolution?: MissingResolutionItem[];
 }
@@ -206,9 +222,19 @@ export interface ProvenanceRule {
   description: string;
 }
 
-/** 策略输出契约段落(required_sections 是测试断言锚点:段落齐全性)。 */
+/**
+ * 策略输出契约(v2 §C5:策略定义的是**信息责任**,不是必备标题)。
+ *
+ * - `responsibilities`:必须**逐项交代清楚**的信息责任(id 作为机械核对锚点);
+ *   标题可自拟、顺序可调整,但不得遗漏任何一项;
+ * - `sections`:仅保留给旧消费方(等价于 responsibilities,标记为 deprecated)。
+ */
 export interface OutputContract {
-  /** required_sections 按顺序出现的「编译产出段落标题」清单。 */
+  /** 必须交代的信息责任清单(id 即核对锚点)。 */
+  responsibilities: string[];
+  /**
+   * @deprecated v2 起改用 `responsibilities`;两者内容一致,仅为向后兼容保留。
+   */
   sections: string[];
   /** 输出格式说明(给 compiler 的提示词片段)。 */
   formatNote: string;
@@ -220,6 +246,17 @@ export interface CompileVars {
   context_turns: ConversationTurn[];
   workspace_metadata: NormalizedContext["workspace_metadata"];
   missing_constraints: MissingConstraint[];
+  /**
+   * v2:带三分类的未决项(有则优先用于处置分派;无则按 label 做机械三分类)。
+   * 处置计划由 `responsibilities.ts` 的纯函数按需推导 —— 确定性且开销可忽略,
+   * 因此不缓存进 CompileVars(避免类型环与状态不一致)。
+   */
+  missing_resolution?: MissingResolutionItem[];
+  /**
+   * v2:编译器算好的处置分派(策略侧只渲染,不重算)。
+   * `missing_constraints` 是「有什么缺口」,这里是「每个缺口该怎么处置」。
+   */
+  missing_dispositions?: readonly DispositionedRequirementItem[];
   llm_derived?: NormalizedContext["llm_derived"];
 }
 
@@ -229,6 +266,14 @@ export interface PromptStrategy {
   name: string;
   version: string;
   purpose: string;
+  /**
+   * v2:必须交代的**信息责任**(顺序即建议顺序;每项 id 作为机械核对锚点)。
+   * 这是 v2 的主字段 —— 策略不再强制「必备模板段落」。
+   */
+  informationResponsibilities: string[];
+  /**
+   * @deprecated v2 起改用 `informationResponsibilities`(内容一致,向后兼容保留)。
+   */
   required_sections: string[];
   optional_sections: string[];
   preservationRules: PreservationRule[];
@@ -273,6 +318,8 @@ export interface OptimizeRequestV2 {
 export interface OptimizeMetaEvent {
   type: "meta";
   prompt_type: PromptType;
+  /** v2:实际采用的编译契约 id(与 prompt_type 不同时才出现;如 image / video / agent)。 */
+  contract?: string;
   confidence_level: ConfidenceLevel;
   missing_constraints: MissingConstraint[];
   rationale: string;
@@ -536,6 +583,46 @@ export interface RequirementLedgerEntry {
   evidence: string[];
   confidence: "high" | "medium" | "low";
   note?: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2 Phase 2:未决项的编译处置(disposition)
+// 契约全文见 docs/phase2-contract.md(用户指定,选项 A)。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 未决项的编译处置:
+ *  - `OMIT`                     自然获得 / 弱可选 → 任何位置都不出现;
+ *  - `EXECUTION_RESPONSIBILITY` 行动前须调查且影响正确执行 → 动作式指令;
+ *  - `CONDITIONAL_BRANCH`       调查结果决定后续分支 → 条件式指令;
+ *  - `USER_DECISION`            非阻塞的用户决定 → **不注入编译稿**(留台账 / Phase 3 追问);
+ *  - `OPTIONAL_ENHANCEMENT`     可选增强 → 只进建议段。
+ *
+ * `AGENT_DISCOVERABLE` 永远不得再渲染成面向用户的 `[待补充:]`。
+ */
+export type RequirementDisposition =
+  | "OMIT"
+  | "EXECUTION_RESPONSIBILITY"
+  | "CONDITIONAL_BRANCH"
+  | "USER_DECISION"
+  | "OPTIONAL_ENHANCEMENT";
+
+export const REQUIREMENT_DISPOSITIONS: readonly RequirementDisposition[] = [
+  "OMIT",
+  "EXECUTION_RESPONSIBILITY",
+  "CONDITIONAL_BRANCH",
+  "USER_DECISION",
+  "OPTIONAL_ENHANCEMENT",
+] as const;
+
+/** 一条「已判定处置」的未决项(编译器算好 → 策略侧只负责渲染)。 */
+export interface DispositionedRequirementItem {
+  id: string;
+  text: string;
+  classification: RequirementClass;
+  blocking: boolean;
+  impact: "high" | "medium" | "low";
+  disposition: RequirementDisposition;
 }
 
 /** 分析阶段的完整产出(宿主 / UI / 编译器 / 校验器共用)。 */

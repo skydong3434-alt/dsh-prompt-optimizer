@@ -31,6 +31,7 @@
  * 纯函数：零 `ctx.llm` / Harness / UI / DOM / Node 依赖，可独立测试与跨端复用。
  * 设计来源为通用守卫工程实践（引用字面比对、层次化校验），实现与文案均本项目独立撰写。
  */
+import { RETIRED_PLACEHOLDER_RE, USER_QUESTION_RE } from "./disposition-render.js";
 import type {
   CompileResult,
   ConversationTurn,
@@ -73,8 +74,12 @@ export const VALIDATION_RULE = {
   /** 无证据量化硬约束（预算 / 时间 / 平台 / 模型…）。 */
   unevidencedQuantification: "VALIDATION_UNEVIDENCED_QUANTIFICATION",
   // ③ Unknown
-  /** 未知项 / 缺口未在优化稿中落成 [待补充: …]。 */
+  /** 未知项 / 缺口未在优化稿中可定位(Phase 2 起接受执行前须知 / 分支条件形式)。 */
   unknownNotMarked: "VALIDATION_UNKNOWN_NOT_MARKED",
+  /** v2 Phase 2(I-1):已退役的 [待补充:] / [TODO:] 占位符出现在优化稿中。 */
+  retiredPlaceholder: "VALIDATION_RETIRED_PLACEHOLDER",
+  /** v2 Phase 2(I-2):未决项被写成面向用户的追问。 */
+  userFacingQuestion: "VALIDATION_USER_FACING_QUESTION",
 } as const;
 
 /** 层名（顺序即执行 / 展示顺序）。 */
@@ -572,37 +577,33 @@ export function validateUnknowns(
   void opts;
   const problems: ValidationProblem[] = [];
   const optimized = String(result.optimized_prompt ?? "");
-  const hasPlaceholder =
-    optimized.includes(TODO_PLACEHOLDER_PREFIX) ||
-    optimized.includes(TODO_PLACEHOLDER_PREFIX_EN);
 
-  for (const record of result.unknowns ?? []) {
-    const text = String(record?.text ?? "").trim();
-    if (!text) continue;
-    if (optimized.includes(text)) continue;
+  // ── I-1 / I-2(Phase 2 契约,见 docs/phase2-contract.md)──────────────────
+  // [待补充:] / [TODO:] 已退役:**出现即 error**(不再有任何合法用途)。
+  if (RETIRED_PLACEHOLDER_RE.test(optimized)) {
     problems.push(
       issue(
         "error",
-        VALIDATION_RULE.unknownNotMarked,
-        hasPlaceholder
-          ? `未知项「${text}」未在优化稿的 [待补充: …] 中出现:每个未知项都必须可定位`
-          : `未知项「${text}」未在优化稿中落成 [待补充: …]:证据不足项必须显式暴露,不得自行假设`,
+        VALIDATION_RULE.retiredPlaceholder,
+        "优化稿出现已退役的 [待补充:] / [TODO:] 占位符:未决项必须写成执行前须知(动作式)、分支条件(条件式),或直接省略",
+      ),
+    );
+  }
+  // 未决项不得变成面向用户的追问(UNKNOWN ≠ ASK_USER)。
+  if (USER_QUESTION_RE.test(optimized)) {
+    problems.push(
+      issue(
+        "error",
+        VALIDATION_RULE.userFacingQuestion,
+        "优化稿把未决项写成了面向用户的追问:未决项应由执行方自行确认或按通用做法推进,不得反问用户",
       ),
     );
   }
 
-  for (const item of result.missing_constraints ?? []) {
-    const label = String(item?.label ?? "").trim();
-    if (!label) continue;
-    if (optimized.includes(label)) continue;
-    problems.push(
-      issue(
-        "error",
-        VALIDATION_RULE.unknownNotMarked,
-        `缺口「${label}」未在优化稿中暴露为 [待补充: …]:缺口必须对用户可见`,
-      ),
-    );
-  }
+  // ── 缺口可见性的归属(v2 契约)────────────────────────────────────────────
+  // 优化稿**不再**承担「列出所有缺口」的职责:缺口由 Requirement Ledger / 面板
+  // 对用户可见,只有「执行方须自行确认」与「分支条件」两类才写入正文。
+  // 因此这里不再对「未在正文出现」报任何问题(省略是合法处置,见 phase2-contract §2)。
 
   return dedupeProblems(problems);
 }

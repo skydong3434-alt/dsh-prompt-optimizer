@@ -16,6 +16,7 @@
  * 全部文案为本项目独立撰写;设计思想(聚焦单任务 + 范围双段 + 交接段)为通用工程实践,
  * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
+import { renderDispositionBrief } from "../disposition-render.js";
 import type {
   CompileVars,
   Guard,
@@ -86,8 +87,8 @@ export const EXECUTION_SECTIONS: readonly ExecutionSectionSpec[] = [
   {
     id: "Preconditions",
     zh: "前置条件",
-    guidanceZh: "开始前必须已成立的条件(环境 / 依赖 / 上一步产出);未知写 [待补充: …]",
-    guidanceEn: "Conditions that must already hold; unknown → [TODO: ...]",
+    guidanceZh: "开始前必须已成立的条件(环境 / 依赖 / 上一步产出);未知按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
+    guidanceEn: "Conditions that must already hold; unknown → follow the open-item disposition discipline",
   },
   {
     id: "Allowed Scope",
@@ -106,8 +107,8 @@ export const EXECUTION_SECTIONS: readonly ExecutionSectionSpec[] = [
   {
     id: "Inputs",
     zh: "输入",
-    guidanceZh: "执行所需的具体输入及其来源;用户未提供的写 [待补充: …],不得自行补全",
-    guidanceEn: "Concrete inputs and their sources; anything unstated → [TODO: ...]",
+    guidanceZh: "执行所需的具体输入及其来源;用户未提供的按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得自行补全",
+    guidanceEn: "Concrete inputs and their sources; anything unstated → follow the open-item disposition discipline",
   },
   {
     id: "Executor",
@@ -201,7 +202,7 @@ const DISCIPLINE_ZH = `# 执行纪律(铁律,优先于任何措辞偏好)
 5. 每个动作带验证:Tests 给出可复现命令或检查项,Acceptance 给出可判定的通过标准,不得只写「测试通过」。
 6. 失败与停止:Failure Handling 写回修方式与重试上限;Stop Conditions 写触发即停等待裁决的条件。
 7. Git·State Rules 必备:分支、commit 前缀、一个内容提交 + 一个仅状态同步提交、不 force / 不 reset --hard / 不改写历史。
-8. UNKNOWN ≠ BLOCKING:未知信息保持未知,不阻塞后续合理推进;不代用户拍板,未知写 [待补充: …]。`
+8. UNKNOWN ≠ BLOCKING:未知信息保持未知,不阻塞后续合理推进;不代用户拍板,未知按未决项处置纪律处理(省略,或写成动作式/条件式指令)。`
 
 const DISCIPLINE_EN = `# Execution discipline (iron rules, above any style preference)
 1. Focus on the current task only — never re-plan the entire project: compile only the single current task. Never produce a whole-project roadmap, a phase-by-phase master plan, or "re-plan the entire project" content. When the input mentions later tasks, treat them only as handoff pointers, never as new planning.
@@ -211,28 +212,28 @@ const DISCIPLINE_EN = `# Execution discipline (iron rules, above any style prefe
 5. Every action carries verification: Tests give reproducible commands or checks; Acceptance gives judgeable pass criteria, never just "tests pass".
 6. Failure and stop: Failure Handling states repair and retry limits; Stop Conditions state when to halt for a human decision.
 7. Git·State Rules are mandatory: branch, commit prefix, one content commit + one state-sync commit, no force / no reset --hard / no history rewrite.
-8. UNKNOWN ≠ BLOCKING: unknowns stay unknown and do not block reasonable progress; never decide for the user, write [TODO: ...].`
+8. UNKNOWN ≠ BLOCKING: unknowns stay unknown and do not block reasonable progress; never decide for the user, follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction).`
 
 const PROVENANCE_ZH = `# 来源标注(四段协议,严格遵守)
 - 明确要求:来自用户本轮输入的,每条必须附 ${quoteMarker("用户原话逐字片段")} 形式的逐字 quote
 - 上下文已确认:仅限历史中「用户」消息,同样附 quote;助手 / Agent 的发言一律不能作为用户意图证据
 - ${SUGGESTION_LABEL_ZH}:优化器主动补充的动作细则 / 校验命令 / 回滚建议,独立成段并带此前缀,永不写入要求段
-- [待补充]:证据不足、用户未说明的关键信息,逐条写出缺什么
+- 未知项:证据不足、用户未说明的关键信息,逐条写出缺什么
 用户明确否决过的方向属于禁入集合,不得再次作为动作 / 建议提出。`
 
 const PROVENANCE_EN = `# Provenance (four-section protocol, strictly)
 - Explicit requirements: anything from the user's current input must carry a verbatim ${quoteMarker("verbatim user fragment")} quote
 - Context-confirmed: only from "user" messages in history, each with a quote; assistant/agent messages are never evidence of user intent
 - ${SUGGESTION_LABEL_EN}: action details / verification commands / rollback advice the optimizer adds, in their own section with this prefix; never in the requirements sections
-- [TODO:]: unspecified or unevidenced essentials, each stating what is missing
+- Unknown items: unspecified or unevidenced essentials, each stating what is missing
 Directions the user already rejected form a do-not-enter set and must not reappear as actions or suggestions.`
 
 /** 渲染 15 段清单(中英并列,English id 恒出现 → required_sections 断言可跨语言命中)。 */
 function renderSections(language: StrategyLanguage): string {
   const zh = language !== "en";
   const title = zh
-    ? "# 输出段落(优化后的 Execution Prompt 必须按顺序逐段出现,标题中英并列)"
-    : "# Output sections (the optimized Execution Prompt must contain each, in order)";
+    ? "# 信息责任(优化后的 Execution Prompt 必须逐项交代清楚;标题可自拟、顺序可调整,责任不得遗漏)"
+    : "# Information responsibilities (the optimized Execution Prompt must cover each one; titles and order are yours, nothing may be omitted)";
   const lines = EXECUTION_SECTIONS.map((section) =>
     zh
       ? `- ${section.id}（${section.zh}）: ${section.guidanceZh}`
@@ -245,19 +246,19 @@ function buildFormatNote(language: StrategyLanguage): string {
   const zh = language !== "en";
   const heading = zh ? "# 输出格式(严格遵守)" : "# Output format (strictly follow)";
   const provenance = zh
-    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / [待补充]),再输出优化后的 Execution Prompt。
+    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / 未知项),再输出优化后的 Execution Prompt。
 - 明确要求:每条附 ${quoteMarker("用户原话")}
 - 上下文已确认:仅用「用户」消息,每条附 ${quoteMarker("原话")}
 - ${SUGGESTION_LABEL_ZH}:独立成段
-- [待补充]:证据不足项,写清缺什么`
-    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / [TODO:]), then the optimized Execution Prompt.
+- 未知项:证据不足项,写清缺什么`
+    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / Unknown items), then the optimized Execution Prompt.
 - Explicit requirements: each with ${quoteMarker("verbatim user fragment")}
 - Context-confirmed: user messages only, each with a quote
 - ${SUGGESTION_LABEL_EN}: its own section
-- [TODO:]: unevidenced items, stating what is missing`;
+- Unknown items: unevidenced items, stating what is missing`;
   const sections = EXECUTION_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Execution Prompt 必须按顺序包含这 15 段:${sections}。Allowed Scope / Forbidden Scope / Handoff 不得省略;不得把它写成整项目规划。其余写法细则:
+    ? `优化后的 Execution Prompt 必须逐项交代以下 15 项信息责任(id 作为核对锚点,顺序可调整):${sections}。Allowed Scope / Forbidden Scope / Handoff 不得省略;不得把它写成整项目规划。其余写法细则:
 - Forbidden Scope 条目用「X 保持现状 / X 不在本次改动范围内」的对象前置句式,不要写「禁止修改 X / 不得改动 X」的动词前置句式(机械守卫会按动词+对象把禁止句误判为范围扩大)。
 - 动词(改动 / 修改 / 重构 / 删除)与范围对象名词(如 settings 存储层)必须分处不同句子、相距 12 字符以上:动词句不提对象名(如「允许改动:src/client 与 i18n 文案」),对象句只配「保持现状 / 不在本次范围」(如「settings 存储层保持现状」)。
 - 即使以分号 / 顿号 / 逗号把动词与对象并置(如「改动;settings 存储层」)同样会被机械守卫判为范围扩大;范围句只写「X 保持现状 / X 不在本次范围」,动词句不得出现对象名。
@@ -265,7 +266,7 @@ function buildFormatNote(language: StrategyLanguage): string {
 - Stop Conditions / Failure Handling 描述触发条件时同样用对象前置句式,不要写「发现需要改动 X」(机械守卫按 动词+对象 判定范围扩大)。
 - 各段小标题不要加编号(写 "### Current Task",不要 "### 1. Current Task"),机械守卫按标题前缀匹配。
 - 除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Execution Prompt must contain these 15 sections in order: ${sections}. Allowed Scope / Forbidden Scope / Handoff must not be omitted, and this must not become a whole-project plan. Wording rules:
+    : `The optimized Execution Prompt must cover these 15 information responsibilities (each id is a check anchor; order may vary): ${sections}. Allowed Scope / Forbidden Scope / Handoff must not be omitted, and this must not become a whole-project plan. Wording rules:
 - Phrase Forbidden Scope items object-first ("X stays as-is / X is out of scope"): mechanical guards treat a verb+object pair as scope expansion even when negated (e.g. "don't modify X").
 - Keep verbs (change / modify / refactor / delete) and scope-object nouns (e.g. settings storage layer) in separate sentences more than 12 characters apart: verb sentences do not name the object (e.g. "changes allowed: src/client and i18n files"), object sentences only pair with "stays as-is / out of scope".
 - Even joining verb and object with a semicolon / comma / slash (e.g. "change; settings storage layer") is treated as scope expansion by mechanical guards; write object-first sentences only, and never name the object in a verb sentence.
@@ -325,24 +326,21 @@ function renderWorkspace(
 }
 
 function renderMissing(
-  constraints: CompileVars["missing_constraints"],
+  vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  const zh = language !== "en";
-  const items = constraints ?? [];
-  if (!items.length) {
-    return zh
-      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …],禁止把本说明写进用户要求。`
-      : "[compiler note, not user content] No gap list provided; identify gaps and mark them as [TODO: ...]; never quote this note as a user requirement.";
-  }
-  const header = zh
-    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
-    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
-  const lines = items.map((item) => {
-    const reason = item.reason ? `(${item.reason})` : "";
-    return `- ${todoPlaceholder(item.label, language)}${reason}`;
-  });
-  return `${header}\n${lines.join("\n")}`;
+  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
+  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
+  return renderDispositionBrief(
+    {
+      missing_constraints: vars.missing_constraints,
+      dispositions: vars.missing_dispositions,
+      missing_resolution: vars.missing_resolution,
+    },
+    language,
+    "请在编译中自行识别缺口。",
+    "identify gaps during compilation.",
+  );
 }
 
 function renderLlmDerived(
@@ -386,7 +384,7 @@ export function buildExecutionUser(vars: CompileVars): string {
   if (workspace) sections.push(workspace);
   const derived = renderLlmDerived(vars.llm_derived, language);
   if (derived) sections.push(derived);
-  sections.push(renderMissing(vars.missing_constraints, language));
+  sections.push(renderMissing(vars, language));
   sections.push(renderSections(language));
 
   sections.push(
@@ -596,7 +594,7 @@ const provenanceRules: ProvenanceRule[] = [
   },
   {
     id: "execution-unknown-placeholder",
-    description: "证据不足的前置条件 / 输入 / 范围写入 [待补充: …],不得自行假定",
+    description: "证据不足的前置条件 / 输入 / 范围写入 未决项(省略或写成动作式/条件式指令),不得自行假定",
   },
   {
     id: "execution-suggested-separated",
@@ -609,6 +607,9 @@ const provenanceRules: ProvenanceRule[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 const outputContract: OutputContract = {
+  /** v2:信息责任清单(不再强制模板段落;id 作为核对锚点)。 */
+  responsibilities: [...EXECUTION_REQUIRED_SECTIONS],
+  /** @deprecated 与 responsibilities 内容一致;保留给旧消费方。 */
   sections: [...EXECUTION_REQUIRED_SECTIONS],
   formatNote: buildFormatNote("zh"),
 };
@@ -620,6 +621,8 @@ export const executionStrategy: PromptStrategy = {
   version: EXECUTION_STRATEGY_VERSION,
   purpose:
     "把用户口语化的执行诉求编译成可直接照做的执行型 Prompt:聚焦当前 Task、Allowed/Forbidden Scope 双段齐备、动作原子可执行、测试与验收可判定、失败与停止条件显式、Git·State 规则与 Handoff 必备。",
+  informationResponsibilities: [...EXECUTION_REQUIRED_SECTIONS],
+  /** @deprecated 保留给旧消费方;内容与 informationResponsibilities 一致。 */
   required_sections: [...EXECUTION_REQUIRED_SECTIONS],
   optional_sections: ["Verification Log", "Rollback Plan", "Risk Notes", "Open Questions"],
   preservationRules,

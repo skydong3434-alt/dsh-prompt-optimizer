@@ -7,7 +7,7 @@
  *     整段降级、`(无)` / 空行 / `*` 项目符号 / 中英占位符;
  *   - suggested 永不混入 explicit(来源标注逐条断言);
  *   - compilePrompt:override 七类型直达 registry、AUTO 分类、缺省兜底、legacy general、
- *     10 步编排审计、缺失信息 → [待补充:] 注入;
+ *     10 步编排审计、缺失信息 → 处置分派(执行前须知 / 分支条件 / 省略);
  *   - injectMissingPlaceholders + finalizeCompile 联动(非 legacy 注入 / legacy 零回归);
  *   - 纯函数纪律:可复现、无 LLM / UI / Host 依赖。
  *
@@ -115,7 +115,7 @@ const MARKED = [
       { id: 'mc-unknown-1', label: '期望的视频时长,决定显存选择' },
       { id: 'mc-unknown-2', label: 'pick a target platform' },
     ],
-    '中英 [待补充:] / [TODO:] 都必须落成缺口',
+    'v2:中英均不得再出现 [待补充:] / [TODO:] 占位符',
   )
   assert.match(parsed.optimized_prompt, /Mac M1 Pro 32GB/)
   assert.ok(!parsed.optimized_prompt.includes('<<<'), '优化稿不得混入协议标记')
@@ -306,11 +306,13 @@ const CLASSIFIER = {
     { role: 'assistant', text: '可以试试低显存方案' },
   ])
   assert.equal(plan.vars.raw_input, REAL_CASE)
-  // 步骤 7/8/9:策略 system + 机器可解析协议;user 携带缺口 → [待补充:]
+  // 步骤 7/8/9:策略 system + 机器可解析协议;user 携带缺口 → **按处置分类交付**(Phase 2)
   assert.ok(plan.system.includes('<<<OPTIMIZED>>>'), 'system 必须包含四段协议锚点')
   assert.ok(plan.system.includes('建议'), 'system 必须含建议标注纪律')
   assert.ok(plan.user.includes(REAL_CASE))
-  assert.ok(plan.user.includes('[待补充: 期望的视频产出形式与时长]'), '缺口必须注入 user 载荷')
+  assert.ok(plan.user.includes('期望的视频产出形式与时长'), '缺口必须进入 user 载荷')
+  assert.doesNotMatch(plan.user, /-\s*\[待补充:/, 'v2:不得再以占位符形式注入缺口')
+  assert.match(plan.user, /未决项的?处置|执行前须知|分支条件|只有用户能决定/, 'v2:缺口按处置分类交付')
   console.log('✓ k8 compilePrompt AUTO:策略 / 归一化 / 缺口注入')
 }
 
@@ -424,7 +426,12 @@ const CLASSIFIER = {
 // k13. finalizeCompile 联动:非 legacy 注入缺口;legacy 不注入;provenance_ok 仍由校验决定
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  const missing = [{ id: 'mc-classifier-1', label: '期望的视频产出形式与时长' }]
+  // v2 契约样本:一条 AGENT_DISCOVERABLE(→动作式注入)+ 一条非阻塞 USER_REQUIRED
+  // (→**不注入**正文,留台账与面板)。
+  const missing = [
+    { id: 'mc-classifier-1', label: '当前依赖版本与可用接口' },
+    { id: 'mc-classifier-2', label: '期望的视频产出形式与时长' },
+  ]
   const raw = [
     M.diagnosis,
     '目标清晰度:目标明确',
@@ -435,9 +442,9 @@ const CLASSIFIER = {
     M.suggested,
     '- 建议(可忽略) 补充产出形式',
     M.unknown,
-    '- [待补充: Mac 实测案例]',
+    '- 是否已有 Mac 实测案例:存在则复用其实验配置,否则自建',
     M.optimized,
-    '## Background（背景）\n- 用户机器为 Mac M1 Pro 32GB\n## Evidence Gaps（证据缺口）\n- [待补充: Mac 实测案例]',
+    '## Background（背景）\n- 用户机器为 Mac M1 Pro 32GB\n## Evidence Gaps（证据缺口）\n- 是否已有 Mac 实测案例:存在则复用其实验配置,否则自建',
     M.end,
   ].join('\n')
 
@@ -452,17 +459,35 @@ const CLASSIFIER = {
   assert.equal(outcome.result.provenance_ok, true, '真实 quote + 缺口暴露应通过校验')
   assert.deepEqual(
     outcome.result.missing_constraints.map((m) => m.label),
-    ['期望的视频产出形式与时长', 'Mac 实测案例'],
+    [
+      '当前依赖版本与可用接口',
+      '期望的视频产出形式与时长',
+      '是否已有 Mac 实测案例:存在则复用其实验配置,否则自建',
+    ],
     'classifier 缺口与 UNKNOWN 段缺口必须合并去重',
   )
+  // v2 Phase 2:未决项按处置分派注入(动作式 / 条件式),不再有 [待补充:]
   assert.ok(
-    outcome.result.optimized_prompt.includes('[待补充: 期望的视频产出形式与时长]'),
-    '未在优化稿出现的缺口必须被机械注入',
+    outcome.result.optimized_prompt.includes('动手前先确认:当前依赖版本与可用接口'),
+    'AGENT_DISCOVERABLE 必须被机械注入为动作式执行责任',
+  )
+  assert.ok(
+    outcome.result.optimized_prompt.includes('执行前须知'),
+    '注入必须落在「执行前须知」区块',
+  )
+  assert.ok(
+    !outcome.result.optimized_prompt.includes('期望的视频产出形式与时长'),
+    '非阻塞 USER_REQUIRED 不得写进正文(留台账 / Phase 3 Discovery)',
+  )
+  assert.doesNotMatch(
+    outcome.result.optimized_prompt,
+    /\[待补充:|\[TODO:/,
+    'v2:优化稿不得出现已退役的占位符',
   )
   assert.equal(
-    outcome.result.optimized_prompt.split('[待补充: Mac 实测案例]').length - 1,
+    outcome.result.optimized_prompt.split('是否已有 Mac 实测案例').length - 1,
     1,
-    '已在优化稿出现的缺口不得重复注入',
+    '已在优化稿出现的条目不得重复注入',
   )
 
   // 伪造 quote 仍必须让 provenance_ok=false(注入不掩盖校验失败)
@@ -490,7 +515,7 @@ const CLASSIFIER = {
     legacy: true,
   })
   assert.equal(legacy.result.optimized_prompt, '通用改写结果')
-  assert.ok(!legacy.result.optimized_prompt.includes('待补充'))
+  assert.ok(!legacy.result.optimized_prompt.includes('[待补充:'))
   assert.equal(isLegacyGeneral(generalFallbackStrategy), true)
   console.log('✓ k13 finalizeCompile 缺口注入 / legacy 零回归 / 校验联动')
 }

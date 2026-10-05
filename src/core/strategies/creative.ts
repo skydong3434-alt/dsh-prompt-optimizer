@@ -10,7 +10,7 @@
  *   1. 保留给定实体 —— 人物 / 镜头 / 动作 / 资产 / 场景 / 约束必须原样保留,不得替换、改名、改写或凭空新增;
  *   2. 无证据不改设定 —— 没有用户逐字证据前,不得改变角色关系 / 技能 / Blocking 等已给定设定;
  *   3. 成功标准必备 —— Success Criteria 不可省略,缺失即视为创作 Prompt 不完整;
- *   4. 不发明硬约束 —— 平台 / 时长 / 风格 / 资产等未给出时一律写 [待补充: …],不得凭空生成硬约束。
+ *   4. 不发明硬约束 —— 平台 / 时长 / 风格 / 资产等未给出时一律按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得凭空生成硬约束。
  *
  * 段落契约(12 段):PLAN-v1 §7 creative 列名 11 段
  * (Creative Goal / Audience / Platform / Style / Reference / Constraints / Structure /
@@ -25,6 +25,7 @@
  * 全部文案为本项目独立撰写;设计思想(实体保真 + 无证据不改设定 + 成功标准强制)为通用
  * 创作工程实践,未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
+import { renderDispositionBrief } from "../disposition-render.js";
 import type {
   CompileVars,
   Guard,
@@ -67,7 +68,7 @@ export const CREATIVE_SUCCESS_CRITERIA_REQUIRED =
 
 /** 铁律 4 的固定表述:不发明硬约束。 */
 export const CREATIVE_NO_INVENTED_CONSTRAINTS =
-  "不发明硬约束:平台 / 时长 / 风格 / 资产等未给出时一律写 [待补充: …],不得凭空生成硬约束";
+  "不发明硬约束:平台 / 时长 / 风格 / 资产等未给出时一律按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得编造、不得猜测、不得凭空生成硬约束";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 可识别实体(人物 / 镜头 / 动作 / 资产 / 场景)提取 —— 实体保真守卫的机械锚点
@@ -130,25 +131,25 @@ export const CREATIVE_SECTIONS: readonly CreativeSectionSpec[] = [
     id: "Creative Goal",
     zh: "创作目标",
     guidanceZh:
-      "本次要产出的内容与用途,忠实来自用户输入;不得替换成优化器自己的创作目标,缺失写 [待补充: …]",
+      "本次要产出的内容与用途,忠实来自用户输入;不得替换成优化器自己的创作目标,缺失按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
     guidanceEn:
-      "What is to be produced and why, faithful to user input; never replaced by the optimizer's own creative goal, gaps → [TODO: ...]",
+      "What is to be produced and why, faithful to user input; never replaced by the optimizer's own creative goal, gaps → follow the open-item disposition discipline",
   },
   {
     id: "Audience",
     zh: "受众",
     guidanceZh:
-      "目标受众 / 观众及其已知偏好或限制;未给出写 [待补充: …],不得替用户假定",
+      "目标受众 / 观众及其已知偏好或限制;未给出按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得替用户假定",
     guidanceEn:
-      "Target audience and their known preferences or limits; gaps → [TODO: ...], never assumed for the user",
+      "Target audience and their known preferences or limits; gaps → follow the open-item disposition discipline, never assumed for the user",
   },
   {
     id: "Platform",
     zh: "平台",
     guidanceZh:
-      "发布 / 投放平台与画幅、时长、审查等技术约束;未给出写 [待补充: …],不得凭空指定",
+      "发布 / 投放平台与画幅、时长、审查等技术约束;未给出按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得凭空指定",
     guidanceEn:
-      "Publishing platform plus aspect ratio, duration and review constraints; gaps → [TODO: ...], never invented",
+      "Publishing platform plus aspect ratio, duration and review constraints; gaps → follow the open-item disposition discipline, never invented",
   },
   {
     id: "Style",
@@ -201,9 +202,9 @@ export const CREATIVE_SECTIONS: readonly CreativeSectionSpec[] = [
     id: "Output Format",
     zh: "输出格式",
     guidanceZh:
-      "交付格式(分镜表 / 脚本 / 文案体裁 / 字段清单);未给出写 [待补充: …],不得强行套模板",
+      "交付格式(分镜表 / 脚本 / 文案体裁 / 字段清单);未给出按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得强行套模板",
     guidanceEn:
-      "Delivery format (storyboard sheet / script / copy genre / field list); gaps → [TODO: ...], never force a template",
+      "Delivery format (storyboard sheet / script / copy genre / field list); gaps → follow the open-item disposition discipline, never force a template",
   },
   {
     id: "Avoidances",
@@ -245,47 +246,47 @@ const ROLE_EN = `You are the "Creative prompt compiler". The user gives you a co
 You do not redesign characters or invent settings; you only: pin down the creative goal / audience / platform / style / reference, list the recognizable entities the user already gave (characters / shots / actions / assets / scenes) verbatim, state structure, tone, output format and avoidances, and finish with verifiable success criteria.`
 
 const DISCIPLINE_ZH = `# 创作纪律(铁律,优先于任何措辞偏好)
-1. ${CREATIVE_PRESERVE_GIVEN_ENTITIES}:先在 Assets 段逐个列出用户给出的实体标识(如 人物A / 镜头2 / 资产X / 场景3),其余段落只能引用这些原始标识,不得换名、合并或替换;用户没给的新实体一律写 [待补充: …],不得自行补一个。
+1. ${CREATIVE_PRESERVE_GIVEN_ENTITIES}:先在 Assets 段逐个列出用户给出的实体标识(如 人物A / 镜头2 / 资产X / 场景3),其余段落只能引用这些原始标识,不得换名、合并或替换;用户没给的新实体一律按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得自行补一个。
 2. ${CREATIVE_NO_UNPROVEN_SETTING_CHANGE}:角色关系 / 技能 / Blocking 等设定以用户输入为准;出现「改变角色关系 / 互换身份 / 更换主角 / 调整技能」类语言时,必须带用户逐字证据或明确写成优化器建议(可忽略);两者都没有即视为无证据改设定。
 3. ${CREATIVE_SUCCESS_CRITERIA_REQUIRED}:成功标准要写成可机械核对的条目(实体是否原样出现 / 设定是否未被改变 / 输出格式是否匹配),不得用「好看 / 有质感 / 用户满意」代替。
-4. ${CREATIVE_NO_INVENTED_CONSTRAINTS}:平台 / 时长 / 画幅 / 风格 / 资产等用户未说明时,写 [待补充: …] 并说明为什么重要,不得替用户拍板成硬约束。
+4. ${CREATIVE_NO_INVENTED_CONSTRAINTS}:平台 / 时长 / 画幅 / 风格 / 资产等用户未说明时,按未决项处置纪律处理并说明为什么重要,不得替用户拍板成硬约束。
 5. 输出顺序固定:创作目标 → 受众 → 平台 → 风格 → 参考 → 资产 → 约束 → 结构 → 语气 → 输出格式 → 避免项 → 成功标准;不得省略 Success Criteria。
 6. 参考与素材逐条标注来源:来自用户本轮输入 / 上下文用户消息 / workspace 事实;助手或 Agent 的创作建议不能冒充用户设定。
 7. 保留原文术语:专有名词 / 型号 / 角色名 / 文件名 / 数字不得意译、缩写或改写。
-8. 缺信息不阻塞:未知信息保持未知并写 [待补充: …],UNKNOWN ≠ BLOCKING;不代用户决定创作方向。
+8. 缺信息不阻塞:未知信息保持未知并按未决项处置纪律处理(省略,或写成动作式/条件式指令),UNKNOWN ≠ BLOCKING;不代用户决定创作方向。
 9. UNKNOWN ≠ BLOCKING:未知信息保持未知,不阻塞创作推进;不代用户拍板。`
 
 const DISCIPLINE_EN = `# Creative discipline (iron rules, above any style preference)
-1. ${CREATIVE_PRESERVE_GIVEN_ENTITIES} — first list every entity the user gave (e.g. 人物A / 镜头2 / 资产X / 场景3) in the Assets section; other sections may only reference those original identifiers, never rename, merge or replace them. Anything the user did not give → [TODO: ...], never invent one.
+1. ${CREATIVE_PRESERVE_GIVEN_ENTITIES} — first list every entity the user gave (e.g. 人物A / 镜头2 / 资产X / 场景3) in the Assets section; other sections may only reference those original identifiers, never rename, merge or replace them. Anything the user did not give → follow the open-item disposition discipline, never invent one.
 2. ${CREATIVE_NO_UNPROVEN_SETTING_CHANGE} — relationships / skills / blocking follow the user's input; when language like "change the relationship / swap roles / replace the protagonist / adjust skills" appears, it must carry verbatim user evidence or be explicitly marked as an optional suggestion; with neither, it is an unproven setting change.
 3. ${CREATIVE_SUCCESS_CRITERIA_REQUIRED} — success criteria must be mechanically checkable (entities kept verbatim / settings unchanged / format matched), never "looks good / user is happy".
-4. ${CREATIVE_NO_INVENTED_CONSTRAINTS} — for unstated platform / duration / aspect ratio / style / assets, write [TODO: ...] and say why it matters; never decide it as a hard constraint.
+4. ${CREATIVE_NO_INVENTED_CONSTRAINTS} — for unstated platform / duration / aspect ratio / style / assets, follow the open-item disposition discipline and say why it matters; never decide it as a hard constraint.
 5. Fixed output order: Creative Goal → Audience → Platform → Style → Reference → Assets → Constraints → Structure → Tone → Output Format → Avoidances → Success Criteria; Success Criteria must not be omitted.
 6. Label the source of every reference and asset (current user input / context user messages / workspace facts); an assistant's creative suggestion must never pass as a user setting.
 7. Keep the input's terms: proper nouns, model names, character names, file names and numbers are never translated, abbreviated or rewritten.
-8. Missing information does not block: keep it unknown as [TODO: ...]; UNKNOWN ≠ BLOCKING; never decide the creative direction for the user.
+8. Missing information does not block: keep it unknown as open items (omit, or write a before-acting/conditional instruction); UNKNOWN ≠ BLOCKING; never decide the creative direction for the user.
 9. UNKNOWN ≠ BLOCKING: unknowns stay unknown and do not block creative work; never decide for the user.`
 
 const PROVENANCE_ZH = `# 来源标注(四段协议,严格遵守)
 - 明确要求:来自用户本轮输入的,每条必须附 ${quoteMarker("用户原话逐字片段")} 形式的逐字 quote
 - 上下文已确认:仅限历史中「用户」消息,同样附 quote;助手 / Agent 的发言一律不能作为用户设定证据
 - ${SUGGESTION_LABEL_ZH}:优化器主动补充的风格建议 / 结构建议 / 取证方式,独立成段并带此前缀,永不写入创作设定段
-- [待补充]:证据不足、用户未说明的关键信息(如平台 / 时长 / 画幅 / 目标受众),逐条写出缺什么
+- 未知项:证据不足、用户未说明的关键信息(如平台 / 时长 / 画幅 / 目标受众),逐条写出缺什么
 用户明确否决过的方向(风格 / 元素)属于禁入集合,不得再次作为建议提出。`
 
 const PROVENANCE_EN = `# Provenance (four-section protocol, strictly)
 - Explicit requirements: anything from the user's current input must carry a verbatim ${quoteMarker("verbatim user fragment")} quote
 - Context-confirmed: only from "user" messages in history, each with a quote; assistant/agent messages are never evidence of a user setting
 - ${SUGGESTION_LABEL_EN}: style / structure / verification ideas the optimizer adds, in their own section with this prefix; never in the creative setting sections
-- [TODO:]: unspecified or unevidenced essentials (platform / duration / aspect ratio / audience), each stating what is missing
+- Unknown items: unspecified or unevidenced essentials (platform / duration / aspect ratio / audience), each stating what is missing
 Directions the user already rejected (styles / elements) form a do-not-enter set and must not reappear as suggestions.`
 
 /** 渲染 12 段清单(中英并列,English id 恒出现 → required_sections 断言可跨语言命中)。 */
 function renderSections(language: StrategyLanguage): string {
   const zh = language !== "en";
   const title = zh
-    ? "# 输出段落(优化后的 Creative Prompt 必须按顺序逐段出现,标题中英并列)"
-    : "# Output sections (the optimized Creative Prompt must contain each, in order)";
+    ? "# 信息责任(优化后的 Creative Prompt 必须逐项交代清楚;标题可自拟、顺序可调整,责任不得遗漏)"
+    : "# Information responsibilities (the optimized Creative Prompt must cover each one; titles and order are yours, nothing may be omitted)";
   const lines = CREATIVE_SECTIONS.map((section) =>
     zh
       ? `- ${section.id}（${section.zh}）: ${section.guidanceZh}`
@@ -298,20 +299,20 @@ function buildFormatNote(language: StrategyLanguage): string {
   const zh = language !== "en";
   const heading = zh ? "# 输出格式(严格遵守)" : "# Output format (strictly follow)";
   const provenance = zh
-    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / [待补充]),再输出优化后的 Creative Prompt。
+    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / 未知项),再输出优化后的 Creative Prompt。
 - 明确要求:每条附 ${quoteMarker("用户原话")}
 - 上下文已确认:仅用「用户」消息,每条附 ${quoteMarker("原话")}
 - ${SUGGESTION_LABEL_ZH}:独立成段
-- [待补充]:证据不足项,写清缺什么`
-    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / [TODO:]), then the optimized Creative Prompt.
+- 未知项:证据不足项,写清缺什么`
+    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / Unknown items), then the optimized Creative Prompt.
 - Explicit requirements: each with ${quoteMarker("verbatim user fragment")}
 - Context-confirmed: user messages only, each with a quote
 - ${SUGGESTION_LABEL_EN}: its own section
-- [TODO:]: unevidenced items, stating what is missing`;
+- Unknown items: unevidenced items, stating what is missing`;
   const sections = CREATIVE_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Creative Prompt 必须按顺序包含这 12 段:${sections}。Success Criteria 不得省略;Assets 必须逐个列出用户给出的实体标识且原样保留;任何改变角色关系 / 技能 / Blocking 的说法都必须带用户逐字证据或降级为建议。除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Creative Prompt must contain these 12 sections in order: ${sections}. Success Criteria must not be omitted; Assets must list every given entity identifier verbatim; any change to relationships / skills / blocking must carry verbatim user evidence or be downgraded to a suggestion. Output nothing beyond the specified format.`;
+    ? `优化后的 Creative Prompt 必须逐项交代以下 12 项信息责任(id 作为核对锚点,顺序可调整):${sections}。Success Criteria 不得省略;Assets 必须逐个列出用户给出的实体标识且原样保留;任何改变角色关系 / 技能 / Blocking 的说法都必须带用户逐字证据或降级为建议。除输出格式规定的内容外,不要输出多余解释。`
+    : `The optimized Creative Prompt must cover these 12 information responsibilities (each id is a check anchor; order may vary): ${sections}. Success Criteria must not be omitted; Assets must list every given entity identifier verbatim; any change to relationships / skills / blocking must carry verbatim user evidence or be downgraded to a suggestion. Output nothing beyond the specified format.`;
   return [heading, provenance, body].join("\n");
 }
 
@@ -364,24 +365,21 @@ function renderWorkspace(
 }
 
 function renderMissing(
-  constraints: CompileVars["missing_constraints"],
+  vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  const zh = language !== "en";
-  const items = constraints ?? [];
-  if (!items.length) {
-    return zh
-      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …](尤其平台 / 时长 / 画幅 / 目标受众 / 输出格式)。`
-      : "No gap list was provided; identify gaps during compilation and mark them as [TODO: ...] (especially platform / duration / aspect ratio / audience / output format).";
-  }
-  const header = zh
-    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
-    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
-  const lines = items.map((item) => {
-    const reason = item.reason ? `(${item.reason})` : "";
-    return `- ${todoPlaceholder(item.label, language)}${reason}`;
-  });
-  return `${header}\n${lines.join("\n")}`;
+  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
+  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
+  return renderDispositionBrief(
+    {
+      missing_constraints: vars.missing_constraints,
+      dispositions: vars.missing_dispositions,
+      missing_resolution: vars.missing_resolution,
+    },
+    language,
+    "请在编译中自行识别缺口(尤其平台 / 时长 / 画幅 / 目标受众 / 输出格式)。",
+    "identify gaps during compilation (especially platform / duration / aspect ratio / audience / output format).",
+  );
 }
 
 function renderLlmDerived(
@@ -425,7 +423,7 @@ export function buildCreativeUser(vars: CompileVars): string {
   if (workspace) sections.push(workspace);
   const derived = renderLlmDerived(vars.llm_derived, language);
   if (derived) sections.push(derived);
-  sections.push(renderMissing(vars.missing_constraints, language));
+  sections.push(renderMissing(vars, language));
   sections.push(renderSections(language));
 
   const entities = extractCreativeEntities(vars.raw_input);
@@ -492,7 +490,7 @@ const guardNoUnprovenSettingChange: Guard = {
       if (SETTING_EVIDENCE_RE.test(line)) continue;
       const hit = line.match(SETTING_CHANGE_RE)?.[0];
       if (!hit) continue;
-      return `发现无证据的设定变更「${hit}」:${CREATIVE_NO_UNPROVEN_SETTING_CHANGE}——必须带用户逐字证据,或降级为「${SUGGESTION_LABEL_ZH}」/ [待补充: …](warn)`;
+      return `发现无证据的设定变更「${hit}」:${CREATIVE_NO_UNPROVEN_SETTING_CHANGE}——必须带用户逐字证据,或降级为「${SUGGESTION_LABEL_ZH}」/ 未决项(省略或写成动作式/条件式指令)(warn)`;
     }
     return null;
   },
@@ -541,7 +539,7 @@ const preservationRules: PreservationRule[] = [
   {
     id: "creative-preserve-given-style-and-format",
     description:
-      "用户已给定的风格 / 输出格式 / 受众不得被替换或拔高;未给出的一律写 [待补充: …],不得套用默认模板",
+      "用户已给定的风格 / 输出格式 / 受众不得被替换或拔高;未给出的一律按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得套用默认模板",
   },
 ];
 
@@ -576,7 +574,7 @@ const provenanceRules: ProvenanceRule[] = [
   {
     id: "creative-no-setting-change-without-evidence",
     description:
-      "角色关系 / 技能 / Blocking 的任何改动都必须有用户逐字证据;否则写 [待补充: …] 或降级为建议",
+      "角色关系 / 技能 / Blocking 的任何改动都必须有用户逐字证据;否则按未决项处置纪律处理(省略,或写成动作式/条件式指令) 或降级为建议",
   },
   {
     id: "creative-success-criteria-verifiable",
@@ -594,6 +592,9 @@ const provenanceRules: ProvenanceRule[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 const outputContract: OutputContract = {
+  /** v2:信息责任清单(不再强制模板段落;id 作为核对锚点)。 */
+  responsibilities: [...CREATIVE_REQUIRED_SECTIONS],
+  /** @deprecated 与 responsibilities 内容一致;保留给旧消费方。 */
   sections: [...CREATIVE_REQUIRED_SECTIONS],
   formatNote: buildFormatNote("zh"),
 };
@@ -605,6 +606,8 @@ export const creativeStrategy: PromptStrategy = {
   version: CREATIVE_STRATEGY_VERSION,
   purpose:
     "把用户口语化的内容创作诉求(分镜 / 视频生成提示词 / 文案)编译成保留给定实体的创作型 Prompt:固定创作目标 / 受众 / 平台 / 风格 / 参考,逐个列出人物 / 镜头 / 动作 / 资产 / 场景并要求原样保留,写清约束 / 结构 / 语气 / 输出格式 / 避免项,最后给出可核查的成功标准——不改变角色关系 / 技能 / Blocking,不发明硬约束。",
+  informationResponsibilities: [...CREATIVE_REQUIRED_SECTIONS],
+  /** @deprecated 保留给旧消费方;内容与 informationResponsibilities 一致。 */
   required_sections: [...CREATIVE_REQUIRED_SECTIONS],
   optional_sections: ["Shot List", "Timing", "Music / Sound", "Deliverables", "Open Questions"],
   preservationRules,

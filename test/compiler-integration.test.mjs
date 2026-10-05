@@ -7,7 +7,7 @@
  *       explicit 逐字证据可寻、suggested 独立、provenance_ok 由 validate 决定;
  *   i3  七类型 × AUTO 分类路径(策略与 prompt_type 一致、override 标志正确);
  *   i4  置信度映射(High/Medium/Low)与 classifier 骨架一致;
- *   i5  缺口注入:classifier 与 [待补充:] 未知段合并去重、缺口在交付稿可见;
+ *   i5  缺口注入:classifier 与 动手前先确认: 未知段合并去重、缺口在交付稿可见;
  *   i6  失败注入:compiler 输出缺失协议锚点 → 降级 + provenance_ok=false(不伪造来源);
  *   i7  失败注入:伪造 quote / 建议升级 / 无证据量化 → error 数据可定位;
  *   i8  markdown 四段回退 + `- (无)` / 重复标记 / think 块容错(协议解析回归);
@@ -40,7 +40,7 @@ const TYPES = ['research', 'planning', 'execution', 'diagnostic', 'review', 'cre
  * 每种类型一个场景:
  *   raw        —— 用户本轮输入(同时是 explicit 逐字证据的来源);
  *   quote      —— 从 raw 中文末逐字截取的证据片段(不得是 raw 之外的文字);
- *   missing    —— classifier 给出的缺口(编译期必须落成 [待补充: …]);
+ *   missing    —— classifier 给出的缺口(编译期必须落成 动手前先确认:…);
  *   suggested  —— 优化器建议(必须独立成段,不得混入 explicit);
  *   body       —— 优化稿(必须含策略全部 required_sections)。
  */
@@ -59,7 +59,7 @@ const SCENARIOS = [
       '## Existing Knowledge（已知信息）',
       '- 用户提到黑鹤001低显流与 H3,二者均为候选线索',
       '## Constraints（约束）',
-      '- [待补充: 期望的视频产出形式与时长]',
+      '- 期望的视频产出形式与时长:只有你能定,本轮不需要回答;执行方按通用做法先推进',
       '## Candidate Approaches（候选方案）',
       '- 黑鹤001:候选,待验证',
       '- H3:候选,待验证',
@@ -74,7 +74,7 @@ const SCENARIOS = [
       '## Conflicting Evidence（冲突证据）',
       '- 冲突说法需并列呈现,不得擅自裁决',
       '## Evidence Gaps（证据缺口）',
-      '- [待补充: Mac 实测案例]',
+      '- 动手前先确认:Mac 实测案例',
       '## Continue-search Conditions（继续检索条件）',
       '- 只有单一来源时继续检索',
       '## Comparison Dimensions（对比维度）',
@@ -185,7 +185,7 @@ const SCENARIOS = [
       '- 超时直接失败,没有重试记录',
       '## Evidence Collection（证据收集）',
       '- 收集超时日志与调用链',
-      '- [待补充: 超时阈值]',
+      '- 动手前先确认:超时阈值',
       '## Reproduction（复现）',
       '- 构造超时场景重复执行',
       '## Hypotheses（假设）',
@@ -220,7 +220,7 @@ const SCENARIOS = [
       '## Deviations（偏离）',
       '- 与原目标对照后未发现偏离',
       '## Missing Items（缺失项）',
-      '- [待补充: 评测样例]',
+      '- 动手前先确认:评测样例',
       '## Risks（风险）',
       '- 样例不足可能低估风险',
       '## Suggested Corrections（修正建议）',
@@ -245,7 +245,7 @@ const SCENARIOS = [
       '## Reference（参考）',
       '- 无外部参考,需保持原设定',
       '## Assets（素材）',
-      '- [待补充: 镜头数量]',
+      '- 动手前先确认:镜头数量',
       '## Constraints（约束）',
       '- 不得改变人物关系与技能设定',
       '## Structure（结构）',
@@ -281,7 +281,7 @@ const SCENARIOS = [
       '- 简洁清晰',
       '## Constraints（约束）',
       '- 不得新增我没说的要求',
-      '- [待补充: 目标输出长度]',
+      '- 动手前先确认:目标输出长度',
       '## Success Criteria（成功标准）',
       '- 优化后更易理解,且未新增要求',
     ].join('\n'),
@@ -296,7 +296,8 @@ function buildOutput(scenario, overrides = {}) {
     explicitLines = [`- 编译用户要求 [quote: ${scenario.quote[0]}]`],
     contextLines = ['- (无)'],
     suggestedLines = scenario.suggested.map((item) => `- 建议(可忽略) ${item}`),
-    unknownLines = scenario.missing.map((item) => `- [待补充: ${item}]`),
+    // UNKNOWN 段写裸标签:动作式 / 条件式的渲染由**处置注入层**负责(Phase 2 契约)。
+    unknownLines = scenario.missing.map((item) => `- ${item}`),
     body = scenario.body,
   } = overrides
   return [
@@ -455,17 +456,24 @@ const rulesOf = (report) => report.problems.map((problem) => problem.rule)
       )
     }
 
-    // 缺口 → [待补充: …] 在交付稿中可定位。
+    // 缺口可见性(Phase 2 契约):缺口必须进入 missing_constraints(台账 / 面板可见);
+    // 是否写入正文由**处置分派**决定(执行责任 → 动作式注入;可省略 / 用户决定 → 不注入)。
     for (const label of scenario.missing) {
       assert.ok(
         outcome.result.missing_constraints.some((item) => item.label === label),
-        `${scenario.type} 缺口 ${label} 必须进入 missing_constraints`,
-      )
-      assert.ok(
-        outcome.result.optimized_prompt.includes(label),
-        `${scenario.type} 缺口 ${label} 必须在交付稿中可见`,
-      )
+        `${scenario.type} 缺口 ${label} 必须进入 missing_constraints(台账 / 面板可见)`,
+      );
     }
+    assert.doesNotMatch(
+      outcome.result.optimized_prompt,
+      /\[(?:待补充|TODO)\s*[:：]/,
+      `${scenario.type} 优化稿不得出现已退役的 [待补充:] / [TODO:]`,
+    );
+    assert.doesNotMatch(
+      outcome.result.optimized_prompt,
+      /请先回答|请你确认|请先补充/,
+      `${scenario.type} 不得把缺口写成面向用户的追问`,
+    );
 
     // 必出段落齐全 + 三层守卫全绿 + provenance_ok=true。
     for (const section of plan.strategy.required_sections) {
@@ -546,7 +554,7 @@ const rulesOf = (report) => report.problems.map((problem) => problem.rule)
 {
   const scenario = byType.get('research')
   const output = buildOutput(scenario, {
-    unknownLines: ['- [待补充: 协议内缺口]'],
+    unknownLines: ['- 协议内缺口'],
   })
   const outcome = finalizeFor(scenario, output)
   const labels = outcome.result.missing_constraints.map((item) => item.label)
@@ -564,13 +572,17 @@ const rulesOf = (report) => report.problems.map((problem) => problem.rule)
 
   // 场景 body 不含缺口 → 编译期机械追加,不发明、不改写既有内容。
   const absent = byType.get('planning')
-  const noGapBody = absent.body.replace(`[待补充: ${absent.missing[0]}]`, '待确认')
-  const outcome2 = finalizeFor(absent, buildOutput(absent, { body: noGapBody, unknownLines: [] }))
+  // v2:只有「执行方须自行确认」型缺口才注入正文(动作式)。
+  const EXEC_GAP = '当前依赖版本与可用接口'
+  const noGapBody = absent.body.replace(/动手前先确认:[^\n]*/g, '')
+  const outcome2 = finalizeFor(absent, buildOutput(absent, { body: noGapBody, unknownLines: [] }), {
+    missing: [{ id: 'mc-exec-1', label: EXEC_GAP }],
+  })
   assert.ok(
-    outcome2.result.optimized_prompt.includes(`[待补充: ${absent.missing[0]}]`),
-    '未在优化稿出现的缺口必须被机械注入',
+    outcome2.result.optimized_prompt.includes(`动手前先确认:${EXEC_GAP}`),
+    '执行方须自行确认的缺口必须被机械注入(动作式)',
   )
-  assert.match(outcome2.result.optimized_prompt, /## 待补充（编译期自动补录）/)
+  assert.match(outcome2.result.optimized_prompt, /## 执行前须知（由执行方自行确认，不需要询问用户）/)
   assert.ok(outcome2.result.optimized_prompt.includes(noGapBody), '注入不得改写既有正文')
   console.log('✓ i5 缺口注入:合并去重 + 机械补录')
 }
@@ -588,13 +600,14 @@ const rulesOf = (report) => report.problems.map((problem) => problem.rule)
   assert.deepEqual(empty.result.explicit_requirements, [])
   assert.deepEqual(empty.result.suggested_requirements, [])
   assert.equal(empty.result.provenance_ok, false, '空输出必须 provenance_ok=false')
-  assert.ok(
-    empty.result.optimized_prompt.includes(`[待补充: ${scenario.missing[0]}]`),
-    '空输出时缺口仍须对用户可见',
+  assert.doesNotMatch(
+    empty.result.optimized_prompt,
+    /\[(?:待补充|TODO)\s*[:：]/,
+    'v2:空输出也不得伪造 [待补充:] 占位符',
   )
   assert.ok(
-    empty.result.optimized_prompt.includes(scenario.missing[0]),
-    '补录只允许包含缺口文本,不得伪造优化稿正文',
+    empty.result.missing_constraints.some((item) => item.label === scenario.missing[0]),
+    '空输出时缺口仍须进入 missing_constraints(台账 / 面板可见)',
   )
 
   // 6b. 有 OPTIMIZED 锚点但三段来源缺失:保留优化稿,来源组为空。
@@ -702,8 +715,8 @@ const rulesOf = (report) => report.problems.map((problem) => problem.rule)
     '- (无)',
     '## 优化器建议（可忽略）',
     '- 建议(可忽略) 补充回滚演练',
-    '## 待补充',
-    '- [待补充: 交付时间]',
+    '## 未决项',
+    '- 交付时间',
     '## 优化后的 Prompt',
     scenario.body,
   ].join('\n')

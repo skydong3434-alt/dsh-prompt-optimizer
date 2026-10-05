@@ -47,6 +47,8 @@ export interface MissingConstraintView {
 /** meta 事件(阶段一分类结果):类型 / 置信度 / 缺口 / 理由 / 校验标志。 */
 export interface OptimizerMeta {
   promptType: string
+  /** v2:实际采用的编译契约(与 promptType 不同时才下发;如 image / video / agent)。 */
+  contract?: string
   confidenceLevel: 'High' | 'Medium' | 'Low'
   missingConstraints: MissingConstraintView[]
   rationale: string
@@ -70,6 +72,8 @@ export interface OptimizeResult {
   durationMs?: number
   /** 任务类型(done 事件;旧版 Host 缺省为空)。 */
   promptType: string
+  /** v2:实际采用的编译契约(image / video / agent 时与 promptType 不同)。 */
+  contract?: string
   /** 展示档位 High / Medium / Low(内部数值不展示)。 */
   confidenceLevel: 'High' | 'Medium' | 'Low'
   /** 需求诊断(done.diagnosis;缺省回落到 analysis)。 */
@@ -638,6 +642,9 @@ export function createOptimizerController(
                 missingConstraints: asMissingConstraints(event.missing_constraints),
                 rationale: String(event.rationale ?? ''),
                 provenanceOk: event.provenance_ok !== false,
+                ...(typeof event.contract === 'string' && event.contract
+                  ? { contract: event.contract }
+                  : {}),
                 analysisView: asAnalysisView(event as Record<string, unknown>),
               },
             })
@@ -673,6 +680,9 @@ export function createOptimizerController(
                 fallbackReason: typeof event.fallbackReason === 'string' && event.fallbackReason ? event.fallbackReason : undefined,
                 durationMs: Date.now() - startedAt,
                 promptType: String(event.prompt_type ?? 'general'),
+                ...(typeof event.contract === 'string' && event.contract
+                  ? { contract: event.contract }
+                  : {}),
                 confidenceLevel: asConfidenceLevel(event.confidence_level),
                 diagnosis,
                 explicitRequirements: asProvenanceViews(event.explicit_requirements),

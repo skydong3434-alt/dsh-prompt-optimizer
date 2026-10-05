@@ -133,7 +133,8 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
   assert.match(user, /助手: 可以试试低显存方案/)
   assert.match(user, /video-lab/)
   assert.match(user, /目标视频时长/)
-  assert.match(user, /\[待补充:/)
+  assert.doesNotMatch(user, /-\s*\[待补充:|;\[待补充: [^\]]+\]/, 'v2:user 载荷不得再以占位符形式列出缺口')
+  assert.match(user, /未决项及处置|执行前须知|分支条件/, 'v2:未决项按处置分类交付')
   assert.match(user, /ComfyUI 在 Mac 上做 AI 视频/)
   assert.match(user, /\[quote: 使用 ComfyUI 做 AI 视频\]/)
   console.log('✓ rs5 buildUser:真实案例 + 上下文/workspace/缺口/llm_derived')
@@ -215,9 +216,18 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
   const guard = guardById('research-require-evidence-gap-disclosure')
   assert.ok(guard)
   assert.ok(guard.check('## 优化后的 Research Prompt\n- 研究 Mac 方案', emptyResult, REAL_CASE))
-  assert.equal(guard.check('## Evidence Gaps\n- [待补充: 缺少实测数据]', emptyResult, REAL_CASE), null)
   assert.equal(guard.check('## 优化稿\n- 证据要求:需要官方文档', emptyResult, REAL_CASE), null)
-  console.log('✓ rs10 守卫 4:缺口未暴露触发')
+  assert.equal(
+    guard.check('## 执行前须知(由执行方自行确认)\n- 动手前先确认:本机可用的生成链路与依赖版本', emptyResult, REAL_CASE),
+    null,
+    'v2:动作式执行责任算合格形式',
+  )
+  assert.equal(
+    guard.check('## 分支条件\n- 是否已有 workflow:存在则优先复用,不存在则新建', emptyResult, REAL_CASE),
+    null,
+    'v2:条件式分支也算合格形式',
+  )
+  console.log('✓ rs10 守卫 4:缺口未暴露触发 / v2 两种新形式放行')
 }
 
 // 11. 合法 mock 编译产物:守卫全过 + 无重复 id
@@ -230,8 +240,8 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
     '- (无)',
     '## 优化器建议(可忽略)',
     '- 建议(可忽略) 补充输出格式与目标受众',
-    '## 待补充',
-    '- [待补充: 期望的视频时长与产出来源]',
+    '## 执行前须知（由执行方自行确认，不需要询问用户）',
+    '- 动手前先确认:本机可用的生成链路与依赖版本',
     '## 优化后的 Research Prompt',
     '### Candidate Approaches（候选方案）',
     '- 候选 1:黑鹤001 低显存流程(需验证 Mac 兼容性)',
@@ -276,8 +286,8 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
     '- 候选线索:黑鹤001低显流、H3 [quote: 我看到黑鹤001低显流,还有 H3]',
     '## 优化器建议(可忽略)',
     '- 建议(可忽略) 补充目标视频时长与产出来源',
-    '## 待补充',
-    '- [待补充: Mac 上 ComfyUI 的实测性能数据]',
+    '## 执行前须知（由执行方自行确认，不需要询问用户）',
+    '- 动手前先确认:Mac 上 ComfyUI 的实际性能数据与依赖版本',
     '## 优化后的 Research Prompt',
     '### Background（背景）',
     '- 用户机器为 Mac M1 Pro 32GB,希望用 ComfyUI 做 AI 视频。',
@@ -285,7 +295,7 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
     '- 黑鹤001(低显流):待验证 Mac/Metal 兼容性。',
     '- H3:待验证依赖与显存占用。',
     '### Evidence Gaps（证据缺口）',
-    '- [待补充: 是否有 Mac 实测案例与可复现步骤]',
+    '- 是否已有 Mac 实测案例与可复现步骤:存在则优先复用其实验配置,不存在则按自建路径处理',
     '### Human Decision Points（人工决策点）',
     '- 是否优先验证某条候选路线由用户决定。',
     '### Research Completion Criteria（研究完成标准）',
@@ -297,7 +307,7 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
   assert.doesNotMatch(mockCompiled, /黑鹤001(不可行|淘汰|放弃)/)
   assert.doesNotMatch(mockCompiled, /预算|万元|人民币|¥/)
   // 必须暴露证据缺口 + 含人工决策点
-  assert.match(mockCompiled, /待补充|待确认|证据/)
+  assert.match(mockCompiled, /证据|动手前先确认|分支|待验证/)
   assert.ok(mockCompiled.includes('Human Decision Points'))
   // 守卫对合法产物零误报
   assert.deepEqual(guardIssues(mockCompiled, REAL_CASE), [])
@@ -324,7 +334,11 @@ const ruleById = (rules, id) => rules.find((rule) => rule.id === id)
 
   const invariantA = guardById('shared-unknown-not-blocking')
   assert.ok(invariantA, 'invariant A 守卫必须挂到 research')
-  assert.equal(invariantA.check('- [待补充: Mac 实测数据]', emptyResult, ''), null)
+  assert.equal(
+    invariantA.check('- 动手前先确认:Mac 实测数据来源', emptyResult, ''),
+    null,
+    'v2:动作式执行责任不是阻塞问题',
+  )
   assert.ok(
     invariantA.check('- 请先回答目标显存,否则无法继续研究', emptyResult, ''),
     '阻塞式未知项 → 必须触发',

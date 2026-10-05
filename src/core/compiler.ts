@@ -38,7 +38,9 @@ import {
   manualClassifierResult,
   parsePromptTypeInput,
 } from "./classify.js";
-import { defaultStrategyRegistry, type StrategyRegistry } from "./registry.js";
+import { defaultStrategyRegistry, isLegacyGeneral, type StrategyRegistry } from "./registry.js";
+import { routeStrategy, type RouteDecision } from "./router.js";
+import { injectResponsibilityNotes, planResponsibilities } from "./responsibilities.js";
 import {
   buildSystemPrompt,
   buildUserPayload,
@@ -315,7 +317,8 @@ const MD_HEADS = {
   explicit: /^#{1,6}\s*明确要求/,
   context: /^#{1,6}\s*上下文已确认/,
   suggested: /^#{1,6}\s*优化器建议/,
-  unknown: /^#{1,6}\s*待补充/,
+  // v2 Phase 2:未知项分组标题改为「未知项 / 未决项」;[待补充] 保留容忍(旧产物仍可解析)。
+  unknown: /^#{1,6}\s*(?:未知项|未决项|待补充|Unknown items)/,
   optimized: /^#{1,6}\s*优化后的/,
 } as const;
 
@@ -506,6 +509,13 @@ export interface CompilePromptInput {
   classifier?: ClassifierResult | null;
   /** 策略注册表;缺省 = 七策略全量(未知类型 registry 内部回退 general)。 */
   registry?: StrategyRegistry;
+  /**
+   * v2:分析结果。提供时由 Target-aware Router 选策略(目标维度生效);
+   * 缺省 = 沿用 v1 的按意图取策略(向后兼容)。
+   */
+  analysis?: AnalysisResult;
+  /** 显式指定策略(跳过 router;测试与宿主高级用法)。 */
+  strategy?: PromptStrategy;
   language?: "zh" | "en";
   mode?: OptimizerMode;
   /** 上一轮优化结果(轻量记忆链;可选)。 */
@@ -535,6 +545,8 @@ export interface CompilePlan {
   result: CompileResult;
   /** 是否走手动 override(为 true 时不存在任何分类调用)。 */
   overridden: boolean;
+  /** v2:Target-aware 路由裁决(无 analysis 时为 null,走 v1 意图路由)。 */
+  route: RouteDecision | null;
   legacy: boolean;
   /** 本次编排机械落实的步骤 id(见 COMPILE_PROMPT_STEPS)。 */
   steps: CompileStepId[];
@@ -584,18 +596,33 @@ export function compilePrompt(input: CompilePromptInput): CompilePlan {
       ? manualClassifierResult(override)
       : input.classifier ?? fallbackClassifierResult("未提供分类结果,已回退通用模式;可手动选择任务类型");
 
-  // 步骤 6:策略选择(未知类型由 registry 兜底 general)。
-  const strategy = registry.get(classifier.prompt_type);
-  const legacy = input.legacy ?? false;
-
-  // 步骤 3:缺失信息检测(classifier 缺口 → [待补充:] 注入清单)。
+  // 步骤 3:缺失信息检测(classifier/分析缺口 → 去重的 MissingConstraint)。
   const missing = classifierMissingConstraints(classifier);
+
+  // 步骤 6:v2 Target-aware 路由(有分析时按 目标/引擎/模态/意图 选契约;
+  // 无分析时沿用 v1 的按意图取策略 —— 向后兼容)。手动覆盖优先级最高。
+  const route = input.analysis
+    ? routeStrategy(input.analysis, { manualType: override, registry })
+    : null;
+  const strategy = input.strategy ?? route?.strategy ?? registry.get(classifier.prompt_type);
+  const legacy = input.legacy ?? isLegacyGeneral(strategy);
+
+  // 步骤 3 附:未决项处置分派(Phase 2 契约;见 docs/phase2-contract.md)。
+  // 策略侧只负责渲染,判定只发生在这里(单一真源)。
+  const dispositionPlan = planResponsibilities({
+    resolution: input.analysis?.missing_resolution,
+    labels: missing,
+  });
 
   const vars: CompileVars = {
     raw_input: normalized.raw_input,
     context_turns: [...normalized.bounded_turns],
     workspace_metadata: normalized.workspace_metadata,
     missing_constraints: missing,
+    ...(input.analysis?.missing_resolution
+      ? { missing_resolution: [...input.analysis.missing_resolution] }
+      : {}),
+    missing_dispositions: dispositionPlan.items,
   };
 
   // 步骤 7/8/9:输出契约 + 反漂移 + 四段来源协议(组装 system / user)。
@@ -608,7 +635,11 @@ export function compilePrompt(input: CompilePromptInput): CompilePlan {
 
   // 待 validate 的骨架:provenance_ok 保持 false,optimized_prompt 留空。
   const result: CompileResult = {
-    prompt_type: strategy.type,
+    // v2:prompt_type 表达**工作意图**(由分析给出);contract 表达编译契约(strategy)。
+    prompt_type: input.analysis?.prompt_type ?? strategy.type,
+    ...(strategy.type !== (input.analysis?.prompt_type ?? strategy.type)
+      ? { contract: strategy.type }
+      : {}),
     confidence_level: toConfidenceLevel(classifier.confidence_internal),
     diagnosis: "",
     explicit_requirements: [],
@@ -630,6 +661,7 @@ export function compilePrompt(input: CompilePromptInput): CompilePlan {
     user: payload.user,
     result,
     overridden,
+    route,
     legacy,
     steps: [...ORCHESTRATION_STEP_IDS],
   };
@@ -797,6 +829,11 @@ function cleanConstraintLabel(label: string): string {
 }
 
 /**
+ * @deprecated v2 Phase 2 起 **[待补充:] 已退役**(见 docs/phase2-contract.md):
+ * 编译路径改用 `responsibilities.ts` 的 `injectResponsibilityNotes`(只注入
+ * 「执行前须知」动作式与「分支条件」条件式两类,永不产出占位符)。
+ * 本函数仅为旧单测与外部复用保留,**不得**再接回编译管线。
+ *
  * 机械注入缺口占位符:确保每条 missing constraint 在优化稿中以
  * `[待补充: …]`(zh)/ `[TODO: …]`(en)出现。
  *
@@ -844,7 +881,10 @@ export function finalizeCompile(
   if (opts.legacy) {
     const parsed = parseOptimizerOutput(rawText, opts.mode);
     const result: CompileResult = {
-      prompt_type: strategy.type,
+      prompt_type: opts.analysis?.prompt_type ?? strategy.type,
+      ...(strategy.type !== (opts.analysis?.prompt_type ?? strategy.type)
+        ? { contract: strategy.type }
+        : {}),
       confidence_level: confidenceLevel,
       diagnosis: parsed.analysis,
       explicit_requirements: [],
@@ -863,7 +903,10 @@ export function finalizeCompile(
   const sections = parseCompileOutput(rawText);
   const missing = dedupeConstraints([...opts.missing, ...sections.missing_constraints]);
   const result: CompileResult = {
-    prompt_type: strategy.type,
+    prompt_type: opts.analysis?.prompt_type ?? strategy.type,
+    ...(strategy.type !== (opts.analysis?.prompt_type ?? strategy.type)
+      ? { contract: strategy.type }
+      : {}),
     confidence_level: confidenceLevel,
     diagnosis: sections.diagnosis,
     explicit_requirements: sections.explicit_requirements,
@@ -877,10 +920,15 @@ export function finalizeCompile(
   };
   attachAnalysis(result, opts.analysis);
 
-  // 缺口机械注入:保证 missing_constraints 在交付稿中显式可见(不发明、不改写)。
-  result.optimized_prompt = injectMissingPlaceholders(
+  // 未决项机械注入(v2 Phase 2):只注入「执行前须知」(动作式)与「分支条件」
+  // (条件式)两类;**绝不**产出 [待补充:] / [TODO:](见 docs/phase2-contract.md)。
+  const dispositionPlan = planResponsibilities({
+    resolution: opts.analysis?.missing_resolution,
+    labels: result.missing_constraints,
+  });
+  result.optimized_prompt = injectResponsibilityNotes(
     result.optimized_prompt,
-    result.missing_constraints,
+    dispositionPlan,
     language,
   ).prompt;
 

@@ -641,7 +641,9 @@ export function manualAnalysisResult(
 ): AnalysisResult {
   const rawInput = ctx.rawInput ?? "";
   const contextTurns = ctx.contextTurns ?? [];
-  const primary: WorkIntent | "general" = promptType === "general" ? "general" : promptType;
+  // 手动覆盖只允许六个真实意图(parsePromptTypeInput 已收窄);目标派生契约类型
+  // ('image'/'video'/'agent')不是意图 → 归 general(契约:意图与编译契约分离)。
+  const primary: WorkIntent | "general" = isWorkIntent(promptType) ? promptType : "general";
   const target = resolveTargetDeterministic({
     raw_input: rawInput,
     context_texts: contextTurns.filter((turn) => turn.role === "user").map((turn) => turn.text),

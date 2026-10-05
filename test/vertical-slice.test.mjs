@@ -37,8 +37,8 @@ const COMPILE_OUTPUT = [
   '- 建议(可忽略) 补充目标视频产出形式与时长',
   '- 建议(可忽略) 优先核对官方文档与 Mac/Metal 可复现实践',
   '<<<UNKNOWN>>>',
-  '- [待补充: 期望的视频产出形式与时长,决定显存与模型选择]',
-  '- [待补充: Mac 本机可接受的生成耗时]',
+  '- 期望的视频产出形式与时长:只有你能定,本轮不需要回答;执行方按通用做法先推进',
+  '- 动手前先确认:Mac 本机可接受的生成耗时',
   '<<<OPTIMIZED>>>',
   '## Background（背景）',
   '- 用户机器为 Mac M1 Pro 32GB,希望用 ComfyUI 做 AI 视频。',
@@ -47,8 +47,8 @@ const COMPILE_OUTPUT = [
   '## Existing Knowledge（已知信息）',
   '- 用户提到黑鹤001低显流与 H3,二者均为待验证候选线索。',
   '## Constraints（约束）',
-  '- [待补充: 期望的视频产出形式与时长]',
-  '- [待补充: Mac 本机可接受的生成耗时]',
+  '- 期望的视频产出形式与时长:只有你能定,本轮不需要回答;执行方按通用做法先推进',
+  '- 动手前先确认:Mac 本机可接受的生成耗时',
   '## Candidate Approaches（候选方案）',
   '- 黑鹤001(低显流):候选,待验证 Mac/Metal 兼容性。',
   '- H3:候选,待验证依赖与显存占用。',
@@ -63,7 +63,7 @@ const COMPILE_OUTPUT = [
   '## Conflicting Evidence（冲突证据）',
   '- 冲突说法需并列呈现,不得擅自裁决。',
   '## Evidence Gaps（证据缺口）',
-  '- [待补充: 是否存在 Mac 实测案例与可复现步骤]',
+  '- 动手前先确认:是否存在 Mac 实测案例与可复现步骤',
   '## Continue-search Conditions（继续检索条件）',
   '- 只有单一来源时继续检索。',
   '## Comparison Dimensions（对比维度）',
@@ -214,7 +214,9 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.doesNotMatch(optimized, /H3\s*(已确认|确定|采用|选用|定为)/, 'H3 不得写成已确认路线')
   assert.doesNotMatch(optimized, /黑鹤001\s*(不可行|淘汰|放弃|排除)/, '黑鹤001 不得被淘汰')
   assert.doesNotMatch(optimized, /预算|万元|人民币|¥/, '不得凭空发明预算')
-  assert.match(optimized, /\[待补充:/, '必须显式暴露证据缺口')
+  // v2 Phase 2:证据缺口不再以 [待补充:] 暴露;改由「执行前须知 / 分支条件 / 证据要求」承载
+  assert.doesNotMatch(optimized, /\[(?:待补充|TODO)\s*[:：]/, 'v2:优化稿不得出现已退役占位符')
+  assert.match(optimized, /证据|动手前先确认|执行前须知|分支条件/, '缺口仍须在优化稿中可定位')
   assert.ok(optimized.includes('Mac M1 Pro 32GB'), '专有名词必须保留')
   assert.ok(!optimized.includes('<<<'), '优化稿不得混入协议标记')
 

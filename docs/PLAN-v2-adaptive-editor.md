@@ -150,6 +150,8 @@ controller：meta→阶段文案；delta→实时预览；done→ResultDock（�
 - 验收用例 C（图像）/ D（视频）/ E（乱但完整 → RESTRUCTURE）。
 
 ### Phase 3 — Discovery + Ledger + Confirmation + Validator 回流
+
+> **准入清单见 [phase3-prerequisites.md](./phase3-prerequisites.md)**（含用户指定的必做项：取舍型 / 产品决策不得被降级为「Agent 可调查项」）。
 - Ledger 全状态机 + 再优化保留（still-valid / conflicting / invalidated）。
 - Question Planner（1–2 问/轮、≤3 轮、依赖感知、四维排序）+ `blocking USER_REQUIRED = 0` 停止条件。
 - Requirement Confirmation 面板（`确认并优化` / `修改理解`）。

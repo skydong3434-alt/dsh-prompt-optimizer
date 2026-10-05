@@ -211,10 +211,23 @@ const SHARED_LANGUAGE_ZH = `# 语言匹配
 - 输入以中文为主体 → 输出中文;以英文为主体 → 输出英文
 - 保留原文的术语与专有名词(产品名 / 模型名 / 缩写):不改写、不意译、不臆造中译名`;
 
-const SHARED_TODO_ZH = `# [待补充:] 纪律
-- 证据不足、用户未说明、无法从输入或上下文确认的关键信息,一律写成 [待补充: 具体缺什么],不得猜测填充
-- [待补充:] 要写清「缺什么、为什么重要」,不写空泛占位
-- 不得把 [待补充:] 当作已确认信息继续推导;不得用默认值悄悄替代缺口`;
+/**
+ * 未决项处置纪律(Phase 2 正式契约,见 docs/phase2-contract.md)。
+ *
+ * 关键变化:`[待补充:]` 占位符**退役**。未决项按「谁有能力解决」分派:
+ *   - 执行 Agent 正常工作就会拿到的信息 → 直接省略(不提示、不占位);
+ *   - 必须在行动前调查、且影响正确执行 → 写成**动作式**指令("动手前先确认:…");
+ *   - 调查结果决定后续分支 → 写成**条件式**指令("…:存在则…,否则…");
+ *   - 只有用户能决定且不阻塞 → **不写进优化稿**(留给面板/后续澄清)。
+ * 反膨胀:不得把缺口机械改写成「由执行方自行确认 XXX」堆成另一种模板。
+ */
+const SHARED_TODO_ZH = `# 未决项处置纪律(严格执行)
+- **禁止输出 [待补充:] / [TODO:] 占位符**(本契约已退役该形式);也禁止写面向用户的追问(「请先回答/请你确认」)
+- 执行 Agent 在正常工作中自然会拿到的信息(路径 / 目录 / 文件名 / 位置等) → **直接省略**,不要提示
+- 必须在动手前调查、且会影响正确执行的事实(版本 / 接口 / 签名 / 配置 / 字段 / 表结构 / 依赖 / 环境 / 默认值 / 规范) → 写成**动作式**指令,如「动手前先确认:当前依赖版本与可用接口」
+- 调查结果会决定走哪条路 → 写成**条件式**指令,如「是否已有 workflow:存在则优先复用/沿用,不存在则按新建路径处理」
+- 只有用户本人能决定、且不影响本次执行的偏好 → **不要写进优化稿**,也不要问;执行方按通用做法推进即可
+- 绝不把「缺什么」当成已确认信息继续推导,也不得用默认值悄悄替代`;
 
 const SHARED_SUGGESTION_ZH = `# 建议标注纪律
 - 优化器主动补充的内容必须独立成段,并以「${SUGGESTION_LABEL_ZH}」前缀标注
@@ -224,7 +237,7 @@ const SHARED_SUGGESTION_ZH = `# 建议标注纪律
 const SHARED_DO_NOT_ENTER_ZH = `# 禁入集合处理
 - 用户在历史中已否决、推翻或明确表示不考虑的方向,不得再次作为候选或建议提出
 - 禁入集合只从「用户自己」的发言提取;助手 / Agent 的建议不算用户否决
-- 无法确认某方向是否被否决时,写入 [待补充: 该方向是否仍排除],不得自行假定`;
+- 无法确认某方向是否被否决时,处理为「动手前先确认:该方向是否仍被排除」,不得自行假定,也不得写成 [待补充:]`;
 
 const SHARED_INVARIANTS_ZH = `# 跨策略不变式(所有策略共享,优先于任何策略措辞)
 - ${INVARIANT_UNKNOWN_NOT_BLOCKING_ZH}
@@ -245,10 +258,17 @@ const SHARED_LANGUAGE_EN = `# Language matching
 - Chinese-dominant input → Chinese output; English-dominant input → English output
 - Keep the input's terms and proper nouns (products / models / acronyms): do not rename, translate, or invent localized names`;
 
-const SHARED_TODO_EN = `# [TODO:] discipline
-- Insufficient evidence, unspecified details, or anything unconfirmable from input/context must be written as [TODO: what exactly is missing]; never fill it by guessing
-- A [TODO:] must say what is missing and why it matters, not be a vague placeholder
-- Never treat a [TODO:] as confirmed input for further reasoning; never silently substitute a default`;
+/**
+ * Open-item disposition discipline (Phase 2 contract; see docs/phase2-contract.md).
+ * `[TODO:]` placeholders are RETIRED.
+ */
+const SHARED_TODO_EN = `# Open-item disposition discipline (strict)
+- **Never emit [TODO:] / [待补充:] placeholders** (the form is retired), and never ask the user ("please answer / please confirm")
+- Information the executor naturally obtains (paths / directories / filenames / locations) → **omit entirely**, do not mention it
+- Facts that must be checked before acting and that change correct execution (versions / interfaces / signatures / config / fields / schema / dependencies / environment / defaults / specs) → write a **before-acting** instruction, e.g. "Verify before acting: current dependency versions and available interfaces"
+- Facts whose outcome selects the path to take → write a **conditional** instruction, e.g. "whether a workflow already exists: if so reuse it, otherwise follow the create path"
+- Preferences only the user can decide and that do not block this run → **do not put them in the compiled prompt** and do not ask
+- Never treat "what is missing" as confirmed input, and never silently substitute a default`;
 
 const SHARED_SUGGESTION_EN = `# Suggestion labeling discipline
 - Anything the optimizer adds on its own must live in its own section, prefixed "${SUGGESTION_LABEL_EN}"

@@ -503,6 +503,14 @@ export function createResultDock(controller: OptimizerController) {
               {t(CONFIDENCE_KEY[(result?.confidenceLevel ?? state.meta?.confidenceLevel) ?? 'Low'])}
             </span>
           )}
+          {(() => {
+            const contract = result?.contract ?? state.meta?.contract
+            return contract ? (
+              <span style={styles.modelBadge}>
+                {t('panel.contract')}: {t(`panel.contract.${contract}` as never)}
+              </span>
+            ) : null
+          })()}
           {v2 && (
             <span style={styles.modelBadge} title={v2.target.rationale}>
               {t('panel.target')}: {v2.target.target}

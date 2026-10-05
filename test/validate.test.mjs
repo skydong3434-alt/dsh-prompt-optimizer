@@ -12,7 +12,7 @@
  *   v8  suggested 无标注混入优化稿正文 → error;带建议前缀 → 豁免;
  *   v9  无证据强断言(不可行/最终/确定) → error;候选/疑问/有证据 → 豁免;
  *   v10 无证据量化(预算/时间/平台/模型) → error;有证据/占位符 → 豁免;
- *   v11 Unknown:未知项与缺口必须落成 [待补充: …];
+ *   v11 Unknown(Phase 2):[待补充:] 已退役,未决项走执行前须知 / 分支条件 / 省略;
  *   v12 策略 guards 汇总(research 强断言守卫同步触发)+ 总入口 provenance_ok 语义;
  *   v13 provenance_ok 联动:validateCompileResult 与 finalizeCompile / compilePrompt 骨架一致;
  *   v14 便捷判定 + 分层结构完备。
@@ -76,7 +76,7 @@ const FULL_BODY = [
   '## Existing Knowledge（已知信息）',
   '- 用户提到黑鹤001低显流与 H3,二者均为线索',
   '## Constraints（约束）',
-  '- [待补充: 目标平台与导出格式]',
+  '- 目标平台与导出格式:由执行方在动手前确认并按其约束出稿',
   '## Candidate Approaches（候选方案）',
   '- 黑鹤001:候选,待验证',
   '- H3:候选,待验证',
@@ -91,7 +91,7 @@ const FULL_BODY = [
   '## Conflicting Evidence（冲突证据）',
   '- 冲突说法需并列呈现,不得擅自裁决',
   '## Evidence Gaps（证据缺口）',
-  '- [待补充: Mac 实测案例]',
+  '- 是否已有 Mac 实测案例:存在则优先复用其实验配置,否则按自建路径处理',
   '## Continue-search Conditions（继续检索条件）',
   '- 只有单一来源时继续检索',
   '## Comparison Dimensions（对比维度）',
@@ -354,27 +354,49 @@ const FULL_BODY = [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v11. Unknown:未知项与缺口必须落成 [待补充: …]
-// ─────────────────────────────────────────────────────────────────────────────
+// v11. Unknown(Phase 2 契约):[待补充:] 已退役;未决项走执行前须知 / 分支条件 / 省略
 {
+  // ① 旧占位符出现即 error(I-1)
+  const legacyPlaceholder = makeResult({
+    optimized_prompt: '## Constraints（约束）\n- 预算 [待补充: 上限]\n- 目标平台 [待补充: 未说明]',
+  })
+  const retired = validateCompileResult(legacyPlaceholder, { rawInput: REAL_CASE })
+  assert.equal(byRule(retired.problems, VALIDATION_RULE.retiredPlaceholder).length, 1, 'I-1:占位符出现即 error')
+  assert.equal(retired.provenance_ok, false)
+
+  // ② 面向用户的追问 → error(I-2:UNKNOWN ≠ ASK_USER)
+  const asking = makeResult({
+    optimized_prompt: '## 执行前须知\n- 请先回答预算上限,否则无法继续',
+  })
+  const question = validateCompileResult(asking, { rawInput: REAL_CASE })
+  assert.equal(byRule(question.problems, VALIDATION_RULE.userFacingQuestion).length, 1, 'I-2:不得反问用户')
+  assert.equal(question.provenance_ok, false)
+
+  // ③ 缺口未写入正文 → **合法**(省略是契约允许的处置;可见性由台账 / 面板承担)
   const uncovered = makeResult({
     unknowns: [rec('Mac 实测案例', 'UNKNOWN', [])],
     missing_constraints: [{ id: 'mc-1', label: '期望的视频时长' }],
     optimized_prompt: '## Background\n- 已有内容',
   })
-  const bad = validateCompileResult(uncovered, { rawInput: REAL_CASE })
-  const unknownProblems = byRule(bad.problems, VALIDATION_RULE.unknownNotMarked)
-  assert.equal(unknownProblems.length, 2, '未知项 + 缺口各报一条')
-  assert.equal(bad.provenance_ok, false)
+  const bare = validateCompileResult(uncovered, { rawInput: REAL_CASE })
+  assert.deepEqual(
+    bare.problems.filter((p) => p.severity === 'error'),
+    [],
+    '合法省略不得产生 error',
+  )
+  assert.equal(bare.provenance_ok, true, '省略是合法处置:可见性由台账 / 面板承担')
 
+  // ④ 责任说明块存在 → 视为已定位,零问题
   const covered = makeResult({
     unknowns: [rec('Mac 实测案例', 'UNKNOWN', [])],
     missing_constraints: [{ id: 'mc-1', label: '期望的视频时长' }],
-    optimized_prompt: '## Evidence Gaps\n- [待补充: Mac 实测案例]\n- [待补充: 期望的视频时长]',
+    optimized_prompt:
+      '## Evidence Gaps（证据缺口）\n- 证据要求:需官方文档或实测\n\n## 执行前须知（由执行方自行确认，不需要询问用户）\n- 动手前先确认:本机可用的生成链路与依赖版本',
   })
   const good = validateCompileResult(covered, { rawInput: REAL_CASE })
-  assert.deepEqual(byRule(good.problems, VALIDATION_RULE.unknownNotMarked), [])
-  console.log('✓ v11 未知项 / 缺口必须 [待补充:] 可定位')
+  assert.deepEqual(byRule(good.problems, VALIDATION_RULE.retiredPlaceholder), [])
+  assert.equal(good.provenance_ok, true)
+  console.log('✓ v11 Phase 2 未决项:I-1 占位符退役 / I-2 不得反问 / 未定位仅 warn')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -382,7 +404,7 @@ const FULL_BODY = [
 // ─────────────────────────────────────────────────────────────────────────────
 {
   const drift = makeResult({
-    optimized_prompt: '## Evidence Gaps（证据缺口）\n- H3 不可行,直接淘汰\n- [待补充: Mac 实测案例]',
+    optimized_prompt: '## Evidence Gaps（证据缺口）\n- H3 不可行,直接淘汰\n- 是否已有 Mac 实测案例:存在则复用,否则自建',
   })
   const output = drift.optimized_prompt
   const guardProblems = collectStrategyGuardProblems(research, drift, output, REAL_CASE)
@@ -424,8 +446,10 @@ const FULL_BODY = [
     M.suggested,
     '- 建议(可忽略) 补充目标产出形式',
     M.unknown,
-    '- [待补充: 期望的视频时长]',
+    '- 期望的视频时长:由执行方在动手前确认(动作式)',
     M.optimized,
+    '## 执行前须知（由执行方自行确认，不需要询问用户）',
+    '- 动手前先确认:期望的视频时长',
     FULL_BODY,
     M.end,
   ].join('\n')
@@ -498,7 +522,7 @@ const FULL_BODY = [
     explicit_requirements: [rec('研究 Mac 上用 ComfyUI 做 AI 视频', 'USER_EXPLICIT', ['ComfyUI'])],
     unknowns: [rec('Mac 实测案例', 'UNKNOWN', [])],
     missing_constraints: [{ id: 'mc-1', label: 'Mac 实测案例' }],
-    optimized_prompt: `${FULL_BODY}\n- [待补充: Mac 实测案例]`,
+    optimized_prompt: `${FULL_BODY}\n\n## 执行前须知（由执行方自行确认，不需要询问用户）\n- 动手前先确认:Mac 实测案例来源与依赖版本`,
   })
   const report = validateCompileResult(clean, { rawInput: REAL_CASE, strategy: research })
   assert.deepEqual(report.layers.map((l) => l.layer), [...VALIDATION_LAYERS])

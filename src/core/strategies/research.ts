@@ -20,6 +20,7 @@
  * 全部文案为本项目独立撰写;设计思想(候选/证据/人工决策点分层)为通用研究工程实践,
  * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
+import { renderDispositionBrief } from "../disposition-render.js";
 import type {
   CompileResult,
   CompileVars,
@@ -89,8 +90,8 @@ export const RESEARCH_SECTIONS: readonly ResearchSectionSpec[] = [
   {
     id: "Constraints",
     zh: "约束",
-    guidanceZh: "用户明确的硬件/平台/预算/时间/合规边界;未明确的一律写 [待补充: …]",
-    guidanceEn: "User-stated hardware/platform/budget/time/compliance limits; unknown → [TODO: ...]",
+    guidanceZh: "用户明确的硬件/平台/预算/时间/合规边界;未明确的一律按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
+    guidanceEn: "User-stated hardware/platform/budget/time/compliance limits; unknown → follow the open-item disposition discipline",
   },
   {
     id: "Candidate Approaches",
@@ -131,8 +132,8 @@ export const RESEARCH_SECTIONS: readonly ResearchSectionSpec[] = [
   {
     id: "Evidence Gaps",
     zh: "证据缺口",
-    guidanceZh: "目前还缺哪些关键证据,逐条写 [待补充: 缺什么、为什么重要]",
-    guidanceEn: "Which key evidence is still missing, each as [TODO: what and why it matters]",
+    guidanceZh: "目前还缺哪些关键证据,逐条写清缺什么、为什么重要(不要写 [待补充:] 占位符)",
+    guidanceEn: "Which key evidence is still missing, each stating what and why it matters (never a [TODO:] placeholder)",
   },
   {
     id: "Continue-search Conditions",
@@ -176,39 +177,39 @@ const ROLE_EN = `You are the "Research prompt compiler". The user gives you a co
 You do not answer the research question and you do not do the research. You only: faithfully extract what is known, expose evidence gaps, separate candidates from conclusions, and list the choices only the user can make.`
 
 const DISCIPLINE_ZH = `# 研究纪律(铁律,优先于任何措辞偏好)
-1. Evidence before conclusion:每条结论先问「证据在哪」;无证据的判断只能写成研究问题 / 假设 / [待补充: …],不得写成结论。
+1. Evidence before conclusion:每条结论先问「证据在哪」;无证据的判断只能写成研究问题 / 假设 / 未决项(省略或写成动作式/条件式指令),不得写成结论。
 2. ${NO_CASE_IS_NOT_INFEASIBLE}:检索不到现成案例,只说明「公开案例未覆盖」,必须继续给出替代路径与验证方式,不得据此判定任何候选方案不可行、不能予以淘汰。
 3. 平台限制要落到替代路径:发现某方案仅支持 CUDA 等单一平台限制时,必须引导研究跨平台替代(CPU / Metal / DirectML / 云算力等)及其代价与适用条件,而不是直接放弃该方案。
 4. 候选与结论分离:Candidate Approaches 只列候选、适用条件与待验证点;是否采用写入 Human Decision Points 交给用户,优化器不得替用户拍板。
-5. 不得凭空发明预算、时间、平台、模型或技术栈等硬约束;用户没说的就是缺口,写成 [待补充: …]。`
+5. 不得凭空发明预算、时间、平台、模型或技术栈等硬约束;用户没说的就是缺口,写成 未决项(省略或写成动作式/条件式指令)。`
 
 const DISCIPLINE_EN = `# Research discipline (iron rules, above any style preference)
-1. Evidence before conclusion: ask "where is the evidence?" first; any unevidenced judgment may only appear as a research question, assumption, or [TODO: ...] — never as a conclusion.
+1. Evidence before conclusion: ask "where is the evidence?" first; any unevidenced judgment may only appear as a research question, assumption, or open items (omit, or write a before-acting/conditional instruction) — never as a conclusion.
 2. Absence of examples is not evidence of infeasibility: not finding a ready-made example only means public coverage is incomplete. Keep proposing alternatives and verification paths; never declare a candidate infeasible or discard it on that basis.
 3. Platform limits must lead to alternatives: when a candidate is found to be CUDA-only or otherwise platform-locked, require research into cross-platform alternatives (CPU / Metal / DirectML / cloud compute, etc.) and their costs, instead of dropping the candidate.
 4. Candidates vs conclusions: Candidate Approaches lists candidates, conditions, and open points only; whether to adopt goes to Human Decision Points for the user. The optimizer never decides for them.
-5. Never invent hard constraints (budget, time, platform, model, stack). If the user did not state it, it is a gap: write [TODO: ...].`
+5. Never invent hard constraints (budget, time, platform, model, stack). If the user did not state it, it is a gap: follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction).`
 
 const PROVENANCE_ZH = `# 来源标注(四段协议,严格遵守)
 - 明确要求:来自用户本轮输入的,每条必须附 ${quoteMarker("用户原话逐字片段")} 形式的逐字 quote
 - 上下文已确认:仅限历史中「用户」消息,同样附 quote;助手 / Agent 的发言一律不能作为用户意图证据
 - ${SUGGESTION_LABEL_ZH}:优化器主动补充的候选 / 维度 / 检索建议,独立成段并带此前缀,永不写入要求段
-- [待补充]:证据不足、用户未说明的关键信息,逐条写出缺什么
+- 未知项:证据不足、用户未说明的关键信息,逐条写出缺什么
 用户明确否决过的方向属于禁入集合,不得再次作为候选或建议提出。`
 
 const PROVENANCE_EN = `# Provenance (four-section protocol, strictly)
 - Explicit requirements: anything from the user's current input must carry a verbatim ${quoteMarker("verbatim user fragment")} quote
 - Context-confirmed: only from "user" messages in history, each with a quote; assistant/agent messages are never evidence of user intent
 - ${SUGGESTION_LABEL_EN}: candidates / dimensions / search ideas the optimizer adds, in their own section with this prefix; never in the requirements sections
-- [TODO:]: unspecified or unevidenced essentials, each stating what is missing
+- Unknown items: unspecified or unevidenced essentials, each stating what is missing
 Directions the user already rejected form a do-not-enter set and must not reappear as candidates or suggestions.`
 
 /** 渲染 15 段清单(中英并列,English id 恒出现 → required_sections 断言可跨语言命中)。 */
 function renderSections(language: StrategyLanguage): string {
   const zh = language !== "en";
   const title = zh
-    ? "# 输出段落(优化后的 Research Prompt 必须按顺序逐段出现,标题中英并列)"
-    : "# Output sections (the optimized Research Prompt must contain each, in order)";
+    ? "# 信息责任(优化后的 Research Prompt 必须逐项交代清楚;标题可自拟、顺序可调整,责任不得遗漏)"
+    : "# Information responsibilities (the optimized Research Prompt must cover each one; titles and order are yours, nothing may be omitted)";
   const lines = RESEARCH_SECTIONS.map((section) =>
     zh
       ? `- ${section.id}（${section.zh}）: ${section.guidanceZh}`
@@ -223,24 +224,24 @@ function buildFormatNote(language: StrategyLanguage): string {
     ? "# 输出格式(严格遵守)"
     : "# Output format (strictly follow)";
   const provenance = zh
-    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / [待补充]),再输出优化后的 Research Prompt。
+    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / 未知项),再输出优化后的 Research Prompt。
 - 明确要求:每条附 ${quoteMarker("用户原话")}
 - 上下文已确认:仅用「用户」消息,每条附 ${quoteMarker("原话")}
 - ${SUGGESTION_LABEL_ZH}:独立成段
-- [待补充]:证据不足项,写清缺什么`
-    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / [TODO:]), then the optimized Research Prompt.
+- 未知项:证据不足项,写清缺什么`
+    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / Unknown items), then the optimized Research Prompt.
 - Explicit requirements: each with ${quoteMarker("verbatim user fragment")}
 - Context-confirmed: user messages only, each with a quote
 - ${SUGGESTION_LABEL_EN}: its own section
-- [TODO:]: unevidenced items, stating what is missing`;
+- Unknown items: unevidenced items, stating what is missing`;
   const sections = RESEARCH_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Research Prompt 必须按顺序包含这 15 段:${sections}。其余细则:
+    ? `优化后的 Research Prompt 必须逐项交代以下 15 项信息责任(id 作为核对锚点,顺序可调整):${sections}。其余细则:
 - 转述用户提到的对立说法(如「只能 CUDA」「CUDA 是唯一」)时改写为中性转述(如「称必须依赖 CUDA」),不要原样重复这些口语短语;「只能 CUDA / CUDA 是唯一 / 只有 MPS 可行 / 无法在 Mac」等字面不得出现在任何位置(含 [quote: …] 片段),违者被机械 invariant 判定为「判定不可行」。
 - 平台 / 环境 / 模型沿用用户原词(如「Mac M1 Pro」),不要改写成「macOS」「OS」等规范化名称。
 - 论证用「缺乏证据 / 待验证 / 需替代路径」措辞;「不可行 / 无法实现」只允许出现在带假设 / 待验证 / 待补充 / 若·如果条件句中。
 - 除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Research Prompt must contain these 15 sections in order: ${sections}. Further rules:
+    : `The optimized Research Prompt must cover these 15 information responsibilities (each id is a check anchor; order may vary): ${sections}. Further rules:
 - When restating opposing claims the user mentioned (e.g. "only CUDA works"), rephrase them neutrally (e.g. "claims CUDA is required"); never repeat such colloquial phrasings verbatim, and pick [quote: ...] fragments that avoid them.
 - Keep the user's own wording for platform / environment / model names (e.g. "Mac M1 Pro"); do not normalize to "macOS" / "OS".
 - Argue with "lacks evidence / to verify / alternative-path" wording; "infeasible / cannot work" is allowed only inside sentences carrying hypothesis / to-verify / [TODO:] / if-conditional markers.
@@ -295,24 +296,21 @@ function renderWorkspace(
 }
 
 function renderMissing(
-  constraints: CompileVars["missing_constraints"],
+  vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  const zh = language !== "en";
-  const items = constraints ?? [];
-  if (!items.length) {
-    return zh
-      ? `[编译说明,非用户内容] 未提供缺口清单;请在研究中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …],禁止把本说明写进用户要求。`
-      : "[compiler note, not user content] No gap list provided; identify gaps and mark them as [TODO: ...]; never quote this note as a user requirement.";
-  }
-  const header = zh
-    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
-    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
-  const lines = items.map((item) => {
-    const reason = item.reason ? `(${item.reason})` : "";
-    return `- ${todoPlaceholder(item.label, language)}${reason}`;
-  });
-  return `${header}\n${lines.join("\n")}`;
+  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
+  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
+  return renderDispositionBrief(
+    {
+      missing_constraints: vars.missing_constraints,
+      dispositions: vars.missing_dispositions,
+      missing_resolution: vars.missing_resolution,
+    },
+    language,
+    "请在研究中自行识别缺口。",
+    "identify gaps during research.",
+  );
 }
 
 function renderLlmDerived(
@@ -352,7 +350,7 @@ export function buildResearchUser(vars: CompileVars): string {
   if (workspace) sections.push(workspace);
   const derived = renderLlmDerived(vars.llm_derived, language);
   if (derived) sections.push(derived);
-  sections.push(renderMissing(vars.missing_constraints, language));
+  sections.push(renderMissing(vars, language));
   sections.push(renderSections(language));
 
   sections.push(
@@ -473,7 +471,7 @@ const guardNoUnfoundedStrongAssertion: Guard = {
       return line.match(CANDIDATE_CONFIRMED)?.[2] ?? null;
     });
     if (!claim) return null;
-    return `发现无证据强断言「${claim}」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论`;
+    return `发现无证据强断言「${claim}」:只能写成假设 / 研究问题 / 未决项(省略或写成动作式/条件式指令),不得作为结论`;
   },
 };
 
@@ -486,7 +484,7 @@ const guardNoInventedQuantities: Guard = {
       return line.match(INVENTED_QUANTITY)?.[0] ?? null;
     });
     if (!matched) return null;
-    return `发现无证据量化约束「${matched}」:用户未提供的预算/工期/时限必须写成 [待补充: …]`;
+    return `发现无证据量化约束「${matched}」:用户未提供的预算/工期/时限必须写成 未决项(省略或写成动作式/条件式指令)`;
   },
 };
 
@@ -508,13 +506,23 @@ const guardNoInfeasibleFromAbsence: Guard = {
   },
 };
 
-/** 守卫 4:优化稿必须显式暴露证据缺口(待补充 / 待确认 / 证据)。 */
+/**
+ * 守卫 4:优化稿必须显式暴露证据缺口。
+ *
+ * v2 Phase 2 起缺口有两种合法表达(docs/phase2-contract.md):**证据要求**类正文段,
+ * 或**执行前须知 / 分支条件**里的动作式 / 条件式指令;旧的 `[待补充:]` 已退役,
+ * 因此不再作为合格形式(它反而会被 responsibilityDiscipline 判违规)。
+ */
 const guardEvidenceGapDisclosure: Guard = {
   id: "research-require-evidence-gap-disclosure",
-  description: "优化稿必须包含证据缺口引导(待补充 / 待确认 / 证据);否则触发",
+  description: "优化稿必须包含证据缺口引导(证据要求 / 执行前须知 / 分支条件);否则触发",
   check(output) {
-    if (/待补充|待确认|待验证|证据|Evidence|evidence|缺口/.test(output)) return null;
-    return "优化稿未暴露任何证据缺口:必须至少给出 [待补充: …] / 待确认项或证据要求";
+    if (
+      /证据|Evidence|evidence|缺口|动手前先确认|执行前须知|分支条件|待验证|待确认/.test(output)
+    ) {
+      return null;
+    }
+    return "优化稿未暴露任何证据缺口:必须至少给出 证据要求 / 执行前须知 / 分支条件 三类形式之一";
   },
 };
 
@@ -595,11 +603,11 @@ const provenanceRules: ProvenanceRule[] = [
   {
     id: "research-gaps-explicit",
     description:
-      "证据缺口必须显式落成 [待补充: …] / Evidence Gaps 段,不得用默认值或未标注的假设替代",
+      "证据缺口必须显式落成 未决项(省略或写成动作式/条件式指令) / Evidence Gaps 段,不得用默认值或未标注的假设替代",
   },
   {
     id: "research-unknown-placeholder",
-    description: "证据不足的约束与事实写入 [待补充: …],不得自行假定",
+    description: "证据不足的约束与事实写入 未决项(省略或写成动作式/条件式指令),不得自行假定",
   },
   {
     id: "research-suggested-separated",
@@ -612,6 +620,9 @@ const provenanceRules: ProvenanceRule[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 const outputContract: OutputContract = {
+  /** v2:信息责任清单(不再强制模板段落;id 作为核对锚点)。 */
+  responsibilities: [...RESEARCH_REQUIRED_SECTIONS],
+  /** @deprecated 与 responsibilities 内容一致;保留给旧消费方。 */
   sections: [...RESEARCH_REQUIRED_SECTIONS],
   formatNote: buildFormatNote("zh"),
 };
@@ -623,6 +634,8 @@ export const researchStrategy: PromptStrategy = {
   version: RESEARCH_STRATEGY_VERSION,
   purpose:
     "把用户口语化的研究诉求编译成可直接交给 Research Agent 执行的研究型 Prompt:先证据、后结论;候选与结论分离;缺证据就写明缺口,平台限制引导替代路径。",
+  informationResponsibilities: [...RESEARCH_REQUIRED_SECTIONS],
+  /** @deprecated 保留给旧消费方;内容与 informationResponsibilities 一致。 */
   required_sections: [...RESEARCH_REQUIRED_SECTIONS],
   optional_sections: [
     "Search Log",

@@ -157,7 +157,7 @@ const guardById = (guard) => guard
   const zh = sharedRules('zh')
   assert.match(zh[0], /保真原则/)
   assert.match(zh[1], /语言匹配/)
-  assert.match(zh[2], /\[待补充:\] 纪律/)
+  assert.match(zh[2], /未决项处置纪律/, 'v2 Phase 2:共享纪律段改为「未决项处置纪律」')
   assert.match(zh[3], /建议标注纪律/)
   assert.match(zh[4], /禁入集合处理/)
   assert.match(zh[5], /跨策略不变式/)

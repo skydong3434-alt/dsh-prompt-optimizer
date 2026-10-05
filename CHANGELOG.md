@@ -42,6 +42,37 @@
   五套件；`controller` 增 c26–c28。`npm test` 385 断言全绿，既有 22 套件零回归。
 - 报告：`docs/phase1-report.md`（含验收标准逐条对照与已知限制）。
 
+### Phase 2 —— 信息责任 + 目标契约 + 未决项处置（已完成；选项 A）
+
+用户裁决 **A：现在就切换，不做过渡**。正式契约见 `docs/phase2-contract.md`。
+
+- **`[待补充:]` / `[TODO:]` 彻底退役**（不变量 I-1）。未决项改为按「谁有能力解决」分派：
+  - 执行 Agent 正常工作中自然获得（路径 / 目录 / 文件名）→ **省略**（不提示、不占位）；
+  - 必须在行动前调查且影响正确执行（版本 / 接口 / 签名 / 配置 / 字段 / 依赖 / 环境 / 默认值）
+    → **动作式**指令「动手前先确认:X」（`## 执行前须知`）；
+  - 调查结果决定后续分支 → **条件式**指令「X:存在则优先复用/沿用,不存在则按新建路径处理」
+    （`## 分支条件`）；
+  - 非阻塞 `USER_REQUIRED` → `USER_DECISION`：**不写进优化稿**（留台账 / 面板，Phase 3 追问）；
+  - `OPTIONAL` → 默认省略；确认显著改善结果才进**建议段**。
+  - **反膨胀**：不得把缺口机械改写成「由执行方自行确认 X」；每类注入 ≤4 条且去重。
+  - 新增 `src/core/responsibilities.ts`（判定 + 注入）、`src/core/disposition-render.ts`（渲染）。
+- **`required_sections` → `informationResponsibilities`**：策略定义的是信息责任（标题可自拟、
+  顺序可调整、责任不得遗漏），不再是必备模板段落；旧字段保留为 deprecated 别名。
+- **Target-aware Router**（`src/core/router.ts`）：Primary/Supporting + Target + Engine +
+  Modality + Requirement State + Triage 联合路由。优先级：手动覆盖 > 视觉目标 > Agent 目标 >
+  意图 > 兜底。`CompileResult.contract` 记录实际契约；`prompt_type` 仍表达工作意图。
+- **新增三套目标编译契约**：`strategies/agent.ts` / `image.ts` / `video.ts`（+ `_visual-shared.ts`
+  工厂），与意图策略分属两张注册表（`targetContractRegistry`），分类器闭集仍是七值。
+- **图像 / 视频不再套 Goal/Phase/Task/Tests**：描述式责任清单（主体/场景/风格/构图/光线/画幅/排除项；
+  视频另有镜头/动作时序/时长格式）+ `visual-no-task-template` 守卫**机械拒绝**模板标题。
+- **校验器**：新增 I-1（退役占位符出现即 error）与 I-2（未决项不得写成面向用户的追问）；
+  「缺口未在正文出现」不再报问题（省略是合法处置，可见性由台账 / 面板承担）。
+- **UI**：meta/done 透传 `contract`，新增「编译契约」徽章（图像描述式 / 视频描述式 / Agent 任务指令）。
+- **测试**：新增 `responsibilities` / `router` / `phase2-fixtures`（验收 A/C/D/E）三套件；
+  10 处既有 fixture/golden 按新契约更新。`npm test` 411 断言全绿。
+- **文档**：`docs/phase2-contract.md`（正式契约）、`docs/phase2-report.md`（实施报告）、
+  `docs/phase3-prerequisites.md`（Phase 3 准入清单，含用户指定的「取舍型不得被降级」必做项）。
+
 ## [v0.1.0-apo] — 2026-10-04（首个可发布版本，Release Candidate）
 
 DSH Adaptive Prompt Optimizer 完成全部 9 个阶段（P00–P09），通过 G-1..G-7

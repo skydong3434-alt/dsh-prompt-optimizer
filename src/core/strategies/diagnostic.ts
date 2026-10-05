@@ -18,6 +18,7 @@
  * 全部文案为本项目独立撰写;设计思想(先证据后修改 + 假设证伪 + 回归测试)为通用排障实践,
  * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
+import { renderDispositionBrief } from "../disposition-render.js";
 import type {
   CompileVars,
   Guard,
@@ -93,9 +94,9 @@ export const DIAGNOSTIC_SECTIONS: readonly DiagnosticSectionSpec[] = [
     id: "Expected Behavior",
     zh: "期望行为",
     guidanceZh:
-      "用户期望发生什么;来源必须能回溯到用户输入或上下文用户消息,否则写 [待补充: …]",
+      "用户期望发生什么;来源必须能回溯到用户输入或上下文用户消息,否则按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
     guidanceEn:
-      "What the user expects to happen; must trace to user input or user context, otherwise [TODO: ...]",
+      "What the user expects to happen; must trace to user input or user context, otherwise open items (omit, or write a before-acting/conditional instruction)",
   },
   {
     id: "Actual Behavior",
@@ -109,9 +110,9 @@ export const DIAGNOSTIC_SECTIONS: readonly DiagnosticSectionSpec[] = [
     id: "Evidence Collection",
     zh: "证据收集",
     guidanceZh:
-      "需要收集哪些证据(日志原文 / 复现命令输出 / 环境与版本 / 时间线 / 影响范围);证据不足逐条写 [待补充: …],不得编造",
+      "需要收集哪些证据(日志原文 / 复现命令输出 / 环境与版本 / 时间线 / 影响范围);证据不足逐条按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得编造",
     guidanceEn:
-      "Which evidence to collect (raw logs / command output / environment and versions / timeline / blast radius); gaps → [TODO: ...], never fabricated",
+      "Which evidence to collect (raw logs / command output / environment and versions / timeline / blast radius); gaps → follow the open-item disposition discipline, never fabricated",
   },
   {
     id: "Reproduction",
@@ -196,41 +197,41 @@ const DISCIPLINE_ZH = `# 诊断纪律(铁律,优先于任何措辞偏好)
 2. ${HYPOTHESES_MANDATORY}:候选原因逐条列出并保持待验证状态;不得把假设、推断或「常见原因」直接写成根因结论。
 3. ${DISPROVE_VERIFY_MANDATORY}:每个假设都要给出证伪 / 证实方式与判别标准;能先证伪的先证伪,不得只给「进一步排查」。
 4. ${FIX_REQUIRES_VERIFICATION}:修复建议必须写清改完后如何验证 / 复测(命令、对照、预期结果)以及回滚方式;只给改动、不给复测的建议视为不合格。
-5. 证据优先于结论:Root Cause Analysis 只使用已验证证据;证据不足时写「根因待验证」并落 [待补充: …],不得跳过验证直接下结论。
+5. 证据优先于结论:Root Cause Analysis 只使用已验证证据;证据不足时写「根因待验证」并按未决项处置纪律处理,不得跳过验证直接下结论。
 6. 不发明证据:日志原文 / 报错码 / 版本 / 时间戳 / 复现频率不得编造;复现不了要如实写明「暂不可复现」。
 7. 未验证不修改:在假设被验证前不得要求直接改代码;如需临时缓解,必须标注为「临时缓解(未经根因验证)」并说明代价。
-8. UNKNOWN ≠ BLOCKING:未知信息保持未知,不阻塞后续合理推进;不代用户拍板,未知写 [待补充: …]。`
+8. UNKNOWN ≠ BLOCKING:未知信息保持未知,不阻塞后续合理推进;不代用户拍板,未知按未决项处置纪律处理(省略,或写成动作式/条件式指令)。`
 
 const DISCIPLINE_EN = `# Diagnostic discipline (iron rules, above any style preference)
 1. Verification before modification: order must be Symptom / Expected / Actual → Evidence Collection → Reproduction → Hypotheses → Root Cause Analysis → Disprove-Verify → Fix Proposal → Regression Test. Fix Proposal must never appear before evidence, reproduction, hypotheses and disprove/verify.
 2. ${HYPOTHESES_MANDATORY_EN}: list candidate causes and keep each unverified; never write a hypothesis, guess, or "common cause" as the root-cause conclusion.
 3. ${DISPROVE_VERIFY_MANDATORY_EN}: for every hypothesis give a disproof / verification method and a decision criterion; prefer falsifying first, never just "investigate further".
 4. Fix Proposal must include verification / re-test steps (command, control, expected result) and rollback; a change without re-test is unacceptable.
-5. Evidence before conclusion: Root Cause Analysis uses verified evidence only; when evidence is thin, say "root cause unverified" and write [TODO: ...], never jump to a conclusion.
+5. Evidence before conclusion: Root Cause Analysis uses verified evidence only; when evidence is thin, say "root cause unverified" and follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction), never jump to a conclusion.
 6. Never fabricate evidence: raw logs / error codes / versions / timestamps / reproduction rate must not be invented; if it cannot be reproduced, say so.
 7. No modification before verification: never ask to change code before a hypothesis is verified; a stopgap must be labeled "temporary mitigation (root cause unverified)" with its cost.
-8. UNKNOWN ≠ BLOCKING: unknowns stay unknown and do not block reasonable progress; never decide for the user, write [TODO: ...].`
+8. UNKNOWN ≠ BLOCKING: unknowns stay unknown and do not block reasonable progress; never decide for the user, follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction).`
 
 const PROVENANCE_ZH = `# 来源标注(四段协议,严格遵守)
 - 明确要求:来自用户本轮输入的,每条必须附 ${quoteMarker("用户原话逐字片段")} 形式的逐字 quote
 - 上下文已确认:仅限历史中「用户」消息,同样附 quote;助手 / Agent 的发言一律不能作为用户意图证据
 - ${SUGGESTION_LABEL_ZH}:优化器主动补充的取证手段 / 观测方式 / 临时缓解,独立成段并带此前缀,永不写入要求段
-- [待补充]:证据不足、用户未说明的关键信息(如复现条件 / 环境版本),逐条写出缺什么
+- 未知项:证据不足、用户未说明的关键信息(如复现条件 / 环境版本),逐条写出缺什么
 用户明确否决过的方向属于禁入集合,不得再次作为假设 / 建议提出。`
 
 const PROVENANCE_EN = `# Provenance (four-section protocol, strictly)
 - Explicit requirements: anything from the user's current input must carry a verbatim ${quoteMarker("verbatim user fragment")} quote
 - Context-confirmed: only from "user" messages in history, each with a quote; assistant/agent messages are never evidence of user intent
 - ${SUGGESTION_LABEL_EN}: evidence-gathering methods / observability / temporary mitigations the optimizer adds, in their own section with this prefix; never in the requirements sections
-- [TODO:]: unspecified or unevidenced essentials (reproduction conditions, environment versions), each stating what is missing
+- Unknown items: unspecified or unevidenced essentials (reproduction conditions, environment versions), each stating what is missing
 Directions the user already rejected form a do-not-enter set and must not reappear as hypotheses or suggestions.`
 
 /** 渲染 10 段清单(中英并列,English id 恒出现 → required_sections 断言可跨语言命中)。 */
 function renderSections(language: StrategyLanguage): string {
   const zh = language !== "en";
   const title = zh
-    ? "# 输出段落(优化后的 Diagnostic Prompt 必须按顺序逐段出现,标题中英并列)"
-    : "# Output sections (the optimized Diagnostic Prompt must contain each, in order)";
+    ? "# 信息责任(优化后的 Diagnostic Prompt 必须逐项交代清楚;标题可自拟、顺序可调整,责任不得遗漏)"
+    : "# Information responsibilities (the optimized Diagnostic Prompt must cover each one; titles and order are yours, nothing may be omitted)";
   const lines = DIAGNOSTIC_SECTIONS.map((section) =>
     zh
       ? `- ${section.id}（${section.zh}）: ${section.guidanceZh}`
@@ -243,20 +244,20 @@ function buildFormatNote(language: StrategyLanguage): string {
   const zh = language !== "en";
   const heading = zh ? "# 输出格式(严格遵守)" : "# Output format (strictly follow)";
   const provenance = zh
-    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / [待补充]),再输出优化后的 Diagnostic Prompt。
+    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / 未知项),再输出优化后的 Diagnostic Prompt。
 - 明确要求:每条附 ${quoteMarker("用户原话")}
 - 上下文已确认:仅用「用户」消息,每条附 ${quoteMarker("原话")}
 - ${SUGGESTION_LABEL_ZH}:独立成段
-- [待补充]:证据不足项,写清缺什么`
-    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / [TODO:]), then the optimized Diagnostic Prompt.
+- 未知项:证据不足项,写清缺什么`
+    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / Unknown items), then the optimized Diagnostic Prompt.
 - Explicit requirements: each with ${quoteMarker("verbatim user fragment")}
 - Context-confirmed: user messages only, each with a quote
 - ${SUGGESTION_LABEL_EN}: its own section
-- [TODO:]: unevidenced items, stating what is missing`;
+- Unknown items: unevidenced items, stating what is missing`;
   const sections = DIAGNOSTIC_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Diagnostic Prompt 必须按顺序包含这 10 段:${sections}。Hypotheses / Disprove-Verify / Fix Proposal / Regression Test 不得省略;Fix Proposal 必须含验证 / 复测步骤,且不得出现在证据与复现之前。除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Diagnostic Prompt must contain these 10 sections in order: ${sections}. Hypotheses / Disprove-Verify / Fix Proposal / Regression Test must not be omitted; Fix Proposal must include verification / re-test steps and must not precede evidence and reproduction. Output nothing beyond the specified format.`;
+    ? `优化后的 Diagnostic Prompt 必须逐项交代以下 10 项信息责任(id 作为核对锚点,顺序可调整):${sections}。Hypotheses / Disprove-Verify / Fix Proposal / Regression Test 不得省略;Fix Proposal 必须含验证 / 复测步骤,且不得出现在证据与复现之前。除输出格式规定的内容外,不要输出多余解释。`
+    : `The optimized Diagnostic Prompt must cover these 10 information responsibilities (each id is a check anchor; order may vary): ${sections}. Hypotheses / Disprove-Verify / Fix Proposal / Regression Test must not be omitted; Fix Proposal must include verification / re-test steps and must not precede evidence and reproduction. Output nothing beyond the specified format.`;
   return [heading, provenance, body].join("\n");
 }
 
@@ -309,24 +310,21 @@ function renderWorkspace(
 }
 
 function renderMissing(
-  constraints: CompileVars["missing_constraints"],
+  vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  const zh = language !== "en";
-  const items = constraints ?? [];
-  if (!items.length) {
-    return zh
-      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …](尤其复现条件 / 环境版本 / 证据来源)。`
-      : "No gap list was provided; identify gaps during compilation and mark them as [TODO: ...] (especially reproduction conditions / environment versions / evidence sources).";
-  }
-  const header = zh
-    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
-    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
-  const lines = items.map((item) => {
-    const reason = item.reason ? `(${item.reason})` : "";
-    return `- ${todoPlaceholder(item.label, language)}${reason}`;
-  });
-  return `${header}\n${lines.join("\n")}`;
+  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
+  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
+  return renderDispositionBrief(
+    {
+      missing_constraints: vars.missing_constraints,
+      dispositions: vars.missing_dispositions,
+      missing_resolution: vars.missing_resolution,
+    },
+    language,
+    "请在编译中自行识别缺口(尤其复现条件 / 环境版本 / 证据来源)。",
+    "identify gaps during compilation (especially reproduction conditions / environment versions / evidence sources).",
+  );
 }
 
 function renderLlmDerived(
@@ -370,7 +368,7 @@ export function buildDiagnosticUser(vars: CompileVars): string {
   if (workspace) sections.push(workspace);
   const derived = renderLlmDerived(vars.llm_derived, language);
   if (derived) sections.push(derived);
-  sections.push(renderMissing(vars.missing_constraints, language));
+  sections.push(renderMissing(vars, language));
   sections.push(renderSections(language));
 
   sections.push(
@@ -535,7 +533,7 @@ const preservationRules: PreservationRule[] = [
   {
     id: "diagnostic-preserve-evidence-verbatim",
     description:
-      "用户已给出的报错原文 / 日志片段 / 时间戳不得改写、概括或重新编号;缺失的证据写 [待补充: …],不得编造",
+      "用户已给出的报错原文 / 日志片段 / 时间戳不得改写、概括或重新编号;缺失的证据按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得编造",
   },
   {
     id: "diagnostic-preserve-symptom-boundary",
@@ -573,7 +571,7 @@ const provenanceRules: ProvenanceRule[] = [
   {
     id: "diagnostic-no-conclusion-without-evidence",
     description:
-      "「已确认 / 已定位 / 根因是」类结论必须有逐字证据;否则降级为待验证假设或 [待补充: …]",
+      "「已确认 / 已定位 / 根因是」类结论必须有逐字证据;否则降级为待验证假设或 未决项(省略或写成动作式/条件式指令)",
   },
   {
     id: "diagnostic-assumption-not-confirmed",
@@ -591,6 +589,9 @@ const provenanceRules: ProvenanceRule[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 const outputContract: OutputContract = {
+  /** v2:信息责任清单(不再强制模板段落;id 作为核对锚点)。 */
+  responsibilities: [...DIAGNOSTIC_REQUIRED_SECTIONS],
+  /** @deprecated 与 responsibilities 内容一致;保留给旧消费方。 */
   sections: [...DIAGNOSTIC_REQUIRED_SECTIONS],
   formatNote: buildFormatNote("zh"),
 };
@@ -602,6 +603,8 @@ export const diagnosticStrategy: PromptStrategy = {
   version: DIAGNOSTIC_STRATEGY_VERSION,
   purpose:
     "把用户口语化的排障诉求编译成可直接照做的诊断型 Prompt:先固定症状 / 期望 / 实际并收集证据与复现步骤,再提出待验证假设、分析根因、用证伪 / 验证区分假设,最后才给带验证 / 复测的修复建议与回归测试——验证先于修改。",
+  informationResponsibilities: [...DIAGNOSTIC_REQUIRED_SECTIONS],
+  /** @deprecated 保留给旧消费方;内容与 informationResponsibilities 一致。 */
   required_sections: [...DIAGNOSTIC_REQUIRED_SECTIONS],
   optional_sections: ["Environment", "Timeline", "Impact Scope", "Workaround", "Open Questions"],
   preservationRules,

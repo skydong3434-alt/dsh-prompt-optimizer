@@ -21,6 +21,9 @@ import { diagnosticStrategy } from "./strategies/diagnostic.js";
 import { reviewStrategy } from "./strategies/review.js";
 import { creativeStrategy } from "./strategies/creative.js";
 import { generalStrategy } from "./strategies/general.js";
+import { agentStrategy } from "./strategies/agent.js";
+import { imageStrategy } from "./strategies/image.js";
+import { videoStrategy } from "./strategies/video.js";
 
 /**
  * 标记「走 legacy 编译路径」的策略:compiler 对该策略改用 Y1X1n `prompt.ts` 的
@@ -121,3 +124,33 @@ export function createStrategyRegistry(
 
 /** 缺省注册表(七策略全量),Host handler 直接使用。 */
 export const defaultStrategyRegistry: StrategyRegistry = createStrategyRegistry();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2 Phase 2:目标派生的编译契约(agent / image / video)
+//
+// 与「工作意图」正交:意图策略回答「要做什么」,目标契约回答「产出交给谁、长什么样」。
+// 单独一张表的意义:图像/视频契约**不得**和意图策略混在同一个按意图索引的命名空间里
+// (否则 `registry.get('image')` 会被当成一个「意图」,污染分类器闭集语义)。
+// 由 Target-aware Router 按 Prompt Target 取用。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 目标契约策略(按注册顺序)。 */
+export const TARGET_CONTRACT_STRATEGIES: readonly PromptStrategy[] = [
+  agentStrategy,
+  imageStrategy,
+  videoStrategy,
+];
+
+/** 目标契约注册表(`get('image'|'video'|'agent')`;未知回落 agent 之外的最保守项)。 */
+export const targetContractRegistry: StrategyRegistry = createStrategyRegistry([
+  ...TARGET_CONTRACT_STRATEGIES,
+  generalStrategy,
+]);
+
+/** 全部已注册策略(七意图 + 三目标契约);用于审计与 UI 展示。 */
+export const allStrategies: readonly PromptStrategy[] = [
+  ...DEFAULT_STRATEGIES,
+  ...TARGET_CONTRACT_STRATEGIES,
+];
+
+export { agentStrategy, imageStrategy, videoStrategy };

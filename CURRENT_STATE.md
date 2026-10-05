@@ -2,7 +2,7 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-05T06:44:00+08:00
+last_updated: 2026-10-05T09:20:00+08:00
 current_phase: DONE
 current_task: 
 status: DONE
@@ -10,7 +10,7 @@ next_task: NONE
 machine_gate: PASS
 human_review: PASS_DOD
 phase_status: **项目收官（v0.1.0-apo，DoD PASS，2026-10-04 用户最终产品验收通过）**。P00–P09 全部完成，G-1/G-VS/G-2/G-4/G-3/G-5/G-6/G-7 八个人工 Gate + DoD 全部 PASS；正式 desktop 安装落地（link/bundles=21/默认模型 opencode-go 未改/其他插件零改动/备份留存未回滚）；发布产物 v0.1.0-apo（NOTICE/CHANGELOG/README/check-dod/check-license-contamination/tag）。KNOWLEDGE：KNOWN_NON_BLOCKING_HARNESS_LIMITATION（research phrasing regex false positive）为已记录非阻塞已知限制。**Post-v0.1.0 backlog（不阻塞 DONE，未经用户开启不得自动执行）**：① 配置 origin 后决定是否推送远端 release/tag；② 以独立未参与 P07 调参的新语料做 evaluator 人工标注与正式阈值校准（R-2）；③ 后续单独治理 phrasing-sensitive deterministic regex。Runner 已停止（BLOCKING_DOD 后不再 resume）；launchd job com.apo.devrunner 保持安装但处于 not running（不自动启动）。
-v2_track: **用户明确授权的 v2 升级轨道（与已收官的 v0.1.0-apo 发布范围相互独立）**。目标：从「固定模板式 Prompt 扩写器」升级为「意图保真自适应提示词编辑器」。基线：docs/PLAN-v2-adaptive-editor.md（含现状测绘 / 复用与重构清单 / 四个 Phase / 风险 / 测试计划）。进展：**Phase 1 DONE**（分析阶段 + 阻塞门；`npm test` 385 断言全绿、既有 22 套件零回归；证据与已知限制见 docs/phase1-report.md）。Phase 2（策略=信息责任 + Target-aware 路由）、Phase 3（Discovery/Ledger/Confirmation/Validator 回流）、Phase 4（六态 UI + 选择器降级）尚未开始。本轨道不经 Runner 自动续跑（auto_continue=false），由用户逐阶段驱动；不触碰 v0.1.0-apo tag、不做 release/push。
+v2_track: **用户明确授权的 v2 升级轨道（与已收官的 v0.1.0-apo 发布范围相互独立）**。目标：从「固定模板式 Prompt 扩写器」升级为「意图保真自适应提示词编辑器」。基线：docs/PLAN-v2-adaptive-editor.md（含现状测绘 / 复用与重构清单 / 四个 Phase / 风险 / 测试计划）。进展：**Phase 1 DONE**（分析阶段 + 阻塞门；385 断言）、**Phase 2 DONE**（信息责任 + Target-aware 路由 + Agent/Image/Video 契约 + 未决项处置契约：`[待补充:]` 退役；411 断言全绿；正式契约 docs/phase2-contract.md、报告 docs/phase2-report.md）。Phase 3（Discovery/Ledger/Confirmation/Validator 回流，准入清单 docs/phase3-prerequisites.md）与 Phase 4（六态 UI + 选择器降级）尚未开始。本轨道不经 Runner 自动续跑（auto_continue=false），由用户逐阶段驱动；不触碰 v0.1.0-apo tag、不做 release/push。
 latest_commit: (v2 Phase 1 提交,见 git log)
 auto_continue: false
 stop_reason: completed: DoD PASS（user final acceptance 2026-10-04）
@@ -59,6 +59,7 @@ stop_reason: completed: DoD PASS（user final acceptance 2026-10-04）
 | P09-T01 | DONE | 备份演练 + G-7 授权正式安装（备份 ~/.dsh/backups/apo/g7-install-20261004-140136/、bundles=21、未回滚；backup-profile.sh 随 P09-T02 入库 c88e922） | **G-7（已过，2026-10-04）** |
 | P09-T02 | DONE | 发布产物 v0.1.0-apo：NOTICE/CHANGELOG/README/DoD 终检 + license 污染检查 + annotated tag（c88e922） | **DoD 终检（已过）** |
 | V2-P1 | DONE | v2 升级 Phase 1：分析阶段（意图/目标/分诊/缺失解析）+ 阻塞门（discovery_required，零编译调用）+ KEEP 零改写；385 断言全绿（docs/PLAN-v2-adaptive-editor.md、docs/phase1-report.md） | — |
+| V2-P2 | DONE | v2 升级 Phase 2（用户裁决选项 A）：`informationResponsibilities` + Target-aware Router + Agent/Image/Video 契约（图像视频不再套 Goal/Phase/Task/Tests）+ 未决项五处置（`[待补充:]` 退役）；411 断言全绿（docs/phase2-contract.md、docs/phase2-report.md、docs/phase3-prerequisites.md） | — |
 
 Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ **DoD 终检（当前）：用户声明 PASS 即项目完成**（详见 docs/dod.md；AI 不代过）。
 

@@ -85,7 +85,8 @@ export const TARGET_CATALOG: readonly TargetSpec[] = [
     nameEn: "Image generation",
     modality: "image",
     responsibilities: [
-      "主体与场景描述",
+      "主体描述(外观 / 动作 / 姿态 / 材质)",
+      "场景与环境",
       "风格 / 媒介 / 参考",
       "构图与镜头",
       "光线与色调",

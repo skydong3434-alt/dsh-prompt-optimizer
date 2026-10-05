@@ -237,6 +237,13 @@ for (const [entry, outfile] of [
   ['src/core/triage.ts', 'lib/core/triage.js'],
   ['src/core/requirements.ts', 'lib/core/requirements.js'],
   ['src/core/analyze.ts', 'lib/core/analyze.js'],
+  ['src/core/disposition-render.ts', 'lib/core/disposition-render.js'],
+  ['src/core/responsibilities.ts', 'lib/core/responsibilities.js'],
+  ['src/core/router.ts', 'lib/core/router.js'],
+  ['src/core/strategies/_visual-shared.ts', 'lib/core/strategies/_visual-shared.js'],
+  ['src/core/strategies/agent.ts', 'lib/core/strategies/agent.js'],
+  ['src/core/strategies/image.ts', 'lib/core/strategies/image.js'],
+  ['src/core/strategies/video.ts', 'lib/core/strategies/video.js'],
 ]) {
   await build({
     entryPoints: [entry],

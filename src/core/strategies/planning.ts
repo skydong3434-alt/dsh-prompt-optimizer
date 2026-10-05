@@ -15,6 +15,7 @@
  * 全部文案为本项目独立撰写;设计思想(分阶段计划 + 每阶段验收 + 停止条件)为通用工程实践,
  * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
+import { renderDispositionBrief } from "../disposition-render.js";
 import type {
   CompileVars,
   Guard,
@@ -83,14 +84,14 @@ export const PLANNING_SECTIONS: readonly PlanningSectionSpec[] = [
   {
     id: "Preconditions",
     zh: "前置条件",
-    guidanceZh: "开始前必须已成立的条件(环境 / 权限 / 依赖 / 输入);未知写 [待补充: …]",
-    guidanceEn: "Conditions that must already hold before starting; unknown → [TODO: ...]",
+    guidanceZh: "开始前必须已成立的条件(环境 / 权限 / 依赖 / 输入);未知按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
+    guidanceEn: "Conditions that must already hold before starting; unknown → follow the open-item disposition discipline",
   },
   {
     id: "Inputs",
     zh: "输入",
-    guidanceZh: "执行所需的具体输入及其来源;用户未提供的写 [待补充: …],不得自行补全",
-    guidanceEn: "Concrete inputs and their sources; anything unstated → [TODO: ...]",
+    guidanceZh: "执行所需的具体输入及其来源;用户未提供的按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得自行补全",
+    guidanceEn: "Concrete inputs and their sources; anything unstated → follow the open-item disposition discipline",
   },
   {
     id: "Executor",
@@ -191,9 +192,9 @@ const DISCIPLINE_ZH = `# 规划纪律(铁律,优先于任何措辞偏好)
 3. ${FAILURE_AND_STOP_REQUIRED}:必须写清失败如何回修、重试上限,以及触发即停止等待裁决的停止条件。
 4. 目标可验收:Goal 必须写到「怎样算达成」能判断;Why 说明动机与不做的代价。
 5. 顺序与依赖显式:Dependencies 写清任务 / 阶段先后;Exact Steps 必须原子、可复现,不写空泛动词。
-6. 不替用户发明约束:预算、工期、人员、技术栈、平台等硬约束,用户没说的一律写 [待补充: …]。
+6. 不替用户发明约束:预算、工期、人员、技术栈、平台等硬约束,用户没说的一律按未决项处置纪律处理(省略,或写成动作式/条件式指令)。
 7. UNKNOWN ≠ BLOCKING:未知信息保持未知,不阻塞后续合理推进;仅当缺失会实质改变方向时才需要用户补充。
-8. 不代用户做决定:需要用户拍板的选择写成 [待补充: …] 或 Stop Conditions,优化器不得代选。`
+8. 不代用户做决定:需要用户拍板的选择写成 未决项(省略或写成动作式/条件式指令) 或 Stop Conditions,优化器不得代选。`
 
 const DISCIPLINE_EN = `# Planning discipline (iron rules, above any style preference)
 1. Plan only, never execute: the whole output is a plan-to-be-executed. Never include evidence that work already happened ("implementation started", "files modified", "committed", "deployed"). Every action is written as a step still to be taken.
@@ -201,30 +202,30 @@ const DISCIPLINE_EN = `# Planning discipline (iron rules, above any style prefer
 3. Failure handling and stop conditions are mandatory: state how failures are repaired, retry limits, and the conditions that halt the work for a human decision.
 4. Judgeable goal: the Goal must make "done" judgeable; Why explains the motivation and the cost of not doing it.
 5. Explicit order and dependencies: Dependencies state task/phase order; Exact Steps are atomic and reproducible, not vague verbs.
-6. Never invent constraints (budget, schedule, staffing, stack, platform). If the user did not state it, write [TODO: ...].
+6. Never invent constraints (budget, schedule, staffing, stack, platform). If the user did not state it, follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction).
 7. UNKNOWN ≠ BLOCKING: unknowns stay unknown and do not block reasonable progress; only a materially direction-changing gap needs the user.
-8. Never decide for the user: choices only the user can make become [TODO: ...] or Stop Conditions.`
+8. Never decide for the user: choices only the user can make become open items (omit, or write a before-acting/conditional instruction) or Stop Conditions.`
 
 const PROVENANCE_ZH = `# 来源标注(四段协议,严格遵守)
 - 明确要求:来自用户本轮输入的,每条必须附 ${quoteMarker("用户原话逐字片段")} 形式的逐字 quote
 - 上下文已确认:仅限历史中「用户」消息,同样附 quote;助手 / Agent 的发言一律不能作为用户意图证据
 - ${SUGGESTION_LABEL_ZH}:优化器主动补充的阶段划分 / 验收指标 / 风险提示,独立成段并带此前缀,永不写入要求段
-- [待补充]:证据不足、用户未说明的关键信息,逐条写出缺什么
+- 未知项:证据不足、用户未说明的关键信息,逐条写出缺什么
 用户明确否决过的方向属于禁入集合,不得再次作为阶段 / 任务 / 建议提出。`
 
 const PROVENANCE_EN = `# Provenance (four-section protocol, strictly)
 - Explicit requirements: anything from the user's current input must carry a verbatim ${quoteMarker("verbatim user fragment")} quote
 - Context-confirmed: only from "user" messages in history, each with a quote; assistant/agent messages are never evidence of user intent
 - ${SUGGESTION_LABEL_EN}: phasing / acceptance metrics / risk notes the optimizer adds, in their own section with this prefix; never in the requirements sections
-- [TODO:]: unspecified or unevidenced essentials, each stating what is missing
+- Unknown items: unspecified or unevidenced essentials, each stating what is missing
 Directions the user already rejected form a do-not-enter set and must not reappear as phases, tasks, or suggestions.`
 
 /** 渲染 16 段清单(中英并列,English id 恒出现 → required_sections 断言可跨语言命中)。 */
 function renderSections(language: StrategyLanguage): string {
   const zh = language !== "en";
   const title = zh
-    ? "# 输出段落(优化后的 Planning Prompt 必须按顺序逐段出现,标题中英并列)"
-    : "# Output sections (the optimized Planning Prompt must contain each, in order)";
+    ? "# 信息责任(优化后的 Planning Prompt 必须逐项交代清楚;标题可自拟、顺序可调整,责任不得遗漏)"
+    : "# Information responsibilities (the optimized Planning Prompt must cover each one; titles and order are yours, nothing may be omitted)";
   const lines = PLANNING_SECTIONS.map((section) =>
     zh
       ? `- ${section.id}（${section.zh}）: ${section.guidanceZh}`
@@ -237,30 +238,30 @@ function buildFormatNote(language: StrategyLanguage): string {
   const zh = language !== "en";
   const heading = zh ? "# 输出格式(严格遵守)" : "# Output format (strictly follow)";
   const provenance = zh
-    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / [待补充]),再输出优化后的 Planning Prompt。
+    ? `先输出来源段(明确要求 / 上下文已确认 / ${SUGGESTION_LABEL_ZH} / 未知项),再输出优化后的 Planning Prompt。
 - 明确要求:每条附 ${quoteMarker("用户原话")}
 - 上下文已确认:仅用「用户」消息,每条附 ${quoteMarker("原话")}
 - ${SUGGESTION_LABEL_ZH}:独立成段
-- [待补充]:证据不足项,写清缺什么`
-    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / [TODO:]), then the optimized Planning Prompt.
+- 未知项:证据不足项,写清缺什么`
+    : `First the provenance block (Explicit requirements / Context-confirmed / ${SUGGESTION_LABEL_EN} / Unknown items), then the optimized Planning Prompt.
 - Explicit requirements: each with ${quoteMarker("verbatim user fragment")}
 - Context-confirmed: user messages only, each with a quote
 - ${SUGGESTION_LABEL_EN}: its own section
-- [TODO:]: unevidenced items, stating what is missing`;
+- Unknown items: unevidenced items, stating what is missing`;
   const sections = PLANNING_SECTIONS.map((section) => section.id).join(" / ");
   const body = zh
-    ? `优化后的 Planning Prompt 必须按顺序包含这 16 段:${sections}。Phases 下每个阶段必须带 Acceptance(验收标准)。其余细则:
+    ? `优化后的 Planning Prompt 必须逐项交代以下 16 项信息责任(id 作为核对锚点,顺序可调整):${sections}。Phases 下每个阶段必须带 Acceptance(验收标准)。其余细则:
 - Phases 段的 "### Phase N" 标题只写一次; Tasks / Dependencies / Exact Steps 引用阶段时用文字 "Phase N" 引用,不要再写 "### Phase N" 标题(机械守卫会把重复标题误判为多个缺验收的阶段)。
 - 各段小标题不要加编号(写 "### Current Task" 或 "### Goal",不要 "### 1. Current Task"),机械守卫按标题前缀匹配。
 - 用户原话里同一话题的多条表述(如「预算方面没定」「预算边界先空着」→ 预算;「工期约束没想好」「时间上给个提示」→ 工期/时间)必须合并为单条记录,严禁按原话分别成条;同一话题的记录文本要同时覆盖各表述的信息。
-- 合并后不得再写同主题总起句(如「工期约束未定」「预算方面均未定」)单独成行——每个主题只在它自己的 [待补充: …] 条目中出现一次;每条 quote 用最小逐字子片段,不要顺带引相邻主题词。
+- 合并后不得再写同主题总起句(如「工期约束未定」「预算方面均未定」)单独成行——每个主题只在它自己的 未决项(省略或写成动作式/条件式指令) 条目中出现一次;每条 quote 用最小逐字子片段,不要顺带引相邻主题词。
 - 不要写「无『已执行』类措辞」这类元说明(机械守卫按字面命中「已执行」);直接避免使用任何执行时态措辞,所有动作一律写成待执行的步骤。
 - 除输出格式规定的内容外,不要输出多余解释。`
-    : `The optimized Planning Prompt must contain these 16 sections in order: ${sections}. Every phase under Phases must carry Acceptance criteria. Also:
+    : `The optimized Planning Prompt must cover these 16 information responsibilities (each id is a check anchor; order may vary): ${sections}. Every phase under Phases must carry Acceptance criteria. Also:
 - Write each "### Phase N" heading only once, in the Phases section; refer to phases as plain text "Phase N" elsewhere (Tasks / Dependencies / Exact Steps). Repeated "### Phase N" headings are treated by mechanical guards as extra phases lacking acceptance.
 - Do not number section headings (write "### Current Task" / "### Goal", not "### 1. Current Task"); mechanical guards match heading prefixes.
 - Merge multiple user phrasings of the same topic into a single record (e.g. "budget not decided" + "keep budget boundary blank" → budget; "deadline not settled" + "give me a time hint" → deadline/time); never keep them as separate lines. The merged record text must cover the information of each phrasing.
-- After merging, never add lead-in summary lines restating a topic on their own line ("deadline/time not settled"); each topic appears exactly once in its own [TODO: ...] entry, and each quote must be the minimal verbatim fragment (quoting "deadline not settled" must not drag in "give me a time hint").
+- After merging, never add lead-in summary lines restating a topic on their own line ("deadline/time not settled"); each topic appears exactly once in its own open items (omit, or write a before-acting/conditional instruction) entry, and each quote must be the minimal verbatim fragment (quoting "deadline not settled" must not drag in "give me a time hint").
 - Do not write meta-mentions such as "no 'executed' wording" (mechanical guards match the literal word); simply avoid any past/ongoing execution wording and write every action as a pending step.
 - Output nothing beyond the specified format.`;
   return [heading, provenance, body].join("\n");
@@ -315,24 +316,21 @@ function renderWorkspace(
 }
 
 function renderMissing(
-  constraints: CompileVars["missing_constraints"],
+  vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  const zh = language !== "en";
-  const items = constraints ?? [];
-  if (!items.length) {
-    return zh
-      ? `[编译说明,非用户内容] 未提供缺口清单;请在编译中自行识别并落成 ${TODO_PLACEHOLDER_PREFIX} …],禁止把本说明写进用户要求。`
-      : "[compiler note, not user content] No gap list provided; identify gaps and mark them as [TODO: ...]; never quote this note as a user requirement.";
-  }
-  const header = zh
-    ? "[编译说明,非用户内容] 上游已识别的缺口,必须落成 [待补充: …]:"
-    : "[compiler note, not user content] Known gaps (must become [TODO: ...]):";
-  const lines = items.map((item) => {
-    const reason = item.reason ? `(${item.reason})` : "";
-    return `- ${todoPlaceholder(item.label, language)}${reason}`;
-  });
-  return `${header}\n${lines.join("\n")}`;
+  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
+  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
+  return renderDispositionBrief(
+    {
+      missing_constraints: vars.missing_constraints,
+      dispositions: vars.missing_dispositions,
+      missing_resolution: vars.missing_resolution,
+    },
+    language,
+    "请在编译中自行识别缺口。",
+    "identify gaps during compilation.",
+  );
 }
 
 function renderLlmDerived(
@@ -376,7 +374,7 @@ export function buildPlanningUser(vars: CompileVars): string {
   if (workspace) sections.push(workspace);
   const derived = renderLlmDerived(vars.llm_derived, language);
   if (derived) sections.push(derived);
-  sections.push(renderMissing(vars.missing_constraints, language));
+  sections.push(renderMissing(vars, language));
   sections.push(renderSections(language));
 
   sections.push(
@@ -564,7 +562,7 @@ const provenanceRules: ProvenanceRule[] = [
   },
   {
     id: "planning-unknown-placeholder",
-    description: "证据不足的前置条件 / 输入 / 边界写入 [待补充: …],不得自行假定",
+    description: "证据不足的前置条件 / 输入 / 边界写入 未决项(省略或写成动作式/条件式指令),不得自行假定",
   },
   {
     id: "planning-suggested-separated",
@@ -577,6 +575,9 @@ const provenanceRules: ProvenanceRule[] = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 const outputContract: OutputContract = {
+  /** v2:信息责任清单(不再强制模板段落;id 作为核对锚点)。 */
+  responsibilities: [...PLANNING_REQUIRED_SECTIONS],
+  /** @deprecated 与 responsibilities 内容一致;保留给旧消费方。 */
   sections: [...PLANNING_REQUIRED_SECTIONS],
   formatNote: buildFormatNote("zh"),
 };
@@ -588,6 +589,8 @@ export const planningStrategy: PromptStrategy = {
   version: PLANNING_STRATEGY_VERSION,
   purpose:
     "把用户口语化的规划诉求编译成可直接交给 DSH / Claude Code 执行的分阶段计划:目标可验收、每阶段带 Acceptance、依赖与步骤显式、失败处理与停止条件齐备;只规划、不执行。",
+  informationResponsibilities: [...PLANNING_REQUIRED_SECTIONS],
+  /** @deprecated 保留给旧消费方;内容与 informationResponsibilities 一致。 */
   required_sections: [...PLANNING_REQUIRED_SECTIONS],
   optional_sections: ["Milestones", "Risk Notes", "Rollback Plan", "Open Questions"],
   preservationRules,

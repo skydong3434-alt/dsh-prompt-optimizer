@@ -698,17 +698,17 @@ export function apply(ctx: Context, config: Config) {
             // ── 归一化 + 策略选择 + 编译载荷(compilePrompt 10 步编排)────────
             // override 与 AUTO 共用同一入口:合法 promptType 由 compilePrompt 函数级
             // 直达 registry(不存在任何分类调用);否则使用上面的分析结果。
-            const effectiveType = analysis!.prompt_type
-            const legacy = isLegacyGeneral(defaultStrategyRegistry.get(effectiveType))
+            // v2 Phase 2:把分析结果交给编译器,由 Target-aware Router 选编译契约
+            // (图像/视频走描述式契约,Agent 目标走任务指令契约,其余按意图)。
             const plan = compilePrompt({
               raw_input: text,
               turns: context,
               workspace_metadata: {},
               ...(manualType ? { promptType: manualType } : { classifier: classifier! }),
+              analysis: analysis!,
               language,
               mode,
               previous,
-              legacy,
             })
             const strategy = plan.strategy
             const effectiveClassifier = plan.classifier
@@ -720,7 +720,8 @@ export function apply(ctx: Context, config: Config) {
             // 编译结果尚未产出,provenance_ok 在 meta 里是乐观值——done 携带真实值。
             send({
               type: 'meta',
-              prompt_type: strategy.type,
+              prompt_type: analysis!.prompt_type,
+              ...(strategy.type !== analysis!.prompt_type ? { contract: strategy.type } : {}),
               confidence_level: toConfidenceLevel(effectiveClassifier.confidence_internal),
               missing_constraints: missing,
               rationale: effectiveClassifier.rationale,
