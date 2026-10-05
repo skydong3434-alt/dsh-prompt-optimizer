@@ -18,7 +18,7 @@
  *      - 无证据量化（预算 / 金额 / 工期 / 时限 / 平台 / 模型 / 技术栈）→ error。
  *
  *   ③ Unknown（未知纪律）
- *      - evidence 不足的关键信息必须落成 `[待补充: …]`（中英同构）且可在优化稿中定位；
+ *      - evidence 不足的关键信息必须按**处置契约**表达(执行前须知 / 分支条件 / 省略),`[待补充:]` 已退役;
  *      - `missing_constraints` 的每条缺口都必须对用户可见，不得被悄悄吞掉；
  *      - 「自行假设的硬约束」由 ② 的无证据量化规则兜住。
  *
@@ -421,7 +421,9 @@ const QUANTIFICATION_PATTERNS: readonly QuantificationPattern[] = [
   {
     label: "平台/运行环境",
     pattern:
-      /(?:平台|操作系统|运行环境|部署到|运行在|系统版本|OS)[^\n]{0,8}?[：:为是]?\s*([A-Za-z][A-Za-z0-9.+\-_]{1,20})/,
+      // 注意:必须给裸 OS 加词边界 —— 否则会命中 `<<<DIAGNOSIS>>>` 里的 "OSIS"
+      // (Phase 4 清理:这是历史 regex bug,迁移 general 后才暴露出来)。
+      /(?:平台|操作系统|运行环境|部署到|运行在|系统版本|(?<![A-Za-z])OS(?![A-Za-z]))[^\n]{0,8}?[：:为是]?\s*([A-Za-z][A-Za-z0-9.+\-_]{1,20})/,
   },
   {
     label: "模型/引擎/框架",
@@ -532,7 +534,7 @@ export function validateInferenceAndSuggestion(
         issue(
           "error",
           VALIDATION_RULE.unprovenStrongClaim,
-          `发现无证据强断言「${claim}」:只能写成假设 / 研究问题 / [待补充: …],不得作为结论`,
+          `发现无证据强断言「${claim}」:只能写成假设 / 研究问题 / 执行前须知(动作式),不得作为结论`,
         ),
       );
     }
@@ -552,7 +554,7 @@ export function validateInferenceAndSuggestion(
         issue(
           "error",
           VALIDATION_RULE.unevidencedQuantification,
-          `发现无证据量化约束「${phrase}」(${label}):用户未提供的量化硬约束必须写成 [待补充: …]`,
+          `发现无证据量化约束「${phrase}」(${label}):用户未提供的量化硬约束必须写成执行前须知(动作式)或分支条件,不得当作已知事实`,
         ),
       );
       break;
@@ -567,7 +569,7 @@ export function validateInferenceAndSuggestion(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * 未知层：未知项与 `missing_constraints` 必须落成 `[待补充: …]` / `[TODO: …]`
+ * 未知层：`[待补充:]` / `[TODO:]` 已退役(出现即 error);未决项按处置契约表达
  * 且在优化稿中可定位；出现无法定位的未知项 → error。
  */
 export function validateUnknowns(

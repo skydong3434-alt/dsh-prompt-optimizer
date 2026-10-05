@@ -44,7 +44,11 @@ export function isLegacyGeneral(strategy: PromptStrategy): boolean {
  * 过渡期仍标记为 legacy(host 编译路径走 prompt.ts,零回归);`generalFallbackStrategy`
  * 作为向后兼容别名保留,旧引用(research 兜底 / 旧单测)无需改动。
  */
-LEGACY_GENERAL.add(generalStrategy);
+// Phase 4:general 已迁入 v2 information-responsibility / target-aware 契约,
+// **不再**标记为 legacy —— 正常路由永远不会进入 legacy required_sections 主路径。
+// `LEGACY_GENERAL` 与 `isLegacyGeneral` 保留为 DEPRECATED-BUT-UNREACHABLE:
+// 它们只服务于兼容旧单测与回归 harness 的显式 legacy 调用,生产路径不再命中。
+// LEGACY_GENERAL.add(generalStrategy);
 
 /** 向后兼容别名:registry 的 general 兜底策略。 */
 export const generalFallbackStrategy: PromptStrategy = generalStrategy;

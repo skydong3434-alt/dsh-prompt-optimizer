@@ -10,12 +10,28 @@ import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
 import { isMetaAnalysisCall } from '../lib/core/analyze.js'
 
+// Phase 4:general 已迁入 v2 契约,兜底路径同样使用四段协议(不再走 legacy ANALYSIS 格式)
 const CANNED = [
-  '<<<ANALYSIS>>>',
+  '<<<DIAGNOSIS>>>',
   '目标清晰度 | 目标模糊 | 明确产出物',
-  '输出规格 | 缺少格式要求 | 指定 Markdown 输出',
+  '<<<EXPLICIT>>>',
+  // 中性:不带 quote(共享 fixture 会被多个不同输入复用;伪造 quote 会被 Validator 回流)
+  '(无)',
+  '<<<CONTEXT>>>',
+  '(无)',
+  '<<<SUGGESTED>>>',
+  '(无)',
+  '<<<UNKNOWN>>>',
+  '(无)',
   '<<<OPTIMIZED>>>',
-  '你是一名资深代码评审。请审查以下 PR……',
+  '## Request（请求要点）',
+  '- 你是一名资深代码评审,请审查以下 PR……',
+  '## Context & Inputs（上下文与输入）',
+  '- 用户提供的 PR 片段',
+  '## Constraints & Exclusions（约束与排除）',
+  '- 用户未给出额外约束',
+  '## Deliverable Shape（产出形态）',
+  '- Markdown 评审意见',
   '<<<END>>>',
 ].join('\n')
 
@@ -239,7 +255,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
         yield { type: 'text-delta', index: 0, text: '<think>\n推理:应输出 <<<OPTIMIZED>>> ... <<<END>>>' }
         yield { type: 'text-delta', index: 0, text: '再想想 <<<OPTIMIZED>>> 碎片 <<<END>>>' }
         yield { type: 'text-delta', index: 0, text: '</think>' }
-        yield { type: 'text-delta', index: 0, text: '<<<ANALYSIS>>>\n简要分析\n' }
+        yield { type: 'text-delta', index: 0, text: '<<<DIAGNOSIS>>>\n简要分析\n' }
         yield { type: 'text-delta', index: 0, text: '<<<OPTIMIZED>>>\n真正的优化结果\n<<<END>>>\n' }
         yield { type: 'finish', reason: { kind: 'stop' } }
       },
@@ -306,11 +322,11 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   console.log('✓ 9 快速模式提示词')
 }
 
-// 9b. 默认完整模式:提示词要求 ANALYSIS + OPTIMIZED 双段
+// 9b. 默认完整模式:提示词要求诊断 + 优化稿双段(Phase 4:general 走 v2 四段协议)
 {
   const { handler, getOptions } = await setup()
   await call(handler, { text: 'x', provider: 'p', model: 'm' })
-  assert.ok(getOptions().system.includes('ANALYSIS'))
+  assert.ok(getOptions().system.includes('DIAGNOSIS'))
   assert.ok(getOptions().system.includes('OPTIMIZED'))
   console.log('✓ 9b 默认完整模式提示词')
 }
@@ -370,8 +386,8 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const { handler, getOptions } = await setup({ config: { language: 'fr', mode: 'custom', reasoningEffort: 'weird' } })
   const res = await call(handler, { text: 'x', provider: 'p', model: 'm' })
   doneOf(res)
-  assert.ok(getOptions().system.includes('ANALYSIS'), '未知 mode 应按完整模式处理')
-  assert.match(getOptions().system, /资深提示词工程专家/, '未知 language 应按中文处理')
+  assert.ok(getOptions().system.includes('DIAGNOSIS'), '未知 mode 应按完整模式处理')
+  assert.match(getOptions().system, /General 通用 Prompt 编译器/, '未知 language 应按中文处理')
   console.log('✓ 11 旧版非法枚举值归一化')
 }
 
@@ -546,8 +562,10 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const sent = getOptions().messages[0].content[0].text
   assert.ok(!sent.includes('conversation-context'), '关闭后不得出现上下文段')
   assert.ok(!sent.includes('previous-optimized'), '关闭后不得出现记忆链段')
-  assert.equal(sent, '以下是我的提示词草稿:\n\n我的草稿', '关闭后应保持无上下文格式')
-  assert.match(getOptions().system, /按结构模板组织/, '无上下文应走 template 策略(结构模板)')
+  // Phase 4:general 走 v2 载荷(处置说明 + 模式说明 + 草稿),不再有 legacy 单行格式
+  assert.ok(sent.includes('<prompt-draft>\n我的草稿\n</prompt-draft>'), '关闭后应直接以草稿为主体')
+  assert.doesNotMatch(sent, /-\s*\[待补充:/, 'v2:载荷不得以占位符形式列出缺口')
+  assert.match(getOptions().system, /信息责任清单|信息责任/, '无上下文应走 template 策略(信息责任清单)')
   console.log('✓ 17b 关闭后忽略上下文')
 }
 
@@ -569,7 +587,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const big = await setup()
   await call(big.handler, { text: 'x', provider: 'p', model: 'm', previous: '长'.repeat(3000) })
   const sentBig = big.getOptions().messages[0].content[0].text
-  assert.ok(sentBig.length < 3000, 'previous 应被截断到 1500 字符级')
+  assert.ok(!sentBig.includes('长'.repeat(1600)), 'previous 应被截断到 1500 字符级')
   console.log('✓ 18 记忆链进入模型消息')
 }
 

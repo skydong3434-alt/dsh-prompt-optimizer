@@ -31,15 +31,13 @@ const readSource = (rel) => readFileSync(join(here, rel), 'utf8')
 const REAL_CASE =
   '帮我把下面这段需求整理成给下游 agent 的提示词:用 Node 写个 CLI,统计错误并输出 Markdown 报告,不要引入新依赖'
 
+// Phase 4:general 迁入 v2 契约 —— 只有 4 项 target-neutral 信息责任,
+// 不再是 Goal/Why/Phase/Task/Steps/Tests/Acceptance 固定模板。
 const EXPECTED_SECTIONS = [
-  'Role',
-  'Task Goal',
-  'Input Materials',
-  'Output Format',
-  'Content Requirements',
-  'Style',
-  'Constraints',
-  'Success Criteria',
+  'Request',
+  'Context & Inputs',
+  'Constraints & Exclusions',
+  'Deliverable Shape',
 ]
 
 const emptyResult = { explicit_requirements: [], context_requirements: [] }
@@ -58,44 +56,39 @@ const GOOD_GENERAL_OUTPUT = [
   '## 上下文已确认',
   '- (无)',
   '## 优化器建议(可忽略)',
-  '- 建议(可忽略) 先补齐输出篇幅与目标受众',
-  '## 待补充',
-  '- [待补充: 期望的输出篇幅与受众]',
+  '- 建议(可忽略) 可补一段使用示例',
+  '## 未知项',
+  '- (无)',
   '## 优化后的 Prompt',
-  '### Role（角色）',
-  '- [待补充: 角色定位]',
-  '### Task Goal（任务目标）',
-  '- 把用户需求整理成给下游 Agent 的提示词。',
-  '### Input Materials（输入材料）',
-  '- 用户草稿与 workspace 事实。',
-  '### Output Format（输出格式）',
-  '- Markdown 报告。',
-  '### Content Requirements（内容要求）',
-  '- 用 Node 编写 CLI,统计错误数量并给出 Markdown 报告。',
-  '### Style（风格）',
-  '- [待补充: 表达风格]',
-  '### Constraints（约束）',
-  '- 不引入新依赖,不得替换草稿中的术语。',
-  '### Success Criteria（成功标准）',
-  '- 草稿中的每个原子信息在优化稿中都有对应;不引入新依赖;输出为 Markdown。',
+  '### Request（请求要点）',
+  '- 用 Node 写个 CLI,统计错误并输出 Markdown 报告,给下游 Agent 使用。',
+  '### Context & Inputs（上下文与输入）',
+  '- 用户给出的原始需求文本。',
+  '### Constraints & Exclusions（约束与排除）',
+  '- 不要引入新依赖 [quote: 不要引入新依赖]',
+  '### Deliverable Shape（产出形态）',
+  '- 输出 Markdown 报告。',
 ].join('\n')
 
-// 1. 契约形状:type / 独立版本 / 8 板块锚点 / 强制板块
+// 1. 契约形状:type / 独立版本 / 信息责任锚点 / 强制项(Phase 4:v2 契约)
 {
   assert.equal(general.type, 'general')
   assert.equal(general.version, GENERAL_STRATEGY_VERSION)
-  assert.equal(general.version, '0.1.0', '策略必须带独立版本号 0.1.0')
   assert.deepEqual(general.required_sections, EXPECTED_SECTIONS)
-  assert.equal(general.required_sections.length, 8)
+  assert.deepEqual(general.informationResponsibilities, EXPECTED_SECTIONS, 'v2:主字段是信息责任')
+  assert.equal(general.required_sections.length, 4, '反膨胀:只有 4 项信息责任')
+  assert.deepEqual(general.outputContract.responsibilities, EXPECTED_SECTIONS)
   assert.deepEqual(general.outputContract.sections, EXPECTED_SECTIONS)
   assert.deepEqual(GENERAL_REQUIRED_SECTIONS, EXPECTED_SECTIONS)
-  assert.deepEqual(GENERAL_MANDATORY_SECTIONS, ['Task Goal', 'Success Criteria'])
-  assert.ok(GENERAL_MANDATORY_SECTIONS.includes('Task Goal'), 'Task Goal 必须是强制板块')
-  assert.ok(GENERAL_MANDATORY_SECTIONS.includes('Success Criteria'), 'Success Criteria 必须是强制板块')
+  assert.deepEqual(GENERAL_MANDATORY_SECTIONS, ['Request'])
+  // ★ 不得再出现固定模板板块(用户明确要求)
+  for (const forbidden of ['Goal', 'Why', 'Phase', 'Task', 'Task Goal', 'Steps', 'Tests', 'Acceptance', 'Success Criteria']) {
+    assert.ok(!EXPECTED_SECTIONS.includes(forbidden), `general 不得再使用模板板块「${forbidden}」`)
+  }
   assert.ok(general.purpose.length > 0)
   assert.equal(typeof general.buildSystem, 'function')
   assert.equal(typeof general.buildUser, 'function')
-  console.log('✓ gn1 契约形状:type/version 0.1.0/8 板块锚点/强制板块')
+  console.log('✓ gn1 契约形状:type/version/4 项信息责任(无模板板块)')
 }
 
 // 2. 零 ctx / UI / Host import(纯数据 + 纯函数,可独立升级)
@@ -129,7 +122,7 @@ const GOOD_GENERAL_OUTPUT = [
   assert.match(sys, /建议\(可忽略\)/)
   assert.ok(sys.includes(INVARIANT_UNKNOWN_NOT_BLOCKING_ZH), 'zh system 必须含 invariant A')
   assert.ok(sys.includes(INVARIANT_SUGGESTED_NOT_REQUIREMENT_ZH), 'zh system 必须含 invariant B')
-  console.log('✓ gn3 buildSystem(zh):8 板块 + 双模式 + 铁律 + invariant A·B')
+  console.log('✓ gn3 buildSystem(zh):4 项信息责任 + 双模式 + 铁律 + invariant A·B')
 }
 
 // 4. buildSystem('en'):同构英文版,8 板块锚点仍全部出现
@@ -142,7 +135,7 @@ const GOOD_GENERAL_OUTPUT = [
   assert.match(sys, /distill intent mode/)
   assert.match(sys, /TODO/)
   assert.match(sys, /UNKNOWN ≠ BLOCKING/)
-  console.log('✓ gn4 buildSystem(en):双语同构 + 8 板块')
+  console.log('✓ gn4 buildSystem(en):双语同构 + 4 项信息责任')
 }
 
 // 5. buildSystem 模式选择:template / intent / auto(默认同时给出两套纪律)
@@ -244,33 +237,29 @@ const GOOD_GENERAL_OUTPUT = [
   console.log('✓ gn8 buildUser 语言匹配 + template 模式')
 }
 
-// 9. 守卫 1:8 板块必出(sectionPresence 工厂)
+// 9. 守卫 1:信息责任必出(sectionPresence 工厂;Phase 4 改为 4 项责任)
 {
   const guard = guardById('general-required-sections')
-  assert.ok(guard, '必出板块守卫必须存在')
-  assert.equal(guard.check(GOOD_GENERAL_OUTPUT, emptyResult, ''), null, '8 板块必须齐全')
+  assert.ok(guard, '信息责任守卫必须存在')
+  assert.equal(guard.check(GOOD_GENERAL_OUTPUT, emptyResult, ''), null, '4 项信息责任必须齐全')
   assert.ok(
-    guard.check(GOOD_GENERAL_OUTPUT.split('Style').join('风格'), emptyResult, ''),
-    '缺 Style → 必须触发',
+    guard.check(GOOD_GENERAL_OUTPUT.split('Constraints & Exclusions').join('约束'), emptyResult, ''),
+    '缺 Constraints & Exclusions → 必须触发',
   )
-  console.log('✓ gn9 守卫 1:8 板块必出')
+  console.log('✓ gn9 守卫 1:4 项信息责任必出')
 }
 
-// 10. 守卫 2(error 级):Task Goal / Success Criteria 强制板块
+// 10. 守卫 2(error 级):Request 强制项
 {
   const guard = guardById('general-mandatory-goal-and-success')
-  assert.ok(guard, '强制板块守卫必须存在')
-  assert.match(guard.description, /error/, '强制板块守卫必须是 error 级')
+  assert.ok(guard, '强制项守卫必须存在')
+  assert.match(guard.description, /error/, '强制项守卫必须是 error 级')
   assert.equal(guard.check(GOOD_GENERAL_OUTPUT, emptyResult, ''), null, '齐备 → 放行')
   assert.ok(
-    guard.check(GOOD_GENERAL_OUTPUT.split('Task Goal').join('目标'), emptyResult, ''),
-    '缺 Task Goal → 必须触发',
+    guard.check(GOOD_GENERAL_OUTPUT.split('### Request（请求要点）').join('### 请求'), emptyResult, ''),
+    '缺 Request → 必须触发',
   )
-  assert.ok(
-    guard.check(GOOD_GENERAL_OUTPUT.split('Success Criteria').join('SC'), emptyResult, ''),
-    '缺 Success Criteria → 必须触发',
-  )
-  console.log('✓ gn10 守卫 2:强制板块 Task Goal / Success Criteria')
+  console.log('✓ gn10 守卫 2:强制项 Request')
 }
 
 // 11. 守卫 3:无证据硬约束(铁律 2:无证据不新增硬约束)

@@ -241,6 +241,8 @@ for (const [entry, outfile] of [
   ['src/core/responsibilities.ts', 'lib/core/responsibilities.js'],
   ['src/core/router.ts', 'lib/core/router.js'],
   ['src/core/discovery.ts', 'lib/core/discovery.js'],
+  ['src/core/validation-flow.ts', 'lib/core/validation-flow.js'],
+  ['src/core/ledger-reconcile.ts', 'lib/core/ledger-reconcile.js'],
   ['src/core/strategies/_visual-shared.ts', 'lib/core/strategies/_visual-shared.js'],
   ['src/core/strategies/agent.ts', 'lib/core/strategies/agent.js'],
   ['src/core/strategies/image.ts', 'lib/core/strategies/image.js'],

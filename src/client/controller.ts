@@ -88,6 +88,10 @@ export interface OptimizeResult {
   provenanceOk: boolean
   /** v2 分析结论;旧版 Host 为 null。 */
   analysisView?: AnalysisView | null
+  /** Phase 4:真实 Requirement Ledger(done 下发;UI 的「已确认需求」只读它)。 */
+  ledger?: LedgerView[]
+  /** Phase 4:缺失解析(四分类;done 下发)。 */
+  missing_resolution?: ResolutionView[]
   /** KEEP 分诊:优化稿逐字等于用户输入(未做任何改写)。 */
   keep?: boolean
 }
@@ -184,7 +188,7 @@ export interface OptimizerState {
    * discovery = 分析发现「只有用户本人能决定」的阻塞项:本轮不生成,
    * 面板展示待确认清单(v2 §C12:只有 Discovery 能阻断生成)。
    */
-  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation'
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation' | 'validating'
   error: string | null
   result: OptimizeResult | null
   /** 流式进行中的分段实况,仅 loading/cancelled 期间有值(cancelled 时为取消瞬间的定格)。 */
@@ -201,6 +205,55 @@ export interface OptimizerState {
   discovery: DiscoveryView | null
   /** requirement_confirmation 载荷(仅 status==='confirmation' 时有值)。 */
   confirmation: ConfirmationStateView | null
+  /** Phase 4:Validator 回流信息(仅 error 且由回流触发时有值)。 */
+  returned: { action: string; reasonCode: string; detail: string; returns: number } | null
+}
+
+/**
+ * 六态 UI 的**单一状态源**(Phase 4)。
+ *
+ *   analyzing              正在理解任务(还没有分析结论)
+ *   discovery_required     还差 N 个会明显改变方案的决定
+ *   requirement_confirmation  决策完备,等用户确认
+ *   compiling              正在整理提示词
+ *   validating             正在检查意图、来源和约束
+ *   complete               已完成
+ * 另有 error / cancelled 两个终态(不进入正常六态)。
+ */
+export type OptimizerStage =
+  | 'idle'
+  | 'analyzing'
+  | 'discovery_required'
+  | 'requirement_confirmation'
+  | 'compiling'
+  | 'validating'
+  | 'complete'
+  | 'error'
+  | 'cancelled'
+
+/** 由底层 status + meta 派生六态(纯函数,便于测试)。 */
+export function deriveStage(state: {
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation' | 'validating'
+  meta: OptimizerMeta | null
+}): OptimizerStage {
+  switch (state.status) {
+    case 'idle':
+      return 'idle'
+    case 'loading':
+      return state.meta ? 'compiling' : 'analyzing'
+    case 'discovery':
+      return 'discovery_required'
+    case 'confirmation':
+      return 'requirement_confirmation'
+    case 'validating':
+      return 'validating'
+    case 'done':
+      return 'complete'
+    case 'cancelled':
+      return 'cancelled'
+    default:
+      return 'error'
+  }
 }
 
 const ROUTE = '/dsh-prompt-optimizer/optimize'
@@ -217,6 +270,7 @@ const INITIAL: OptimizerState = {
   meta: null,
   discovery: null,
   confirmation: null,
+  returned: null,
 }
 
 /** 结构化 provenance 数组(done 事件字段缺失 / 旧版 Host 时返回空数组)。 */
@@ -542,7 +596,7 @@ export function splitCommandPrefix(text: string): { prefix?: string; body: strin
  */
 export function shouldAutoClose(input: {
   open: boolean
-  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation'
+  status: 'idle' | 'loading' | 'done' | 'error' | 'cancelled' | 'discovery' | 'confirmation' | 'validating' | 'validating'
   draft: string
   prevRunning: boolean
   running: boolean
@@ -912,6 +966,24 @@ export function createOptimizerController(
                 error: null,
               })
             }
+          } else if (event.type === 'validating') {
+            // 校验阶段:仍可能变成 returned / error,因此只切阶段,不落终态。
+            set({ status: 'validating' })
+          } else if (event.type === 'returned') {
+            // Phase 4:Validator 可控回流 —— 带着 reason code 回到上游步骤
+            terminal = true
+            clearLiveTimer()
+            set({
+              status: 'error',
+              live: null,
+              error: String(event.detail ?? '这次没能安全生成,请重试'),
+              returned: {
+                action: String(event.action ?? ''),
+                reasonCode: String(event.reason_code ?? ''),
+                detail: String(event.detail ?? ''),
+                returns: Array.isArray(event.returns) ? event.returns.length : 0,
+              },
+            })
           } else if (event.type === 'requirement_confirmation') {
             // v2 Phase 3:决策完备 → 等用户确认;确认后才进入编译。
             terminal = true
@@ -969,6 +1041,8 @@ export function createOptimizerController(
                 provenanceOk: event.provenance_ok !== false,
                 // done 缺 v2 字段时回落到 meta 已下发的分析结论(同一轮分析,不重复请求)。
                 analysisView: asAnalysisView(event as Record<string, unknown>) ?? state.meta?.analysisView ?? null,
+                ledger: asLedgerViews(event.ledger),
+                missing_resolution: asResolutionViews(event.missing_resolution),
                 keep: event.keep === true,
               },
             })

@@ -22,6 +22,10 @@ export const TYPE_LABEL_KEY: Record<TypeSelection, MessageKey> = {
   review: 'panel.type.review',
   creative: 'panel.type.creative',
   general: 'panel.type.general',
+  // 目标派生契约(不会作为「手动类型」出现;保留映射以防程序化设置)
+  image: 'panel.type.general',
+  video: 'panel.type.general',
+  agent: 'panel.type.general',
 }
 
 // 类型下拉:与优化按钮同一行的紧凑选择器;沿用 dsw 设计令牌,零新依赖。
@@ -82,21 +86,6 @@ export function createOptimizeButton(controller: OptimizerController) {
 
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <select
-          className="dsh-po-btn dsh-po-type"
-          style={{ ...selectStyle, ...(loading ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}
-          value={state.typeSelection}
-          disabled={loading}
-          title={t('button.typeTitle')}
-          aria-label={t('button.typeTitle')}
-          onChange={(event) => controller.setTypeSelection(event.target.value as TypeSelection)}
-        >
-          {TYPE_OPTIONS.map((value) => (
-            <option key={value} value={value}>
-              {t(TYPE_LABEL_KEY[value])}
-            </option>
-          ))}
-        </select>
         <button className="dsh-po-btn dsh-po-opt"
           type="button"
           style={{ ...buttonStyle, ...(empty || loading ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}

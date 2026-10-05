@@ -22,6 +22,7 @@ import type { StrategyRegistry } from "./registry.js";
 
 /** 路由依据(用于 UI 展示与回归断言)。 */
 export type RouteBasis =
+  | "explicit-constraint"
   | "manual-override"
   | "visual-target"
   | "agent-target"
@@ -44,6 +45,47 @@ export interface RouteDecision {
   reason: string;
   /** 编译契约形态:`structured` = 责任清单型;`descriptive` = 视觉描述式。 */
   contract: "structured" | "descriptive";
+}
+
+/**
+ * 正文里的**明确意图约束**(优先级最高,高于手动 override)。
+ *
+ * 例:「只检查,不修改文件」→ 无论用户在下拉里选了什么,都不能变成「直接执行」。
+ * 优先级(产品规则):正文明确约束 > 手动 override > 自动判断 > 优化器建议。
+ */
+const EXPLICIT_INTENT_PATTERNS: readonly { intent: WorkIntent; re: RegExp; label: string }[] = [
+  {
+    intent: "review",
+    re: /只(?:检查|看|审查|评估|复核|审阅|review)|不要修改|不修改|别改|不改动|只读|只审|no edits?|review only|read[- ]?only/i,
+    label: "只检查 / 不修改",
+  },
+  {
+    intent: "research",
+    re: /只(?:研究|调研|查一下|检索|对比)|research only|just research/i,
+    label: "只研究",
+  },
+  {
+    intent: "planning",
+    re: /只(?:规划|计划|出方案|拆解)|不要(?:执行|动手)|plan only|just plan/i,
+    label: "只规划",
+  },
+  {
+    intent: "diagnostic",
+    re: /只(?:排查|定位|找原因|诊断)|diagnos(?:e|is) only/i,
+    label: "只排查",
+  },
+];
+
+/** 从正文里读出「明确意图约束」;没有则 null。 */
+export function explicitIntentFromInput(
+  rawInput: string,
+): { intent: WorkIntent; label: string; matched: string } | null {
+  const text = String(rawInput ?? "");
+  for (const pattern of EXPLICIT_INTENT_PATTERNS) {
+    const match = pattern.re.exec(text);
+    if (match) return { intent: pattern.intent, label: pattern.label, matched: match[0] };
+  }
+  return null;
 }
 
 /** 视觉目标(目标胜过意图)。 */
@@ -80,14 +122,28 @@ export function routeStrategy(
     manualType?: PromptType;
     registry?: StrategyRegistry;
     contractRegistry?: StrategyRegistry;
+    /** 用户本轮原始输入(用于「正文明确约束 > 手动 override」判定)。 */
+    rawInput?: string;
   } = {},
 ): RouteDecision {
   const registry = options.registry ?? defaultStrategyRegistry;
   const contracts = options.contractRegistry ?? targetContractRegistry;
   const signals = signalsOf(analysis);
 
-  // 1. 手动覆盖:用户显式选择的意图优先(与 v1 行为一致)。
+  // 0. 正文明确约束**高于**手动 override(产品规则:正文 > override > 自动判断 > 建议)。
+  //    例:「只检查,不修改文件」+ 用户选了 Execution → 仍按评审编译。
   if (options.manualType) {
+    const explicit = options.rawInput ? explicitIntentFromInput(options.rawInput) : null;
+    if (explicit && explicit.intent !== options.manualType) {
+      return {
+        strategy: registry.get(explicit.intent),
+        basis: "explicit-constraint",
+        signals,
+        reason: `正文里明确写了「${explicit.matched}」(${explicit.label}),优先于手动选择的类型`,
+        contract: "structured",
+      };
+    }
+    // 1. 手动覆盖:用户显式选择的意图优先(与 v1 行为一致)。
     return {
       strategy: registry.get(options.manualType),
       basis: "manual-override",

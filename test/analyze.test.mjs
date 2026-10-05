@@ -86,7 +86,8 @@ const FULL = JSON.stringify({
   assert.equal(result.prompt_type, 'research', 'prompt_type 是 primary 的向后兼容投影')
   assert.equal(result.target.target, 'research')
   assert.equal(result.target.engine, null)
-  assert.equal(result.triage.triage, 'PATCH')
+  // Phase 4:只有模糊目标的输入 → 机械判据 REBUILD;模型给 PATCH 不得把它降级
+  assert.equal(result.triage.triage, 'REBUILD')
   assert.equal(meta.unknownTypeFallback, false)
   assert.equal(meta.multiIntent, true, '有辅意图 → multiIntent')
 

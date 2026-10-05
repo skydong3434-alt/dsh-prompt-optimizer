@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   DEFAULT_STRATEGIES,
+  allStrategies,
   createStrategyRegistry,
   defaultStrategyRegistry,
   generalFallbackStrategy,
@@ -149,7 +150,7 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/
   assert.equal(custom.get('bogus').type, 'general')
   assert.equal(custom.get('general').type, 'general', '自动补回的应是 general 策略')
   assert.equal(custom.get('general').version, GENERAL_STRATEGY_VERSION)
-  assert.equal(custom.get('general').required_sections.length, 8)
+  assert.equal(custom.get('general').informationResponsibilities.length, 4, 'Phase 4:general 为 4 项信息责任')
 
   const ordered = createStrategyRegistry([general, research])
   assert.deepEqual(ordered.types(), ['general', 'research'], '显式顺序必须保留')
@@ -171,15 +172,17 @@ const VERSION_RE = /^\d+\.\d+\.\d+$/
   assert.equal(full.list().length, 7)
 }
 
-// rg6. legacy general 标记:仅 general 走 prompt.ts 老路径,其余策略不误判
+// rg6. Phase 4:legacy 路径**不可达** —— 任何注册策略都不再标记 legacy
 {
-  assert.equal(isLegacyGeneral(generalFallbackStrategy), true, 'general 兜底应标记 legacy')
-  assert.equal(isLegacyGeneral(generalStrategy), true)
   assert.equal(generalFallbackStrategy, generalStrategy, '兼容别名必须指向同一 general 对象')
-  for (const type of EXPECTED_TYPES.filter((t) => t !== 'general')) {
-    assert.equal(isLegacyGeneral(defaultStrategyRegistry.get(type)), false, `${type} 不得标记 legacy`)
+  for (const strategy of allStrategies) {
+    assert.equal(
+      isLegacyGeneral(strategy),
+      false,
+      `${strategy.type} 不得标记 legacy(生产路径不得进入旧 required_sections 主路径)`,
+    )
   }
-  console.log('✓ rg6 legacy general 标记 / 其余策略零误判')
+  console.log('✓ rg6 legacy 不可达:全部策略均不标记 legacy')
 }
 
 // rg7. 源码纯度:零 ctx / UI / Host / compiler / classify 依赖

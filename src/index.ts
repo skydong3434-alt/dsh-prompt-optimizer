@@ -18,10 +18,13 @@ import {
   manualAnalysisResult,
   type AnalyzeViaLlmOutcome,
 } from './core/analyze.js'
-import type { AnalysisResult } from './core/types.js'
+import type { AnalysisResult, EditTriage } from './core/types.js'
+import { EDIT_TRIAGE_LEVELS } from './core/types.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
 import { compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
 import { computeAnalysisGate } from './core/requirements.js'
+import { decideValidationAction, type ValidationFlowOutcome } from './core/validation-flow.js'
+import { reconcileLedger } from './core/ledger-reconcile.js'
 import {
   buildConfirmation,
   evaluateSufficiency,
@@ -187,7 +190,7 @@ interface OptimizeRequestBody {
 
 /** 客户端回传的 Discovery 会话(宽松解析;非法字段静默丢弃)。 */
 function parseDiscoveryInput(value: unknown): {
-  mode: 'answer' | 'confirm'
+  mode: 'answer' | 'confirm' | 'reoptimize'
   session: DiscoveryInput
   edited: { requirement_id: string; value: string; evidence: string }[]
   reopened: string[]
@@ -195,7 +198,7 @@ function parseDiscoveryInput(value: unknown): {
 } | undefined {
   if (!value || typeof value !== 'object') return undefined
   const record = value as Record<string, unknown>
-  const mode = record.mode === 'confirm' ? 'confirm' : 'answer'
+  const mode = record.mode === 'confirm' ? 'confirm' : record.mode === 'reoptimize' ? 'reoptimize' : 'answer'
   const triage = asOptionalString(record.triage) as DiscoveryInput['triage'] | undefined
   const edited: { requirement_id: string; value: string; evidence: string }[] = []
   if (Array.isArray(record.edited)) {
@@ -221,6 +224,9 @@ function parseDiscoveryInput(value: unknown): {
       asked: Array.isArray(record.asked) ? (record.asked as DiscoveryInput['asked']) : [],
       answers: Array.isArray(record.answers) ? (record.answers as DiscoveryInput['answers']) : [],
       questions: Array.isArray(record.questions) ? (record.questions as DiscoveryInput['questions']) : [],
+      validationReturns: Array.isArray(record.validationReturns)
+        ? (record.validationReturns as DiscoveryInput['validationReturns'])
+        : [],
       round: typeof record.round === 'number' ? record.round : 1,
     },
     edited,
@@ -724,6 +730,39 @@ export function apply(ctx: Context, config: Config) {
               analysis = analysisOutcome.result
             }
           }
+          // ── Phase 4:Discovery 不得改变 Edit Triage ──────────────────────────
+          // 首轮分析定下的分诊被客户端钉住并在每轮回传;回答轮**强制沿用**它,
+          // 避免「需求问清楚之后偷偷从 REBUILD 变成 PATCH」。triage 来自客户端,
+          // 因此只接受封闭枚举内的值(不可信输入)。
+          const pinnedTriage = session && EDIT_TRIAGE_LEVELS.includes(session.triage as EditTriage)
+            ? (session.triage as EditTriage)
+            : undefined
+          if (
+            analysis &&
+            pinnedTriage &&
+            discoveryReq?.mode === 'answer' &&
+            analysis.triage.triage !== pinnedTriage
+          ) {
+            analysis = {
+              ...analysis,
+              triage: { ...analysis.triage, triage: pinnedTriage, keep_safe: pinnedTriage === 'KEEP' },
+            }
+          }
+          // ── Phase 4:再优化对账(Requirement Ledger reconcile)────────────────
+          // 用户改一版 Prompt 再优化时:旧 requirement 分为 STILL_VALID / CONFLICTING /
+          // INVALIDATED —— 既不能一股脑继承(污染新任务),也不能一股脑丢弃(白问一轮)。
+          if (discoveryReq?.mode === 'reoptimize' && session && analysis) {
+            const reconciled = reconcileLedger({
+              previous: session.ledger,
+              analysis,
+              rawInput: text,
+              // 上一轮的目标来自会话里保存的分析(没有就用当前目标,退化为「同族」判定)
+              previousTarget: (session.analysis as AnalysisResult | undefined)?.target?.target,
+            })
+            console.log(`[${name}] ${reconciled.summary}`)
+            // 对账结果必须**贯穿**后续所有分支(编译 / 确认 / 门禁都读 analysis.ledger)
+            analysis = { ...analysis, ledger: reconciled.ledger }
+          }
           const classifier: ClassifierResult | null = analysis ? analysisToClassifier(analysis) : null
 
           if (analysisAborted) {
@@ -927,15 +966,21 @@ export function apply(ctx: Context, config: Config) {
               analysis: analysis!,
               missing: [],
             })
-            if (!assertKeepFidelity(keepOutcome.result, text)) {
-              // 机械兜底:理论上不可达;一旦发生必须暴露,绝不放行被改写的 KEEP。
+            // Phase 4:KEEP 也走 Validator 硬校验(keepExpected=true)。
+            // 一旦被改写 → HARD_ERROR,绝不静默放行。
+            const keepFidelity = decideValidationAction({
+              problems: keepOutcome.problems,
+              result: keepOutcome.result,
+              rawInput: text,
+              returns: session?.validationReturns ?? [],
+              round: session?.round ?? 1,
+              keepExpected: true,
+            })
+            if (keepFidelity.action !== 'PASS') {
               keepOutcome.result.provenance_ok = false
-              keepOutcome.problems.push({
-                severity: 'error',
-                rule: 'keep-fidelity',
-                detail: 'KEEP 路径输出与用户输入不一致',
-              })
-            }
+              console.error(`[${name}] KEEP fidelity failed: ${keepFidelity.detail}`)
+              send({ type: 'error', error: `KEEP 校验未通过:${keepFidelity.detail}`, reason_code: keepFidelity.reason_code })
+            } else {
             send({
               type: 'done',
               analysis: keepOutcome.result.diagnosis,
@@ -964,6 +1009,7 @@ export function apply(ctx: Context, config: Config) {
               missing_resolution: analysis!.missing_resolution,
               gate: analysis!.gate,
             })
+            }
           } else {
             // ── 归一化 + 策略选择 + 编译载荷(compilePrompt 10 步编排)────────
             // override 与 AUTO 共用同一入口:合法 promptType 由 compilePrompt 函数级
@@ -1063,10 +1109,14 @@ export function apply(ctx: Context, config: Config) {
                 language,
                 analysis: analysis!,
               })
-              // 非 legacy 策略再跑 P04-T02 三层输出守卫(required_sections / 术语漂移 /
-              // 建议升级 / 无证据强断言与量化 / 未知项落位)。done 下发的 provenance_ok
-              // 以更严格的三层结果为准;legacy general 保持既有语义(i10 零回归)。
+              // 非 legacy 策略再跑三层输出守卫(保真 / 推断建议 / 未知项)。
+              // Phase 4:Validator 从「只 fail-closed」升级为**可控回流控制器** ——
+              // 机械判定 PASS / RETURN_TO_* / HARD_ERROR,回流有 reason code、有次数上限、
+              // 同一失败不重复循环(见 core/validation-flow.ts)。
+              let validationOutcome: ValidationFlowOutcome | null = null
               if (!plan.legacy) {
+                // 六态 UI:校验阶段是真实阶段,先告知客户端(不是假动画)
+                send({ type: 'validating' })
                 const validation = validateCompileResult(outcome.result, {
                   rawInput: text,
                   contextTurns: context ?? [],
@@ -1074,7 +1124,54 @@ export function apply(ctx: Context, config: Config) {
                   rawOutput: raw.text,
                 })
                 outcome.result.provenance_ok = validation.provenance_ok
+                validationOutcome = decideValidationAction({
+                  problems: validation.problems,
+                  result: outcome.result,
+                  rawInput: text,
+                  returns: session?.validationReturns ?? [],
+                  round: session?.round ?? 1,
+                  liveBlockingCount: 0,
+                  // KEEP 路径在本分支之前已经分流(见上面的 KEEP 分支),此处恒 false
+                  keepExpected: false,
+                  visualContract: strategy.type === 'image' || strategy.type === 'video',
+                  // 「目标引擎是优化器擅自假定的」= 有引擎但输入里找不到逐字证据,
+                  // 且该假定真的改变了编译契约(走了目标派生契约)。
+                  // 只是低置信度的文本目标不算(否则每次编译都会被退回重判)。
+                  targetAssumed:
+                    analysis!.target.engine !== null &&
+                    analysis!.target.evidence.length === 0 &&
+                    strategy.type !== analysis!.prompt_type,
+                })
               }
+              if (validationOutcome && validationOutcome.action !== 'PASS') {
+                // ── 受控回流:不交付结果,带着 reason code 回到上游步骤 ────────────
+                if (validationOutcome.action === 'HARD_ERROR') {
+                  console.error(
+                    `[${name}] validation hard error (${validationOutcome.reason_code}): ${validationOutcome.detail}`,
+                  )
+                  send({
+                    type: 'error',
+                    error: `这次没能安全地生成提示词(${validationOutcome.reason_code}):${validationOutcome.detail}`,
+                    reason_code: validationOutcome.reason_code,
+                  })
+                } else {
+                  // RETURN_TO_MISSING_RESOLUTION / DISCOVERY / ANALYSIS:
+                  // 把回流记录交回客户端,由它带着更新后的状态重跑(有限次数)。
+                  console.warn(
+                    `[${name}] validation return (${validationOutcome.action}/${validationOutcome.reason_code}): ${validationOutcome.detail}`,
+                  )
+                  send({
+                    type: 'returned',
+                    action: validationOutcome.action,
+                    reason_code: validationOutcome.reason_code,
+                    detail: validationOutcome.detail,
+                    requires: validationOutcome.requires ?? null,
+                    returns: validationOutcome.returns,
+                    // 交付前先把 provenance 结论如实告知(不假装成功)
+                    provenance_ok: outcome.result.provenance_ok,
+                  })
+                }
+              } else {
               send({
                 type: 'done',
                 // 向后兼容字段:analysis / optimized / wellFormed 语义不变。
@@ -1106,6 +1203,7 @@ export function apply(ctx: Context, config: Config) {
                 missing_resolution: analysis!.missing_resolution,
                 gate: analysis!.gate,
               })
+              }
             } else if (timedOut) {
               send({
                 type: 'error',

@@ -75,6 +75,30 @@ const COMPILE_OUTPUT = [
   '<<<END>>>',
 ].join('\n')
 
+/** Phase 4:general 走 v2 四段协议时的产物(4 项信息责任齐全)。 */
+const GENERAL_OUTPUT = [
+  '<<<DIAGNOSIS>>>',
+  '目标明确,约束清晰',
+  '<<<EXPLICIT>>>',
+  '(无)',
+  '<<<CONTEXT>>>',
+  '(无)',
+  '<<<SUGGESTED>>>',
+  '(无)',
+  '<<<UNKNOWN>>>',
+  '(无)',
+  '<<<OPTIMIZED>>>',
+  '## Request（请求要点）',
+  '- 按用户输入整理提示词',
+  '## Context & Inputs（上下文与输入）',
+  '- 用户给出的草稿',
+  '## Constraints & Exclusions（约束与排除）',
+  '- 用户未给出额外约束',
+  '## Deliverable Shape（产出形态）',
+  '- 可直接使用的提示词',
+  '<<<END>>>',
+].join('\n')
+
 const LEGACY_OUTPUT = ['<<<ANALYSIS>>>', '简要分析', '<<<OPTIMIZED>>>', '通用改写结果', '<<<END>>>'].join('\n')
 
 function makeReq(body, method = 'POST', headers) {
@@ -269,7 +293,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   console.log('✓ vs3 非法 promptType 回落 AUTO')
 }
 
-// 4. 分析失败 → general 兜底(legacy 路径零回归,provenance 为空但 ok=true)
+// 4. 分析失败 → general 兜底(Phase 4:general 走 v2 契约)
 {
   const { handler } = await setup({
     llmOverrides: {
@@ -279,7 +303,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
           yield { type: 'finish', reason: { kind: 'stop' } }
           return
         }
-        yield { type: 'text-delta', index: 0, text: LEGACY_OUTPUT }
+        yield { type: 'text-delta', index: 0, text: GENERAL_OUTPUT }
         yield { type: 'finish', reason: { kind: 'stop' } }
       },
     },
@@ -291,9 +315,9 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.equal(meta.prompt_type, 'general')
   assert.equal(meta.confidence_level, 'Low')
   assert.equal(done.prompt_type, 'general')
-  assert.equal(done.provenance_ok, true, 'legacy 兜底无可校验 provenance 段,应为 true')
-  assert.equal(done.optimized, '通用改写结果')
-  console.log('✓ vs4 分类失败 general 兜底(零回归)')
+  assert.equal(done.provenance_ok, true, 'v2:信息责任齐全 → 通过校验')
+  assert.ok(done.optimized.includes('请求要点'), 'v2:general 输出信息责任')
+  console.log('✓ vs4 分析失败 general 兜底(v2 契约)')
 }
 
 console.log('\nvertical-slice: all passed')

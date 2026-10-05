@@ -121,25 +121,20 @@ function qualitySignalCount(signals: InputSignals): number {
  *  1. 空 / 纯寒暄 / 无动词且极短          → REBUILD
  *  2. 长 + 结构充分 + 成稿特征充分        → KEEP(keep_safe=true)
  *  3. 信息够 + 结构稀薄 + 明显冗长/重复   → RESTRUCTURE
- *  4. 其余                               → PATCH
+ *  4. 有可保留的东西(结构 / 成稿要素)   → PATCH
+ *  5. 只有模糊目标(无可保留内容)         → REBUILD
  */
 export function mechanicalTriage(rawInput: string): TriageDecision {
   const signals = analyzeInputSignals(rawInput);
 
+  // ① 空 / 寒暄 → 无法构成任务
   if (signals.emptyOrGreeting) {
     return decide("REBUILD", ["输入为空或仅为寒暄,无法构成有效任务"], [], false, signals);
   }
-  if (!signals.actionable && signals.length < 12) {
-    return decide(
-      "REBUILD",
-      ["输入过短且没有可执行动词,无法还原出任务目标"],
-      [`长度=${signals.length}`],
-      false,
-      signals,
-    );
-  }
 
   const quality = qualitySignalCount(signals);
+
+  // ② KEEP:长 + 结构充分 + 成稿特征充分 → 原样保留(唯一有硬阈值的级别)
   if (
     signals.length >= KEEP_MIN_LENGTH &&
     signals.structures.length >= 2 &&
@@ -158,8 +153,7 @@ export function mechanicalTriage(rawInput: string): TriageDecision {
     );
   }
 
-  // 「乱但完整」= 信息基本齐(成稿特征 ≥2:如约束 + 格式)且组织混乱。
-  // 信息不齐的输入不该判 RESTRUCTURE——那需要 PATCH 去补,而不是重组。
+  // ③ RESTRUCTURE:信息基本齐(成稿特征 ≥2)但组织混乱 → 只重组,不改语义
   const messy =
     signals.repeatedLines > 0 ||
     signals.repeatedClauses > 0 ||
@@ -180,10 +174,39 @@ export function mechanicalTriage(rawInput: string): TriageDecision {
     );
   }
 
+  /**
+   * ④ PATCH vs REBUILD 的分界(Phase 4 语义修正):
+   *    PATCH = 「原 Prompt 的结构和表达基本成立」→ 必须**有可保留的东西**:
+   *            已有提示词结构(编号 / 小标题 / 标签行),或已有成稿特征(角色 / 约束 / 格式 / 验收)。
+   *    REBUILD = 什么都没有 —— 只有一句模糊目标(「我想用 dsh 控制 comfyui 生成视频」),
+   *            需要先把需求问清楚、再从零构建 Prompt。
+   *
+   * 旧实现把「有动词」当成 PATCH 的依据,导致模糊目标被误判为「局部修改」;
+   * 这里改为按「可保留性」判定,与 Edit Triage 的正式语义一致。
+   */
+  const hasStructure = signals.structures.length > 0;
+  if (hasStructure || quality > 0) {
+    return decide(
+      "PATCH",
+      [
+        hasStructure
+          ? "输入已有提示词结构,只需局部补充或修正"
+          : "输入已给出可保留的成稿要素(约束 / 格式 / 角色 / 验收),只需补齐缺口",
+      ],
+      [
+        `长度=${signals.length}`,
+        `结构信号=${signals.structures.join(",") || "(无)"}`,
+        `成稿特征=${quality}`,
+      ],
+      false,
+      signals,
+    );
+  }
+
   return decide(
-    "PATCH",
-    ["输入是可识别任务,结构基本可用,只需少量补充或修正"],
-    [`长度=${signals.length}`, `可执行动词=${signals.actionable}`],
+    "REBUILD",
+    ["只有模糊目标,没有可保留的提示词结构或成稿要素;需先明确需求再从零构建 Prompt"],
+    [`长度=${signals.length}`, `可执行动词=${signals.actionable}`, `结构信号=(无)`, `成稿特征=0`],
     false,
     signals,
   );

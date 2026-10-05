@@ -4,7 +4,11 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { SparkleIcon } from './SparkleIcon.js'
 import {
+  deriveStage,
   shouldAutoClose,
+  TYPE_OPTIONS,
+  type LedgerView,
+  type TypeSelection,
   type DiscoveryQuestionView,
   type MissingConstraintView,
   type OptimizerController,
@@ -246,7 +250,12 @@ export function createResultDock(controller: OptimizerController) {
     const t = useT()
     const [copied, setCopied] = useState(false)
     // U5:分析诊断段折叠态(默认展开)——长分析可收起,聚焦优化稿本身。
-    const [analysisOpen, setAnalysisOpen] = useState(true)
+    // Phase 4:分析诊断**默认折叠**(普通用户先看到结果与一句摘要)
+    const [analysisOpen, setAnalysisOpen] = useState(false)
+    // 「调整判断」高级入口默认收起(低优先级,不进主流程)
+    const [adjustOpen, setAdjustOpen] = useState(false)
+    // 「可选建议」弱化 + 默认折叠
+    const [suggestionsOpen, setSuggestionsOpen] = useState(false)
     // O6:撤回后的正向反馈——头部短暂显示「已撤回 ✓」,避免用户以为没生效。
     const [undoneFlash, setUndoneFlash] = useState(false)
     // v2 Phase 3:Discovery 答题草稿(question.key → {optionId, text})
@@ -348,6 +357,35 @@ export function createResultDock(controller: OptimizerController) {
     const v2 = result?.analysisView ?? state.meta?.analysisView ?? null
     const discovery = state.discovery
     const confirmation = state.confirmation
+    // 六态 UI 的单一状态源(analyzing / discovery_required / requirement_confirmation /
+    // compiling / validating / complete + error / cancelled)
+    const stage = deriveStage(state)
+    const triageText = v2 ? t(`panel.triage.${v2.triage.triage}` as never) : ''
+    const targetText = v2 ? v2.target.target : ''
+    const engineText = v2?.target.engine ?? ''
+    // 一句结果摘要:PATCH · Video Prompt · Kling(内部术语不喧宾夺主)
+    const summaryLine = [triageText, targetText, engineText].filter(Boolean).join(' · ')
+    // ── Phase 4:结果页的四类信息(全部来自真实 Requirement Ledger / Missing Resolution)──
+    const resultLedger = result?.ledger ?? []
+    const confirmedLedger = resultLedger.filter(
+      (entry) =>
+        (entry.source === 'USER_EXPLICIT' || entry.source === 'CONTEXT_EXPLICIT') &&
+        (entry.status === 'CONFIRMED' || entry.status === 'REJECTED'),
+    )
+    const resolution = result?.missing_resolution ?? []
+    const needsDecisionTexts = resolution
+      .filter((item) => item.classification === 'USER_REQUIRED')
+      .map((item) => item.text)
+    const agentResearchTexts = resolution
+      .filter((item) => item.classification === 'AGENT_DISCOVERABLE')
+      .map((item) => item.text)
+    const notBlockingTexts = resolution
+      .filter((item) => item.classification === 'OPTIONAL')
+      .map((item) => item.text)
+    const provisionalTexts = resultLedger
+      .filter((entry) => entry.status === 'PROVISIONAL' || entry.status === 'CONDITIONAL')
+      .map((entry) => entry.text)
+
     // 「修改理解」可编辑项:台账里用户已确认的条目(保持台账,只改这几项)
     const reviseItems = (discovery?.session.ledger ?? []).filter(
       (entry) => entry.status === 'CONFIRMED' && (entry.source === 'USER_EXPLICIT' || entry.source === 'CONTEXT_EXPLICIT'),
@@ -358,16 +396,6 @@ export function createResultDock(controller: OptimizerController) {
       // 缺译回退:未知分诊值显示原始值,绝不显示空白。
       return label === key ? value : label
     }
-    // 阶段提示:meta 未到 = 正在识别任务类型(AUTO 两阶段的第一阶段);meta 到达后
-    // 按流式段落推进:等待响应 → 分析诊断 → 输出优化稿。
-    const stage = !state.meta
-      ? t('panel.stage.classifying')
-      : state.live?.optimized
-        ? t('panel.stage.writing')
-        : state.live?.analysis
-          ? t('panel.stage.analyzing')
-          : t('panel.stage.waiting')
-
     // 流式实况段(loading 与 cancelled 共用;U5 限高滚动 + 自动跟随,不遮挡阶段行)。
     const liveBody =
       state.live && (state.live.analysis || state.live.optimized) ? (
@@ -574,6 +602,25 @@ export function createResultDock(controller: OptimizerController) {
         </div>
       )
 
+    /** 已确认需求(真实台账):文字标注来源与状态,不只靠颜色区分。 */
+    const renderLedgerConfirmed = (title: string, items: LedgerView[]) =>
+      items.length === 0 ? null : (
+        <div style={{ marginTop: 8 }}>
+          <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}({items.length})</div>
+          <div style={styles.unknownBox}>
+            {items.map((item) => (
+              <div key={item.id || item.text} style={styles.groupItem}>
+                - {item.text}
+                <span style={{ opacity: 0.7 }}>
+                  [{item.source === 'USER_EXPLICIT' ? t('panel.source.youSaid') : t('panel.source.context')}
+                  {item.status === 'REJECTED' ? ` · ${t('panel.status.rejected')}` : ''}]
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+
     const renderPlainGroup = (title: string, items: string[], weak: boolean) =>
       items.length === 0 ? null : (
         <div style={{ marginTop: 8, ...(weak ? { opacity: 0.72 } : {}) }}>
@@ -681,14 +728,23 @@ export function createResultDock(controller: OptimizerController) {
           </button>
         </div>
 
-        {state.status === 'loading' && (
+        {(stage === 'analyzing' || stage === 'compiling') && (
           <>
             <div style={styles.loading}>
               <SparkleIcon spinning />
-              {stage}…({elapsed}s,{t('panel.escCancel')})
+              {stage === 'analyzing' ? t('panel.stage.analyzingTask') : t('panel.stage.compilingPrompt')}…
+              ({elapsed}s,{t('panel.escCancel')})
             </div>
-            {liveBody}
+            {/* compiling 阶段才展示流式实况;analyzing 阶段不暴露内部思考 */}
+            {stage === 'compiling' ? liveBody : null}
           </>
+        )}
+
+        {stage === 'validating' && (
+          <div style={styles.loading}>
+            <SparkleIcon spinning />
+            {t('panel.stage.validating')}…
+          </div>
         )}
 
         {state.status === 'cancelled' && (
@@ -859,26 +915,94 @@ export function createResultDock(controller: OptimizerController) {
               </div>
             )}
             <div style={styles.body}>
-              {result.analysis && (
-                <>
-                  <button className="dsh-po-btn" type="button" style={styles.sectionTitle} onClick={() => setAnalysisOpen((v) => !v)} aria-expanded={analysisOpen}>
-                    <span style={{ ...styles.chevron, transform: analysisOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
-                    {t('panel.analysis')}
-                  </button>
-                  {analysisOpen && (
-                    <div style={styles.analysisBody}>
-                      <pre style={styles.pre}>{result.analysis}</pre>
-                    </div>
-                  )}
-                </>
+              {/* Phase 4:一句结果摘要(内部术语不喧宾夺主) */}
+              {summaryLine ? (
+                <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{summaryLine}</div>
+              ) : null}
+
+              {/* 已确认需求:数据来自**真实 Requirement Ledger**(不从编译器输出反推),
+                  只含 USER_EXPLICIT / CONTEXT_EXPLICIT 且当前状态有效。 */}
+              {renderLedgerConfirmed(t('panel.confirmedLedger'), confirmedLedger)}
+              {/* Agent 自行调查(弱显示) */}
+              {renderPlainGroup(t('panel.agentWillCheck'), agentResearchTexts, true)}
+              {/* 暂定 / 条件(仅存在时) */}
+              {renderPlainGroup(
+                t('panel.provisional'),
+                provisionalTexts,
+                false,
               )}
-              {/* 四组 provenance 分开展示:明确要求 / 上下文确认 / 优化器建议 / 待补充。 */}
-              {renderGroup(t('panel.group.explicit'), result.explicitRequirements, 'explicit')}
-              {renderGroup(t('panel.group.context'), result.contextRequirements, 'context', { showSource: true })}
-              {renderGroup(t('panel.group.suggested'), result.suggestedRequirements, 'suggested')}
-              {renderGroup(t('panel.group.unknown'), result.unknowns, 'unknown')}
-              {/* 缺口清单独立成段:unknowns 非空时 missing_constraints 仍需可见。 */}
-              {renderMissing(t('panel.missing'), missingOnly)}
+
+              {/* 分析诊断默认折叠(调试价值保留,但不铺满界面) */}
+              <button className="dsh-po-btn" type="button" style={styles.sectionTitle} onClick={() => setAnalysisOpen((v) => !v)} aria-expanded={analysisOpen}>
+                <span style={{ ...styles.chevron, transform: analysisOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                {t('panel.analysis')}
+              </button>
+              {analysisOpen && (
+                <div style={styles.analysisBody}>
+                  {v2 ? (
+                    <>
+                      <div style={styles.groupItem}>Primary Intent:{v2.intent.primary}</div>
+                      <div style={styles.groupItem}>Supporting:{v2.intent.supporting.join(', ') || '(无)'}</div>
+                      <div style={styles.groupItem}>Prompt Target:{v2.target.target}</div>
+                      <div style={styles.groupItem}>Target Engine:{engineText || '(未指定)'}</div>
+                      <div style={styles.groupItem}>Triage:{v2.triage.triage}</div>
+                      {v2.resolution.length > 0 ? (
+                        <div style={styles.groupItem}>
+                          Dispositions:
+                          {v2.resolution.map((item) => `${item.text}[${item.classification}]`).join(' / ')}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
+                  {result.analysis ? <pre style={styles.pre}>{result.analysis}</pre> : null}
+                  {/* 低优先级「调整判断」:手动 override 不再是主流程前置步骤 */}
+                  <button
+                    className="dsh-po-btn"
+                    type="button"
+                    style={{ ...styles.actionBtn, marginTop: 6 }}
+                    onClick={() => setAdjustOpen((v) => !v)}
+                    aria-expanded={adjustOpen}
+                  >
+                    {t('panel.adjust')}
+                  </button>
+                  {adjustOpen ? (
+                    <>
+                      <div style={{ ...styles.groupItem, opacity: 0.75 }}>{t('panel.adjust.hint')}</div>
+                      <select
+                        className="dsh-po-input"
+                        style={{ width: '100%', marginTop: 4 }}
+                        value={state.typeSelection}
+                        onChange={(event) => controller.setTypeSelection(event.target.value as TypeSelection)}
+                        aria-label={t('panel.adjust')}
+                      >
+                        {TYPE_OPTIONS.map((value) => (
+                          <option key={value} value={value}>
+                            {t(TYPE_LABEL_KEY[value] ?? 'panel.type.auto')}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : null}
+                </div>
+              )}
+
+              {/* 可选建议:弱化 + 默认折叠(绝不与用户要求视觉等权) */}
+              {result.suggestedRequirements.length > 0 ? (
+                <>
+                  <button className="dsh-po-btn" type="button" style={{ ...styles.sectionTitle, opacity: 0.75 }} onClick={() => setSuggestionsOpen((v) => !v)} aria-expanded={suggestionsOpen}>
+                    <span style={{ ...styles.chevron, transform: suggestionsOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                    {t('panel.suggestions')}({result.suggestedRequirements.length})
+                  </button>
+                  {suggestionsOpen ? (
+                    <div style={{ opacity: 0.75 }}>
+                      {renderGroup('', result.suggestedRequirements, 'suggested')}
+                    </div>
+                  ) : null}
+                </>
+              ) : null}
+              {/* 暂不影响 / 仍需你决定的清单(Phase 4:拆分为语义清楚的分类,不再是大杂烩) */}
+              {renderPlainGroup(t('panel.needsDecision'), needsDecisionTexts, false)}
+              {renderPlainGroup(t('panel.notBlocking'), notBlockingTexts, true)}
               <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.optimized')}</div>
               <div style={styles.optimizedBox}>
                 <pre style={styles.pre}>{result.optimized}</pre>

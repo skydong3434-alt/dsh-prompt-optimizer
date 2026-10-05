@@ -602,7 +602,7 @@ export function compilePrompt(input: CompilePromptInput): CompilePlan {
   // 步骤 6:v2 Target-aware 路由(有分析时按 目标/引擎/模态/意图 选契约;
   // 无分析时沿用 v1 的按意图取策略 —— 向后兼容)。手动覆盖优先级最高。
   const route = input.analysis
-    ? routeStrategy(input.analysis, { manualType: override, registry })
+    ? routeStrategy(input.analysis, { manualType: override, registry, rawInput: input.raw_input })
     : null;
   const strategy = input.strategy ?? route?.strategy ?? registry.get(classifier.prompt_type);
   const legacy = input.legacy ?? isLegacyGeneral(strategy);
@@ -943,5 +943,9 @@ export function finalizeCompile(
   }
 
   result.provenance_ok = provenance.ok && !problems.some((problem) => problem.severity === "error");
-  return { result, wellFormed: sections.wellFormed, problems };
+  // fast 模式的无标记容错(保留 v0.3.11 的产品行为):fast 是单段落模式,模型常直接
+  // 输出整段结果而无标记 —— 此时整段即优化稿,不算「格式退化」。
+  // general 迁入 v2 契约后这条容错必须由 v2 解析层承接(legacy 解析器已不可达)。
+  const wellFormed = sections.wellFormed || (opts.mode === "fast" && !String(rawText ?? "").includes("<<<"));
+  return { result, wellFormed, problems };
 }

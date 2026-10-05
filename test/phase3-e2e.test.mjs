@@ -210,6 +210,24 @@ const ROUND2 = JSON.stringify({
   questions: [],
 })
 
+/** 中性编译产物:不含任何 quote(适用于「只关心流程」的用例,避免伪造来源)。 */
+const NEUTRAL_OUTPUT = [
+  '<<<DIAGNOSIS>>>',
+  '目标明确',
+  '<<<EXPLICIT>>>',
+  '(无)',
+  '<<<CONTEXT>>>',
+  '(无)',
+  '<<<SUGGESTED>>>',
+  '(无)',
+  '<<<UNKNOWN>>>',
+  '(无)',
+  '<<<OPTIMIZED>>>',
+  '## Request（请求要点）',
+  '- 按用户输入整理提示词',
+  '<<<END>>>',
+].join('\n')
+
 const COMPILE_OUTPUT = [
   '<<<DIAGNOSIS>>>',
   '目标:验证 DSH → ComfyUI 控制链路',
@@ -270,7 +288,8 @@ const COMPILE_OUTPUT = [
   }
   assert.ok(round1.agent_researches.includes('ComfyUI 版本'), '可自查项弱展示')
   assert.ok(round1.analysis, '必须回传分析结论供确认时复用')
-  assert.equal(round1.triage.triage, 'PATCH', 'Edit Triage 保持 PATCH')
+  // Phase 4:模糊目标 → 机械 REBUILD;Discovery 全程不得改变它
+  assert.equal(round1.triage.triage, 'REBUILD', 'Edit Triage = REBUILD(模糊目标)')
 
   // ── ② 用户回答 → 重新分析 → requirement_confirmation(仍不编译) ──────────
   const answers = round1.questions.map((q) => ({
@@ -285,7 +304,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -323,7 +342,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'confirm',
       round: confirmationEvent.round,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: confirmationEvent.ledger,
       asked: confirmationEvent.asked,
       answers: [],
@@ -339,7 +358,7 @@ const COMPILE_OUTPUT = [
   assert.equal(compileCalls().length, 1, '★ Compiler 在确认后才第一次运行(且只有 1 次)')
   assert.equal(analysisCalls().length, 2, '确认不再触发额外分析调用')
   assert.ok(done.optimized.includes('Objective'), '编译产出正常')
-  assert.equal(done.triage.triage, 'PATCH', 'Discovery 全流程未改变 Edit Triage')
+  assert.equal(done.triage.triage, 'REBUILD', 'Discovery 全流程未改变 Edit Triage(仍 REBUILD)')
   assert.equal(done.target.target, 'agent_task')
   assert.equal(done.contract, 'agent', 'Agent 目标走 Agent 任务指令契约')
   console.log('✓ e2e1 ComfyUI 完整闭环:发现(0 编译)→ 回答 → 确认(0 编译)→ 确认后首次编译')
@@ -380,7 +399,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -417,7 +436,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -467,7 +486,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -540,7 +559,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'confirm',
       round: 1,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: round1.ledger,
       asked: round1.asked,
       answers: [],
@@ -578,7 +597,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
 
 // Case 5:纯环境信息缺失 → 不得进入 Discovery
 {
-  const { handler, compileCalls } = await setup({ compileOutput: COMPILE_OUTPUT, analysisRounds: [CLEAN_ANALYSIS] })
+  const { handler, compileCalls } = await setup({ compileOutput: NEUTRAL_OUTPUT, analysisRounds: [CLEAN_ANALYSIS] })
   const res = await call(handler, { text: '帮我把这段描述整理成提示词,ComfyUI 版本我用最新的', provider: 'p', model: 'm' })
   const events = sseEvents(res)
   assert.equal(events.some((e) => e.type === 'discovery_required'), false, 'Case5:纯环境缺失不得进入 Discovery')
@@ -769,7 +788,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
       },
     ],
   })
-  const { handler } = await setup({ compileOutput: COMPILE_OUTPUT, analysisRounds: [vague] })
+  const { handler } = await setup({ compileOutput: NEUTRAL_OUTPUT, analysisRounds: [vague] })
   const res = await call(handler, { text: '帮我看看这个项目', provider: 'p', model: 'm' })
   const event = sseEvents(res)[0]
   assert.equal(event.type, 'discovery_required')
@@ -800,7 +819,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
     evidence_quotes: [],
     questions: [],
   })
-  const { handler, compileCalls } = await setup({ compileOutput: COMPILE_OUTPUT, analysisRounds: [kbAnalysis] })
+  const { handler, compileCalls } = await setup({ compileOutput: NEUTRAL_OUTPUT, analysisRounds: [kbAnalysis] })
   const res = await call(handler, { text: '帮我做一个 AI 知识库。', provider: 'p', model: 'm' })
   const events = sseEvents(res)
   assert.equal(events.some((e) => e.type === 'discovery_required'), false, 'Case1:可调查项不得触发提问')
@@ -815,7 +834,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
       { text: '这是单机自用还是多人协作的知识库', classification: 'USER_REQUIRED', blocking: true, impact: 'high', rationale: '产品取舍' },
     ],
   })
-  const { handler: h2 } = await setup({ compileOutput: COMPILE_OUTPUT, analysisRounds: [kbWithTradeoff] })
+  const { handler: h2 } = await setup({ compileOutput: NEUTRAL_OUTPUT, analysisRounds: [kbWithTradeoff] })
   const res2 = await call(h2, { text: '帮我做一个 AI 知识库。', provider: 'p', model: 'm' })
   const event2 = sseEvents(res2)[0]
   assert.equal(event2.type, 'discovery_required')
@@ -886,7 +905,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'PATCH',
+      triage: 'REBUILD',
       ledger: r1.ledger,
       asked: r1.asked,
       questions: r1.questions,
@@ -906,6 +925,61 @@ const CLEAN_ANALYSIS = JSON.stringify({
     'Case3:不得照旧问题队列继续问 Q2',
   )
   console.log('✓ e2e13 Case3 首答使第二问失效:重算后不再问,台账标 NOT_APPLICABLE')
+}
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 4 triage 审计:Discovery 不得修改 Edit Triage(即使模型在后续轮次改口)
+// ═════════════════════════════════════════════════════════════════════════════
+{
+  // 第二轮分析**故意**声明 PATCH:钉住的 REBUILD 必须胜出
+  const round2SaysPatch = JSON.stringify({ ...JSON.parse(ROUND2), edit_triage: 'PATCH' })
+  const { handler, compileCalls } = await setup({
+    compileOutput: COMPILE_OUTPUT,
+    analysisRounds: [ROUND1, round2SaysPatch],
+  })
+  const first = await call(handler, { text: COMFY_RAW, provider: 'p', model: 'm' })
+  const round1 = sseEvents(first)[0]
+  assert.equal(round1.triage.triage, 'REBUILD', '首轮:模糊目标 → REBUILD')
+
+  const second = await call(handler, {
+    text: COMFY_RAW,
+    provider: 'p',
+    model: 'm',
+    discovery: {
+      mode: 'answer',
+      round: 1,
+      triage: 'REBUILD',
+      ledger: round1.ledger,
+      asked: round1.asked,
+      questions: round1.questions,
+      answers: round1.questions.map((q) => ({ key: q.key, option_id: q.options[0]?.id, text: q.options[0]?.label })),
+      analysis: round1.analysis,
+    },
+  })
+  const confirmation = sseEvents(second)[0]
+  assert.equal(confirmation.type, 'requirement_confirmation')
+  assert.equal(confirmation.triage.triage, 'REBUILD', '★ 回答轮不得把 REBUILD 改成 PATCH')
+
+  const third = await call(handler, {
+    text: COMFY_RAW,
+    provider: 'p',
+    model: 'm',
+    discovery: {
+      mode: 'confirm',
+      round: confirmation.round,
+      triage: 'REBUILD',
+      ledger: confirmation.ledger,
+      asked: confirmation.asked,
+      answers: [],
+      questions: [],
+      analysis: confirmation.analysis,
+    },
+  })
+  const done = sseEvents(third).find((e) => e.type === 'done')
+  assert.equal(done.triage.triage, 'REBUILD', '★ 编译结果的分诊必须仍是首轮钉住的 REBUILD')
+  assert.equal(compileCalls().length, 1)
+  console.log('✓ e2e14 triage 审计:模糊目标 = REBUILD,且 Discovery 不得改动它')
 }
 
 console.log('phase3-e2e.test.mjs: ALL PASS')

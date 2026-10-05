@@ -267,23 +267,14 @@ const SCENARIOS = [
     missing: ['目标输出长度'],
     suggested: ['补充语气约束'],
     body: [
-      '## Role（角色）',
-      '- 你是提示词编辑',
-      '## Task Goal（任务目标）',
-      '- 改一下这段提示词,让它更容易被理解',
-      '## Input Materials（输入材料）',
-      '- 用户提供的原提示词草稿',
-      '## Output Format（输出格式）',
-      '- 输出优化后的完整提示词',
-      '## Content Requirements（内容要求）',
-      '- 不新增用户未说明的硬约束',
-      '## Style（风格）',
-      '- 简洁清晰',
-      '## Constraints（约束）',
-      '- 不得新增我没说的要求',
-      '- 动手前先确认:目标输出长度',
-      '## Success Criteria（成功标准）',
-      '- 优化后更易理解,且未新增要求',
+      '## Request（请求要点）',
+      '- 把这段需求整理成给下游 Agent 的提示词',
+      '## Context & Inputs（上下文与输入）',
+      '- 用户给出的原始需求文本',
+      '## Constraints & Exclusions（约束与排除）',
+      '- 不要引入新依赖',
+      '## Deliverable Shape（产出形态）',
+      '- 输出 Markdown 报告',
     ].join('\n'),
   },
 ]
@@ -391,11 +382,13 @@ const rulesOf = (report) => report.problems.map((problem) => problem.rule)
   for (const scenario of SCENARIOS) {
     const strategy = defaultStrategyRegistry.get(scenario.type)
     assert.equal(strategy.type, scenario.type)
-    assert.ok(strategy.required_sections.length >= 8, `${scenario.type} 必出段落数异常`)
-    for (const section of strategy.required_sections) {
+    // Phase 4:general 迁入 v2 契约后只有 4 项信息责任(其余策略 8+)
+    assert.ok(strategy.informationResponsibilities.length >= 4, `${scenario.type} 信息责任数异常`)
+    assert.deepEqual(strategy.required_sections, strategy.informationResponsibilities)
+    for (const section of strategy.informationResponsibilities) {
       assert.ok(
         scenario.body.includes(section),
-        `${scenario.type} 场景优化稿缺少必出段落「${section}」`,
+        `${scenario.type} 场景优化稿缺少信息责任「${section}」`,
       )
     }
     assert.deepEqual(defaultStrategyRegistry.getSections(scenario.type), [

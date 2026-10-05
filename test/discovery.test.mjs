@@ -390,6 +390,37 @@ const entry = (id, text, status = 'OPEN', source = 'UNKNOWN') => ({
   console.log('✓ d9 Confirmation:四组摘要 + 稳定指纹(不暴露完整台账)')
 }
 
+// 9b. Phase 4 §2:四类必须互斥(同 id 或语义等价的决定只能出现一次)
+{
+  const model = analysis({ blocking: [blocking('要不要支持多机', 'c1')] })
+  const ledger = [
+    { ...entry('k1', '本轮目标是先验证控制链路还是建立长期自动化', 'CONFIRMED', 'USER_EXPLICIT'), evidence: ['先验证控制链路'] },
+    // 与上面指向同一决定,只是换了个措辞的「建议」→ 不得再以 PROVISIONAL 出现
+    { ...entry('s1', '可先验证控制链路', 'PROVISIONAL', 'OPTIMIZER_SUGGESTED'), note: '建议' },
+    { ...entry('d1', 'ComfyUI 版本', 'DISCOVERABLE'), },
+    // 与可自查项同 id 的重复条目 → 不得重复
+    { ...entry('d1', 'ComfyUI 版本', 'DISCOVERABLE'), },
+    // 真正的独立暂定项 → 保留
+    { ...entry('p2', '暂定使用 9:16 画幅', 'PROVISIONAL', 'OPTIMIZER_SUGGESTED') },
+  ]
+  const confirmation = buildConfirmation({ analysis: model, ledger, raw_input: '我想用 dsh 控制 comfyui 生成视频' })
+  const all = [
+    ...confirmation.confirmed.map((c) => c.text),
+    ...confirmation.agent_researches,
+    ...confirmation.provisional.map((p) => p.text),
+  ]
+  assert.equal(new Set(all).size, all.length, '四类之间不得有字面重复')
+  assert.equal(
+    confirmation.provisional.some((p) => p.text.includes('可先验证控制链路')),
+    false,
+    '★ 与已确认项语义等价的暂定项必须被剔除',
+  )
+  assert.equal(confirmation.agent_researches.length, 1, '同 id 的可自查项只出现一次')
+  assert.equal(confirmation.provisional.length, 1, '独立暂定项保留')
+  assert.equal(confirmation.provisional[0].text, '暂定使用 9:16 画幅')
+  console.log('✓ d9b Confirmation 四类互斥(id + 语义双重去重)')
+}
+
 // 10. Edit Triage 不被 Discovery 改变
 {
   for (const triage of ['KEEP', 'PATCH', 'RESTRUCTURE', 'REBUILD']) {

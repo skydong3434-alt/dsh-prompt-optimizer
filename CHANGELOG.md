@@ -110,6 +110,37 @@
   `rc12` 翻转为新行为。`npm test` **436 断言全绿**。
 - **证据工具**：`scripts/phase3-trace.mjs`（输出即 ComfyUI 完整事件流与编译调用次数）。
 
+### Phase 4 —— 产品收口 + 全链路一致性（已完成）
+
+报告:`docs/phase4-report.md`(含 A–F 证据附录);证据脚本:`node scripts/phase4-trace.mjs`。
+
+- **Triage 语义修正**:PATCH 必须**有可保留的东西**(≥1 结构信号 或 ≥1 成稿要素),
+  否则 REBUILD —— 修掉「模糊目标被误判为局部修改」(ComfyUI 案例由 PATCH → REBUILD,通用规则,非特例)。
+  Discovery **不得修改 Edit Triage**:首轮裁决钉住并逐轮回传,回答轮强制沿用。
+- **Validator 从 fail-closed 升级为可控回流**:新增 `core/validation-flow.ts` ——
+  `PASS / RETURN_TO_MISSING_RESOLUTION / RETURN_TO_DISCOVERY / RETURN_TO_ANALYSIS / HARD_ERROR`,
+  每个回流带稳定 `reason_code`;同一失败第二次即 HARD_ERROR,总次数上限 2;完整性缺陷不回流
+  (交付 + 警示)。新增 SSE `validating` 与 `returned` 事件。纯机械,不新增 LLM 调用。
+- **六态 UI**:`analyzing / discovery_required / requirement_confirmation / compiling / validating / complete`
+  (+ error / cancelled);分析诊断默认折叠,配一句结果摘要(`REBUILD · agent_task · DSH`)。
+- **主界面移除模式选择器**:`OptimizeButton` 不再渲染 `<select>`;手动 override 降级为结果页折叠区里的
+  低优先级「调整判断」。新增机械规则保证 **正文明确约束 > 手动 override**
+  (「只检查,不修改文件」压过 Execution 选择)。
+- **结果页语义收口**:「已确认需求」改读**真实 Requirement Ledger**(不从编译器输出反推);
+  建议弱化并默认折叠;移除「仍需补充/不确定」大杂烩,改为 需要你决定 / Agent 自行调查 / 暂不影响 / 暂定·条件。
+- **Confirmation 四类互斥**:id + 语义双重去重(包含率 + Jaccard),同一决定只属于一个当前状态。
+- **general 迁入 v2 契约**:4 项 target-neutral 信息责任(`Request / Context & Inputs /
+  Constraints & Exclusions / Deliverable Shape`),不再使用 Goal/Why/Phase/Task/Steps/Tests/Acceptance;
+  fast 模式的无标记容错由 v2 解析层承接。
+- **legacy 全部不可达**:`required_sections`(别名)、`injectMissingPlaceholders`、`parseOptimizerOutput`、
+  `prompt.ts` 双模式、`LEGACY_GENERAL`/`isLegacyGeneral`、`classifyViaLlm` 均为
+  `DEPRECATED-BUT-UNREACHABLE`,由可达性测试钉住;`compilePrompt({promptType})` 降级为高级 override。
+- **再优化 Ledger 对账**:新增 `core/ledger-reconcile.ts` —— STILL_VALID / CONFLICTING / INVALIDATED,
+  宿主新增 `mode:'reoptimize'`;对账结果贯穿编译/确认/门禁。测试覆盖「只改措辞保留 / 换向 supersede /
+  换族失效 / 删除约束不再假装是 USER_EXPLICIT」。
+- **测试**:新增 `validation-flow`(14)/`phase4-reconcile`(7)/`phase4-final`(9)三套件;
+  `npm test` **468 断言全绿**。
+
 ## [v0.1.0-apo] — 2026-10-04（首个可发布版本，Release Candidate）
 
 DSH Adaptive Prompt Optimizer 完成全部 9 个阶段（P00–P09），通过 G-1..G-7

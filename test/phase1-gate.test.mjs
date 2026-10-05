@@ -105,10 +105,34 @@ const COMPILE_OUTPUT = [
   '<<<SUGGESTED>>>',
   '- 建议(可忽略) 优先核对官方文档',
   '<<<UNKNOWN>>>',
-  '- [待补充: 期望的视频产出形式与时长]',
+  '- 期望的视频产出形式与时长:只有你能定,本轮不需要回答;执行方按通用做法先推进',
   '<<<OPTIMIZED>>>',
   '## 研究任务',
   '在 Mac M1 Pro 32GB 上调研 AI 视频方案。',
+  '<<<END>>>',
+].join('\n')
+
+/** Phase 4:general 走 v2 契约时的产物(4 项信息责任齐全)。 */
+const GENERAL_OUTPUT = [
+  '<<<DIAGNOSIS>>>',
+  '目标清晰,约束边界已标注',
+  '<<<EXPLICIT>>>',
+  '(无)',
+  '<<<CONTEXT>>>',
+  '(无)',
+  '<<<SUGGESTED>>>',
+  '(无)',
+  '<<<UNKNOWN>>>',
+  '(无)',
+  '<<<OPTIMIZED>>>',
+  '## Request（请求要点）',
+  '- 按用户输入整理提示词',
+  '## Context & Inputs（上下文与输入）',
+  '- 用户给出的草稿',
+  '## Constraints & Exclusions（约束与排除）',
+  '- 用户未给出额外约束',
+  '## Deliverable Shape（产出形态）',
+  '- 可直接使用的提示词',
   '<<<END>>>',
 ].join('\n')
 
@@ -192,7 +216,8 @@ const COMPLETE_PROMPT = [
   assert.equal(gate.gate.blocking_items.length, 1)
   assert.equal(gate.gate.blocking_items[0].text, '预算范围')
   assert.equal(gate.gate.discoverable_items.length, 1, '可自查项不得阻塞')
-  assert.equal(gate.triage.triage, 'PATCH')
+  // Phase 4:模糊目标 → 机械 REBUILD(Discovery 前的分诊;模型 PATCH 不得降级)
+  assert.equal(gate.triage.triage, 'REBUILD')
   assert.equal(gate.intent.primary, 'planning')
   assert.deepEqual(gate.intent.supporting, ['research'])
   assert.equal(gate.target.target, 'agent_task')
@@ -222,7 +247,7 @@ const COMPLETE_PROMPT = [
   assert.equal(meta.intent.work_mode, 'exploratory')
   assert.equal(meta.target.target, 'research')
   assert.equal(meta.target.modality, 'text')
-  assert.equal(meta.triage.triage, 'PATCH')
+  assert.equal(meta.triage.triage, 'REBUILD')
   assert.ok(Array.isArray(meta.ledger))
   assert.equal(meta.missing_resolution.length, 1)
   assert.equal(meta.missing_resolution[0].classification, 'AGENT_DISCOVERABLE')
@@ -235,7 +260,7 @@ const COMPLETE_PROMPT = [
   assert.ok(discoverable, '可自查项应标 DISCOVERABLE 而非 [待补充:] 语义')
   assert.ok(done.optimized.includes('研究任务'), '编译产出正常返回')
   assert.equal(done.target.target, 'research')
-  assert.equal(done.triage.triage, 'PATCH')
+  assert.equal(done.triage.triage, 'REBUILD')
   console.log('✓ p1g2 无阻塞 → 正常生成 + meta/done 带完整分析结论')
 }
 
@@ -329,7 +354,7 @@ const COMPLETE_PROMPT = [
 // 6. 分析失败 → 兜底继续编译(门不误伤:拿不准就不阻断)
 {
   const { handler, calls } = await setup({
-    respond: (_options, index) => chunkText(index === 0 ? '我不是 JSON' : COMPILE_OUTPUT),
+    respond: (_options, index) => chunkText(index === 0 ? '我不是 JSON' : GENERAL_OUTPUT),
   })
   const res = await call(handler, { text: RESEARCH_TEXT, provider: 'p', model: 'm' })
   const events = sseEvents(res)

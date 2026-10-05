@@ -126,7 +126,8 @@ const REAL_CASE =
   assert.equal(Object.keys(versions).length, 7)
   assert.equal(defaultStrategyRegistry.list().length, 7)
 
-  assert.equal(isLegacyGeneral(generalFallbackStrategy), true, 'general 兜底应标记为 legacy')
+  // Phase 4:legacy 路径不可达 —— 任何策略都不再标记 legacy(general 已迁入 v2 契约)
+  assert.equal(isLegacyGeneral(generalFallbackStrategy), false, 'Phase 4:general 不再走 legacy')
   assert.equal(isLegacyGeneral(research), false)
 
   // 自定义注册表裁掉 general 时仍保证 fallback 可用

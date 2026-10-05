@@ -195,6 +195,30 @@ const RESEARCH_CLASSIFY_JSON = JSON.stringify({
   evidence_quotes: [RESEARCH.quote[0]],
 })
 
+/** Phase 4:general 走 v2 四段协议时的产物(4 项信息责任齐全)。 */
+const GENERAL_PROTOCOL_OUTPUT = [
+  '<<<DIAGNOSIS>>>',
+  '目标明确,约束清晰',
+  '<<<EXPLICIT>>>',
+  '(无)',
+  '<<<CONTEXT>>>',
+  '(无)',
+  '<<<SUGGESTED>>>',
+  '(无)',
+  '<<<UNKNOWN>>>',
+  '(无)',
+  '<<<OPTIMIZED>>>',
+  '## Request（请求要点）',
+  '- 按用户输入整理提示词',
+  '## Context & Inputs（上下文与输入）',
+  '- 用户给出的草稿',
+  '## Constraints & Exclusions（约束与排除）',
+  '- 用户未给出额外约束',
+  '## Deliverable Shape（产出形态）',
+  '- 可直接使用的提示词',
+  '<<<END>>>',
+].join('\n')
+
 const LEGACY_OUTPUT = [
   '<<<ANALYSIS>>>',
   '目标明确,约束清晰',
@@ -286,7 +310,7 @@ const LEGACY_OUTPUT = [
 {
   const { handler, calls } = await setup({
     respond: (_options, index) =>
-      index === 0 ? chunkText('抱歉,我无法完成分类。') : chunkText(LEGACY_OUTPUT),
+      index === 0 ? chunkText('抱歉,我无法完成分类。') : chunkText(GENERAL_PROTOCOL_OUTPUT),
   })
   const res = await call(handler, { text: '帮我看看这段代码', provider: 'p', model: 'm' })
   const done = doneOf(res)
@@ -297,10 +321,10 @@ const LEGACY_OUTPUT = [
   assert.equal(meta.confidence_level, 'Low', '回退 general 必须低置信')
   assert.match(String(meta.rationale), /分类|通用|手动/)
   assert.equal(done.prompt_type, 'general')
-  assert.equal(done.analysis, '目标明确,约束清晰', 'legacy 解析零回归')
-  assert.equal(done.optimized, '优化后的提示词')
-  assert.equal(done.provenance_ok, true, 'legacy general 保持既有语义')
-  console.log('✓ h3 分析失败 → general + Low,编译继续')
+  assert.equal(done.analysis, '目标明确,约束清晰', 'v2:诊断段正常解析')
+  assert.ok(done.optimized.includes('请求要点'), 'v2:general 走信息责任契约')
+  assert.equal(done.provenance_ok, true)
+  console.log('✓ h3 分析失败 → general + Low,编译继续(v2 契约)')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -326,7 +350,8 @@ const LEGACY_OUTPUT = [
   // 结论失败不代表内容丢失:优化稿仍完整下发,交 UI 顶部警示(不静默丢弃)。
   assert.ok(done.optimized.length > 0)
 
-  // h4b. 伪造 quote(不在用户输入中)→ provenance error → done false(来源不伪造)。
+  // h4b. 伪造 quote(不在用户输入中)→ Phase 4:Validator **可控回流**而非交付。
+  //      交付一个「声称是用户要求」的稿子是不可接受的;回流带 reason code。
   const forged = await setup({
     respond: () => chunkText(researchOutput(RESEARCH.body, ['- 伪造要求 [quote: 用户从未说过这句]'])),
   })
@@ -336,27 +361,34 @@ const LEGACY_OUTPUT = [
     provider: 'p',
     model: 'm',
   })
-  assert.equal(doneOf(forgedRes).provenance_ok, false, '伪造逐字证据必须 false')
-  console.log('✓ h4 非 legacy:三层守卫决定 done.provenance_ok')
+  const forgedEvents = sseEvents(forgedRes)
+  assert.equal(forgedEvents.some((e) => e.type === 'done'), false, '伪造来源不得交付结果')
+  const returned = forgedEvents.find((e) => e.type === 'returned')
+  assert.ok(returned, '必须下发 returned 事件')
+  assert.equal(returned.action, 'RETURN_TO_MISSING_RESOLUTION')
+  assert.equal(returned.reason_code, 'VF_FABRICATED_USER_EXPLICIT')
+  assert.equal(returned.requires, 'provenance_downgrade')
+  assert.equal(returned.returns.length, 1, '必须记录回流次数(有界)')
+  console.log('✓ h4 非 legacy:三层守卫决定交付 / 可控回流')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// h5. legacy general(override)零回归:不套用新协议必出段落要求
+// h5. override general(Phase 4:走 v2 information-responsibility 契约,不再是 legacy)
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  const { handler, calls } = await setup({ respond: () => chunkText(LEGACY_OUTPUT) })
+  const { handler, calls } = await setup({ respond: () => chunkText(GENERAL_PROTOCOL_OUTPUT) })
   const res = await call(handler, { text: '帮我改一下这段提示词', promptType: 'general', provider: 'p', model: 'm' })
   const done = doneOf(res)
   assert.equal(calls.length, 1, 'override general 也应跳过分类')
-  assert.doesNotMatch(calls[0].system, /<<<DIAGNOSIS>>>/, 'legacy general 不下发四段协议')
+  assert.match(calls[0].system, /<<<DIAGNOSIS>>>/, 'Phase 4:general 下发 v2 四段协议')
   assert.equal(done.prompt_type, 'general')
   assert.equal(done.confidence_level, 'High')
   assert.equal(done.analysis, '目标明确,约束清晰')
-  assert.equal(done.optimized, '优化后的提示词')
-  assert.equal(done.provenance_ok, true, 'legacy 语义:provenance 段为空且 ok=true')
+  assert.ok(done.optimized.includes('请求要点'), 'v2:general 输出信息责任')
+  assert.equal(done.provenance_ok, true)
   assert.deepEqual(done.explicit_requirements, [])
   assert.deepEqual(done.suggested_requirements, [])
-  console.log('✓ h5 legacy general 零回归')
+  console.log('✓ h5 override general 走 v2 契约(信息责任)')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

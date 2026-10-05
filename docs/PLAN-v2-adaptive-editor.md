@@ -159,6 +159,11 @@ controller：meta→阶段文案；delta→实时预览；done→ResultDock（�
 - 验收用例 A（ComfyUI 控制 DSH）/ B（完备 prompt → KEEP/PATCH）/ F（「只检查，不修改文件」压制自动 Execution）。
 
 ### Phase 4 — 状态驱动 UI + 选择器降级
+
+> **状态:DONE(2026-10-05)**。实施与验收见 [phase4-report.md](./phase4-report.md)(含 A–F 证据附录)。
+> 已落地:Validator 可控回流(有界 + reason code)、六态 UI、主界面移除模式选择器 + 低优先级「调整判断」、
+> general 迁入 v2 契约、legacy 全部不可达、再优化 Ledger 对账(STILL_VALID/CONFLICTING/INVALIDATED)、
+> Triage 语义审计(PATCH 需可保留内容)、Confirmation 四类互斥、真实 Ledger 视图。
 - 六态 UI（analyzing / discovery_required / requirement_confirmation / compiling / validating / complete）。
 - AUTO▾ 降级为「高级覆盖」（默认自动）。
 - 保持 DSH Desktop 视觉风格；错误态用户可懂。

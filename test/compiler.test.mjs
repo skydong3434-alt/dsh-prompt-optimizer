@@ -505,7 +505,7 @@ const CLASSIFIER = {
   assert.equal(bad.result.provenance_ok, false)
   assert.ok(bad.problems.some((p) => p.rule === 'PROVENANCE_EVIDENCE_NOT_IN_RAW'))
 
-  // legacy general:原样输出,不注入缺口(零回归)
+  // Phase 4:legacy 显式调用仍可解析(兼容保留),但**生产路径不再进入**
   const legacy = finalizeCompile(generalFallbackStrategy, '<<<OPTIMIZED>>>\n通用改写结果\n<<<END>>>', {
     rawInput: '帮我看看这段代码',
     contextTurns: [],
@@ -516,8 +516,9 @@ const CLASSIFIER = {
   })
   assert.equal(legacy.result.optimized_prompt, '通用改写结果')
   assert.ok(!legacy.result.optimized_prompt.includes('[待补充:'))
-  assert.equal(isLegacyGeneral(generalFallbackStrategy), true)
-  console.log('✓ k13 finalizeCompile 缺口注入 / legacy 零回归 / 校验联动')
+  // ★ 生产路径不可达:general 不再被标记 legacy
+  assert.equal(isLegacyGeneral(generalFallbackStrategy), false, 'Phase 4:general 不标记 legacy')
+  console.log('✓ k13 finalizeCompile 缺口注入 / legacy 显式兼容但生产不可达 / 校验联动')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

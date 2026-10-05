@@ -771,6 +771,26 @@ export interface DiscoverySessionState {
   questions: DiscoveryQuestion[];
   /** 上一次的分析结论(confirm 时直接用于编译,避免重复分析调用)。 */
   analysis?: AnalysisResult;
+  /** Phase 4:已发生的 Validator 回流记录(有界;宿主当不可信输入净化)。 */
+  validationReturns?: ValidationReturnRecord[];
+}
+
+/** Validator 回流记录(Phase 4;契约见 core/validation-flow.ts)。 */
+export interface ValidationReturnRecord {
+  reason_code: string;
+  action: string;
+  round: number;
+}
+
+/** SSE `returned` 事件:Validator 判定需要回流(不交付结果)。 */
+export interface OptimizeReturnedEvent {
+  type: "returned";
+  action: string;
+  reason_code?: string;
+  detail: string;
+  requires: string | null;
+  returns: ValidationReturnRecord[];
+  provenance_ok: boolean;
 }
 
 /** SSE `discovery_required` 事件:唯一允许「不生成」的出口。 */

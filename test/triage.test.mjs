@@ -113,18 +113,31 @@ const MESSY_BUT_COMPLETE = [
   console.log('✓ tr6 乱但完整 → RESTRUCTURE')
 }
 
-// 7. 普通口语需求 → PATCH(信息不齐时补,而不是重组)
+// 7. PATCH 的正式语义(Phase 4 修正):必须有**可保留的东西**
+//    —— 已有提示词结构,或已给出成稿要素(约束 / 格式 / 角色 / 验收)。
+//    只有模糊目标(什么都没有)属于 REBUILD,不是「局部修改」。
 {
   for (const text of [
-    '帮我写个周报总结,要 300 字以内,输出 markdown。',
-    '这段 Python 报错了,帮我看看哪里有问题',
-    '帮我研究一下 Mac 上怎么做 AI 视频',
+    '帮我写个周报总结,要 300 字以内,输出 markdown。', // 约束 + 格式 → 可保留
+    '你是一名工程师。要求:接口不变。输出格式:清单。验收:测试全绿。', // 角色 + 约束 + 格式 + 验收
+    '1. 先跑测试\n2. 再看日志', // 已有结构
   ]) {
     const decision = mechanicalTriage(text)
     assert.equal(decision.triage, 'PATCH', `「${text}」应为 PATCH,实为 ${decision.triage}`)
     assert.equal(decision.keep_safe, false)
   }
-  console.log('✓ tr7 口语需求 → PATCH')
+  // 只有模糊目标 → REBUILD(无从「局部修改」)
+  for (const text of [
+    '这段 Python 报错了,帮我看看哪里有问题',
+    '帮我研究一下 Mac 上怎么做 AI 视频',
+    '我想用 dsh 控制 comfyui 生成视频。',
+    '帮我画一张赛博朋克城市夜景海报',
+  ]) {
+    const decision = mechanicalTriage(text)
+    assert.equal(decision.triage, 'REBUILD', `「${text}」只有模糊目标 → 应为 REBUILD,实为 ${decision.triage}`)
+    assert.equal(decision.keep_safe, false)
+  }
+  console.log('✓ tr7 PATCH = 有可保留内容;模糊目标 → REBUILD')
 }
 
 // 8. 无法构成任务 → REBUILD(空 / 寒暄 / 过短无动词)
@@ -134,16 +147,16 @@ const MESSY_BUT_COMPLETE = [
     assert.equal(decision.triage, 'REBUILD', `「${text}」应为 REBUILD,实为 ${decision.triage}`)
     assert.equal(decision.keep_safe, false)
   }
-  // 有动词的短句不算 REBUILD(3 个字的「帮我做」也是任务)
-  assert.notEqual(mechanicalTriage('帮我做').triage, 'REBUILD')
-  console.log('✓ tr8 空/寒暄/无动词 → REBUILD;有动词短句不算')
+  // 有动词但没有任何可保留内容(3 个字的「帮我做」)→ 仍是 REBUILD
+  assert.equal(mechanicalTriage('帮我做').triage, 'REBUILD')
+  console.log('✓ tr8 空/寒暄/无可保留内容 → REBUILD')
 }
 
 // 9. 合并规则:严重度取大 / 模型未给建议则纯机械
 {
-  assert.equal(mergeTriage(mechanicalTriage('帮我写个周报'), undefined).llm_advised, undefined)
-  const upgraded = mergeTriage(mechanicalTriage('帮我写个周报'), 'RESTRUCTURE')
-  assert.equal(upgraded.triage, 'RESTRUCTURE', '取严重度较大者')
+  assert.equal(mergeTriage(mechanicalTriage('帮我写个周报,要 300 字以内,输出 markdown。'), undefined).llm_advised, undefined)
+  const upgraded = mergeTriage(mechanicalTriage('帮我写个周报,要 300 字以内,输出 markdown。'), 'RESTRUCTURE')
+  assert.equal(upgraded.triage, 'RESTRUCTURE', '取严重度较大者(PATCH → RESTRUCTURE)')
   const mech = mechanicalTriage(COMPLETE_PROMPT)
   assert.equal(mergeTriage(mech, 'bogus-value').triage, mech.triage, '非法建议必须被忽略')
   // 严重度表单调且覆盖全部枚举

@@ -2,18 +2,18 @@
  * General PromptStrategy v0.1 —— P02-T07 通用兜底策略。
  *
  * AUTO 分类失败 / 低置信时,真实类型未知,不能硬套某一类专属骨架;general 的职责是
- * **忠实重组草稿**:把用户口语化、结构松散的一段文字,编译成一份八板块齐全、可直接
+ * **忠实重组草稿**:把用户口语化、结构松散的一段文字,编译成一份信息责任清楚、可直接
  * 交给下游 Agent 的通用 Prompt,并明确区分「用户说的 / 上下文确认的 / 优化器建议的 /
  * 仍未决的」。
  *
  * 双模式整合(吸收 Y1X1n 既有 template / intent 两种改写语义,**独立重写文案**):
- *   · template(结构模板):无会话上下文时,按八板块结构模板重排草稿,缺失按未决项处置纪律处理(省略,或写成动作式/条件式指令);
+ *   · template(结构模板):无会话上下文时,按信息责任清单重排草稿,缺失按未决项处置纪律处理(省略,或写成动作式/条件式指令);
  *   · intent(提炼目的):有会话上下文时,先提炼用户真实目的,再围绕目的润色草稿,
  *     不强行套模板,保留草稿原始表达框架,上下文只用于理解意图。
  *   模式由 `resolveGeneralMode(context_turns)` 机械判定;system 同时给出两种模式纪律,
  *   user 载荷再点明本次采用哪种模式。
  *
- * 八板块结构(角色 / 任务目标 / 输入材料 / 输出格式 / 内容要求 / 风格 / 约束 / 成功标准)
+ * 信息责任(Request / Context & Inputs / Constraints & Exclusions / Deliverable Shape)
  * 借鉴通用 Prompt 工程实践(含 Co1ombiagly spec 的板块划分思想),**文案全部本仓库独立撰写**。
  *
  * 通用铁律(写进 system prompt + guards + 测试):
@@ -26,7 +26,7 @@
  * 纯数据 + 纯函数:零 ctx.llm / UI / Host 依赖,独立 version,可独立测试与升级。
  * 复用 `_shared.ts` 的共享规则段、守卫工厂与跨策略不变式 A·B。
  *
- * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试(八板块只借鉴思想)。
+ * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
 import { renderDispositionBrief } from "../disposition-render.js";
 import type {
@@ -64,7 +64,7 @@ export const GENERAL_STRATEGY_VERSION = "0.1.0";
 /** general 的两种改写模式:无上下文用 template,有上下文用 intent。 */
 export type GeneralMode = "template" | "intent";
 
-/** template 模式常量(无会话上下文:按八板块结构模板重排草稿)。 */
+/** template 模式常量(无会话上下文:按信息责任清单重排草稿)。 */
 export const GENERAL_MODE_TEMPLATE: GeneralMode = "template";
 /** intent 模式常量(有会话上下文:先提炼目的,再顺势润色)。 */
 export const GENERAL_MODE_INTENT: GeneralMode = "intent";
@@ -108,90 +108,61 @@ interface GeneralSectionSpec {
 /** general 策略的 8 个必出板块,顺序即输出顺序。 */
 export const GENERAL_SECTIONS: readonly GeneralSectionSpec[] = [
   {
-    id: "Role",
-    zh: "角色",
+    id: "Request",
+    zh: "请求要点",
     guidanceZh:
-      "草稿要求模型扮演的角色 / 身份;草稿未给出时按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得替用户设定专家身份",
+      "用户到底要做什么(忠实原文,一句话能说清就不展开);不得替换成优化器自己的目标",
     guidanceEn:
-      "The role the draft asks the model to play; if the draft gives none, follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction); never assign an expert persona for the user",
+      "What the user actually wants done, faithful to the original; never replaced by the optimizer's own goal",
   },
   {
-    id: "Task Goal",
-    zh: "任务目标",
+    id: "Context & Inputs",
+    zh: "上下文与输入",
     guidanceZh:
-      "草稿要完成的核心任务与目标;必须忠实原文,不得替换成优化器自己的目标,缺失按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
+      "任务可用的材料 / 背景 / 数据,逐条标注来自用户还是上下文;没有就不写这一项",
     guidanceEn:
-      "The core task and goal of the draft, faithful to the original; never replaced by the optimizer's own goal, gaps → follow the open-item disposition discipline",
+      "Materials / background / data available to the task, each labeled as user-stated or contextual; omit when there is none",
   },
   {
-    id: "Input Materials",
-    zh: "输入材料",
+    id: "Constraints & Exclusions",
+    zh: "约束与排除",
     guidanceZh:
-      "任务可用的输入材料 / 背景 / 数据;逐条标注来自草稿还是上下文,缺失按未决项处置纪律处理(省略,或写成动作式/条件式指令)",
+      "用户明确给出的限制 / 禁止项 / 边界;不得新增无证据硬约束,新增必须带证据或标为建议",
     guidanceEn:
-      "Available input materials / background / data, each labeled as coming from the draft or the context; gaps → follow the open-item disposition discipline",
+      "Limits / prohibitions / boundaries the user stated; never add unevidenced hard constraints — additions need evidence or a suggestion label",
   },
   {
-    id: "Output Format",
-    zh: "输出格式",
+    id: "Deliverable Shape",
+    zh: "产出形态",
     guidanceZh:
-      "期望的输出形态(文本 / 表格 / 代码 / JSON 等)与篇幅;草稿未明确时保留原样或按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得强行套模板",
+      "期望的输出形态与篇幅(文本 / 表格 / 代码 / JSON 等);用户没给就按未决项处置纪律处理,不得强行套模板",
     guidanceEn:
-      "Expected output shape (text / table / code / JSON) and length; when unstated keep it open or follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction), never force a template",
-  },
-  {
-    id: "Content Requirements",
-    zh: "内容要求",
-    guidanceZh:
-      "必须覆盖的内容点 / 步骤 / 判断依据;只重组草稿已表达的内容,不得新增未确认的需求",
-    guidanceEn:
-      "Content points / steps / decision bases that must be covered; only reorganize what the draft states, never add unconfirmed requirements",
-  },
-  {
-    id: "Style",
-    zh: "风格",
-    guidanceZh:
-      "语气 / 受众 / 表达风格;必须与草稿一致,未给出按未决项处置纪律处理(省略,或写成动作式/条件式指令),不得自行拔高或转向",
-    guidanceEn:
-      "Tone / audience / expression style, consistent with the draft; gaps → follow the open-item disposition discipline, never inflate or redirect it",
-  },
-  {
-    id: "Constraints",
-    zh: "约束",
-    guidanceZh:
-      "用户明确给出的限制 / 禁止项 / 技术栈 / 边界;不得新增无证据硬约束,新增必须带证据或标注建议",
-    guidanceEn:
-      "Limits / prohibitions / stack / boundaries the user stated; never add unevidenced hard constraints — additions need evidence or a suggestion label",
-  },
-  {
-    id: "Success Criteria",
-    zh: "成功标准",
-    guidanceZh:
-      "判定产出达标的可核查标准(信息是否齐全 / 格式是否匹配 / 约束是否满足);必须可验证,不得写「好看 / 满意」类空泛表述",
-    guidanceEn:
-      "Verifiable criteria for a successful deliverable (information complete / format matched / constraints met); never vague like 'looks good'",
+      "Expected output shape and length (text / table / code / JSON); when unstated follow the open-item disposition discipline, never force a template",
   },
 ];
 
-/** required_sections:8 个 English 板块名(顺序即输出顺序;测试断言锚点)。 */
+/**
+ * 信息责任清单(English id = 机械核对锚点)。
+ *
+ * Phase 4:general 不再使用 Goal / Why / Phase / Task / Steps / Tests / Acceptance
+ * 这类固定模板板块 —— 它和别的策略一样只声明**必须交代清楚的信息责任**,
+ * 结构由 Edit Triage 与未决项处置决定(反膨胀:只有 4 项)。
+ */
 export const GENERAL_REQUIRED_SECTIONS: readonly string[] = GENERAL_SECTIONS.map(
   (section) => section.id,
 );
 
-/** 强制板块:任务目标与成功标准不得省略 —— 缺任一即视为通用 Prompt 不完整。 */
-export const GENERAL_MANDATORY_SECTIONS: readonly string[] = [
-  "Task Goal",
-  "Success Criteria",
-];
+/** 强制项:只有「请求要点」不可省略(其余责任缺失时由处置纪律处理)。 */
+export const GENERAL_MANDATORY_SECTIONS: readonly string[] = ["Request"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 系统提示词片段
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ROLE_ZH = `你是「General 通用 Prompt 编译器」,负责 AUTO 无法判定类型时的兜底改写。用户给你一段口语化、结构松散的提示词草稿,你要把它编译成一份八板块齐全、可直接交给下游 Agent 执行的通用 Prompt。
+const ROLE_ZH = `你是「General 通用 Prompt 编译器」,负责 AUTO 无法判定类型时的兜底改写。用户给你一段口语化、结构松散的提示词草稿,你要把它编译成一份信息责任清楚、可直接交给下游 Agent 执行的通用 Prompt。
 你不替用户重新定义任务,也不回答草稿里的问题;你只负责:忠实重组草稿原意、暴露缺失信息、把优化器建议与用户要求分开,并按固定板块输出。`
 
-const ROLE_EN = `You are the "General prompt compiler", the fallback used when AUTO cannot decide the type. The user gives you a colloquial, loosely structured draft. You compile it into a general prompt with all eight sections, ready for a downstream agent.
+const ROLE_EN = `You are the "General prompt compiler", the fallback used when AUTO cannot decide the type. The user gives you a colloquial, loosely structured draft. You compile it into a general prompt whose information responsibilities are clear, ready for a downstream agent.
 You do not redefine the task and you do not answer the draft's questions. You only reorganize the draft faithfully, expose what is missing, separate optimizer suggestions from user requirements, and output the fixed sections.`
 
 const FIDELITY_ZH = `# 通用纪律(铁律,优先于任何措辞偏好)
@@ -210,20 +181,20 @@ const FIDELITY_EN = `# General discipline (iron rules, above any style preferenc
 5. Keep terms: proper nouns, model names, product names, acronyms and numbers survive verbatim — no rewriting, translation, or invented localized names.
 6. Language matching: Chinese-dominant draft → Chinese output; English-dominant draft → English output.`
 
-// 模式一:无会话上下文 —— 按八板块结构模板重排草稿。
+// 模式一:无会话上下文 —— 按信息责任清单重排草稿。
 const MODE_TEMPLATE_ZH = `# 优化方式(结构模板模式 template)
 当前没有会话上下文,草稿是唯一信息来源:
-- 按八板块结构重排草稿(角色 / 任务目标 / 输入材料 / 输出格式 / 内容要求 / 风格 / 约束 / 成功标准)
+- 按信息责任清单重排草稿(Request / Context & Inputs / Constraints & Exclusions / Deliverable Shape)
 - 忠实保留原意:只做澄清、去冗余、排序与补齐结构,不新增用户未表达的需求
 - 缺失但关键的信息不要编造:按未决项处置纪律处理(省略,或写成动作式/条件式指令),并说明为什么重要
-- 简单草稿不必强行展开:板块可以是一句话,但八个板块标题都要出现(缺失的按未决项处置纪律处理)`
+- 简单草稿不必强行展开:一项责任可以是一句话;没有内容的项直接省略(反膨胀,不得为凑结构而扩写)`
 
 const MODE_TEMPLATE_EN = `# How to optimize (structured template mode)
 There is no conversation context; the draft is the only source:
-- Reorganize the draft into the eight sections (Role / Task Goal / Input Materials / Output Format / Content Requirements / Style / Constraints / Success Criteria)
+- Reorganize the draft by information responsibility (Request / Context & Inputs / Constraints & Exclusions / Deliverable Shape)
 - Stay faithful: clarify, de-duplicate, reorder and fill structure only; never add requirements the user did not express
 - Never fabricate missing but critical information: follow the open-item disposition discipline (omit, or write a before-acting/conditional instruction) and say why it matters
-- A simple draft need not be inflated; a section may be one line, but all eight headings must appear (missing ones per the open-item disposition discipline)`
+- A simple draft need not be inflated; a responsibility may be one line, and empty ones are omitted entirely (anti-bloat)`
 
 // 模式二:有会话上下文 —— 先提炼目的,再顺势润色,不套模板。
 const MODE_INTENT_ZH = `# 优化方式(提炼目的模式 intent)
@@ -233,7 +204,7 @@ const MODE_INTENT_ZH = `# 优化方式(提炼目的模式 intent)
 - 识别上下文中已被用户否决或推翻的方向(禁入集合),优化稿不得重复提出
 - 草稿与上下文冲突时,以草稿为最终意图,可在优化稿中调和表述
 - 上下文仅供理解意图:严禁回答、延续或引用其中的内容;你唯一要优化的对象是 <prompt-draft> 里的草稿
-- 即使采用 intent 模式,输出仍需包含完整八板块标题(以草稿原始框架为骨架逐块落实)
+- 即使采用 intent 模式,也必须逐项交代信息责任(以草稿原始框架为骨架;没有内容的项直接省略)
 - 草稿与上下文都未提供的关键信息以 未决项(省略或写成动作式/条件式指令) 标出`
 
 const MODE_INTENT_EN = `# How to optimize (distill intent mode)
@@ -417,7 +388,7 @@ function renderModeInstruction(mode: GeneralMode, language: StrategyLanguage): s
       : "This run uses intent mode (conversation context detected): distill my real goal first, then polish the draft toward it; do not force a template, keep the draft's own framing.";
   }
   return zh
-    ? "本次采用 template 模式(无会话上下文):按八板块结构模板重排草稿,忠实原意,缺失信息按未决项处置纪律处理(省略,或写成动作式/条件式指令)。"
+    ? "本次采用 template 模式(无会话上下文):按信息责任清单重排草稿,忠实原意,缺失信息按未决项处置纪律处理(省略,或写成动作式/条件式指令)。"
     : "This run uses template mode (no conversation context): reorganize the draft into the eight-section template, stay faithful, and mark missing information as open items (omit, or write a before-acting/conditional instruction).";
 }
 
@@ -440,8 +411,8 @@ export function buildGeneralUser(vars: CompileVars): string {
 
   sections.push(
     zh
-      ? `以下是我的提示词草稿(你唯一需要编译的对象;八板块必须齐全,不得新增我未给出的硬约束):\n\n<prompt-draft>\n${vars.raw_input}\n</prompt-draft>`
-      : `Here is my prompt draft (the only thing to compile; all eight sections must be present, and no hard constraint I did not state may be added):\n\n<prompt-draft>\n${vars.raw_input}\n</prompt-draft>`,
+      ? `以下是我的提示词草稿(你唯一需要编译的对象;信息责任逐项交代,不得新增我未给出的硬约束):\n\n<prompt-draft>\n${vars.raw_input}\n</prompt-draft>`
+      : `Here is my prompt draft (the only thing to compile; cover the information responsibilities, and add no hard constraint I did not state):\n\n<prompt-draft>\n${vars.raw_input}\n</prompt-draft>`,
   );
   return sections.join("\n\n");
 }
@@ -561,7 +532,7 @@ export const generalStrategy: PromptStrategy = {
   name: "General（通用 fallback）",
   version: GENERAL_STRATEGY_VERSION,
   purpose:
-    "AUTO 无法判定或分类失败时的兜底策略:把口语化、结构松散的草稿编译成八板块齐全的通用 Prompt——忠实重组原意、暴露缺失、区分用户要求与优化器建议,无证据不新增硬约束;无上下文用结构模板模式,有上下文用提炼目的模式。",
+    "AUTO 无法判定或分类失败时的兜底策略:把口语化、结构松散的草稿编译成信息责任清楚的通用 Prompt(Request / Context & Inputs / Constraints & Exclusions / Deliverable Shape)——忠实重组原意、按处置契约暴露缺失、区分用户要求与优化器建议,无证据不新增硬约束;无上下文用信息责任模板模式,有上下文用提炼目的模式。",
   informationResponsibilities: [...GENERAL_REQUIRED_SECTIONS],
   /** @deprecated 保留给旧消费方;内容与 informationResponsibilities 一致。 */
   required_sections: [...GENERAL_REQUIRED_SECTIONS],

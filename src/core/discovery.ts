@@ -57,6 +57,7 @@ export interface DiscoveryInput {
   questions?: DiscoveryQuestion[];
   round?: number;
   analysis?: AnalysisResult;
+  validationReturns?: readonly { reason_code?: unknown; action?: unknown; round?: unknown }[];
 }
 
 /** 净化客户端回传的会话:**只增不减地收紧**,绝不接受来源升格。 */
@@ -77,6 +78,18 @@ export function sanitizeSession(
     asked: Array.isArray(input.asked) ? input.asked.filter(isAsked) : [],
     answers: Array.isArray(input.answers) ? input.answers.filter(isAnswer) : [],
     questions: Array.isArray(input.questions) ? input.questions.filter(isQuestion) : [],
+    ...(Array.isArray(input.validationReturns)
+      ? {
+          validationReturns: input.validationReturns
+            .filter((record) => !!record && typeof record.reason_code === 'string')
+            .map((record) => ({
+              reason_code: String(record.reason_code),
+              action: String(record.action ?? ''),
+              round: typeof record.round === 'number' ? record.round : 1,
+            }))
+            .slice(0, 8),
+        }
+      : {}),
     ...(input.analysis ? { analysis: input.analysis } : {}),
   };
 }
@@ -128,6 +141,14 @@ export function questionFingerprint(requirementId: string, question: string): st
   return `${requirementId}::${normalizeQuestionText(question)}`;
 }
 
+/** 纯 bigram 集合(用于包含率:中文没有词边界,整串词元会稀释分母)。 */
+function bigramsOf(text: string): Set<string> {
+  const normalized = normalizeQuestionText(text);
+  const tokens = new Set<string>();
+  for (let i = 0; i + 1 < normalized.length; i += 1) tokens.add(normalized.slice(i, i + 2));
+  return tokens;
+}
+
 /** 词元集合(bigram + 英文词),用于「同义改写」相似度判定。 */
 function tokensOf(text: string): Set<string> {
   const normalized = normalizeQuestionText(text);
@@ -149,6 +170,25 @@ export function questionSimilarity(a: string, b: string): number {
   let shared = 0;
   for (const token of left) if (right.has(token)) shared += 1;
   return shared / (left.size + right.size - shared);
+}
+
+/**
+ * 包含率:较短一方的 token 有多大比例出现在较长一方里。
+ *
+ * 用于「同一决定的不同措辞」判定 —— 例:
+ *   「本轮目标是先验证控制链路还是建立长期自动化」 vs 「可先验证控制链路」
+ * Jaccard 只有 0.33(长句带来大量独有 token),但包含率是 1.0:
+ * 后者就是前者的一部分,属于**同一个决定**,不得在确认摘要里重复出现。
+ */
+export function containmentRatio(a: string, b: string): number {
+  // 只用 bigram:整串词元在中文里等于整句,会把包含率稀释掉。
+  const left = bigramsOf(a);
+  const right = bigramsOf(b);
+  if (!left.size || !right.size) return 0;
+  const [shorter, longer] = left.size <= right.size ? [left, right] : [right, left];
+  let shared = 0;
+  for (const token of shorter) if (longer.has(token)) shared += 1;
+  return shared / shorter.size;
 }
 
 /**
@@ -675,7 +715,21 @@ export function evaluateSufficiency(input: SufficiencyInput): SufficiencyResult 
 // Requirement Confirmation
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 构建确认摘要:目标 / 你已确认 / Agent 自行调查 / 暂定·条件(仅存在时)。 */
+/**
+ * 构建确认摘要:目标 / 你已确认 / Agent 自行调查 / 暂定·条件(仅存在时)。
+ *
+ * **四类必须互斥**(Phase 4 §2):同一个决定只能出现在其中一个当前有效状态里。
+ * 互斥判定不能只做字符串比较 —— 用 requirement id + 语义相似度双重判定:
+ *   1. 同 id → 已归属,跳过;
+ *   2. 与已归属条目语义相似(≥ CONFIRMATION_DUPLICATE_THRESHOLD)→ 跳过
+ *      (例:「本轮目标是先验证控制链路还是建立长期自动化」与建议「可先验证控制链路」
+ *       指向同一决定,后者不得再以 PROVISIONAL 出现);
+ *   3. 归属优先级:你已确认 > Agent 自行调查 > 暂定·条件(更权威的状态先占位)。
+ */
+export const CONFIRMATION_DUPLICATE_THRESHOLD = 0.55;
+/** 包含率阈值:较短一方 ≥80% 的 token 被较长一方覆盖 → 视为同一决定。 */
+export const CONFIRMATION_CONTAINMENT_THRESHOLD = 0.8;
+
 export function buildConfirmation(input: {
   analysis: AnalysisResult;
   ledger: readonly RequirementLedgerEntry[];
@@ -684,26 +738,58 @@ export function buildConfirmation(input: {
   const confirmed: { text: string; value?: string }[] = [];
   const provisional: { text: string; status: RequirementStatus; note?: string }[] = [];
   const agentResearches: string[] = [];
+  /** 已归属条目(用于互斥):id 与文本。 */
+  const claimedIds = new Set<string>();
+  const claimedTexts: string[] = [];
 
+  const isDuplicate = (id: string, text: string): boolean => {
+    if (claimedIds.has(id)) return true;
+    return claimedTexts.some((claimed) => {
+      if (claimed === text) return true;
+      // 语义相似度:同一决定的不同措辞(含「建议」式的改写)
+      if (questionSimilarity(claimed, text) >= CONFIRMATION_DUPLICATE_THRESHOLD) return true;
+      // 包含率:一方基本被另一方覆盖(「本轮目标:X」 vs 「可先 X」)
+      if (containmentRatio(claimed, text) >= CONFIRMATION_CONTAINMENT_THRESHOLD) return true;
+      // 字面包含(去掉标点后)
+      const a = normalizeQuestionText(claimed);
+      const b = normalizeQuestionText(text);
+      return a.length >= 6 && b.length >= 6 && (a.includes(b) || b.includes(a));
+    });
+  };
+  const claim = (id: string, text: string): void => {
+    claimedIds.add(id);
+    claimedTexts.push(text);
+  };
+
+  // ① 你已确认(USER_EXPLICIT / CONTEXT_EXPLICIT,且当前状态有效)
   for (const entry of input.ledger) {
-    if (entry.source === "USER_EXPLICIT" || entry.source === "CONTEXT_EXPLICIT") {
-      if (entry.status === "CONFIRMED" || entry.status === "REJECTED") {
-        confirmed.push({ text: entry.text, ...(entry.evidence[0] ? { value: entry.evidence[0] } : {}) });
-      }
-      continue;
-    }
-    if (entry.status === "PROVISIONAL" || entry.status === "CONDITIONAL" || entry.status === "DEFERRED") {
-      provisional.push({ text: entry.text, status: entry.status, ...(entry.note ? { note: entry.note } : {}) });
-      continue;
-    }
-    if (entry.status === "DISCOVERABLE") agentResearches.push(entry.text);
+    if (entry.source !== "USER_EXPLICIT" && entry.source !== "CONTEXT_EXPLICIT") continue;
+    if (entry.status !== "CONFIRMED" && entry.status !== "REJECTED") continue;
+    if (isDuplicate(entry.id, entry.text)) continue;
+    confirmed.push({ text: entry.text, ...(entry.evidence[0] ? { value: entry.evidence[0] } : {}) });
+    claim(entry.id, entry.text);
   }
 
-  // 分析阶段判定的可自查项也要出现(即使台账没有对应条目)
+  // ② Agent 自行调查(可自查项)
+  for (const entry of input.ledger) {
+    if (entry.status !== "DISCOVERABLE") continue;
+    if (isDuplicate(entry.id, entry.text)) continue;
+    agentResearches.push(entry.text);
+    claim(entry.id, entry.text);
+  }
   for (const item of input.analysis.missing_resolution) {
     if (item.classification !== "AGENT_DISCOVERABLE") continue;
-    if (agentResearches.includes(item.text)) continue;
+    if (isDuplicate(item.id, item.text)) continue;
     agentResearches.push(item.text);
+    claim(item.id, item.text);
+  }
+
+  // ③ 暂定 / 条件事项(最后占位:更权威的状态已归属的语义不得再出现)
+  for (const entry of input.ledger) {
+    if (entry.status !== "PROVISIONAL" && entry.status !== "CONDITIONAL" && entry.status !== "DEFERRED") continue;
+    if (isDuplicate(entry.id, entry.text)) continue;
+    provisional.push({ text: entry.text, status: entry.status, ...(entry.note ? { note: entry.note } : {}) });
+    claim(entry.id, entry.text);
   }
 
   const goal =
