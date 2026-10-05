@@ -13,6 +13,7 @@ import {
   type ClassifierLlm,
 } from './core/classify.js'
 import {
+  ANALYSIS_MAX_TOKENS,
   analyzeViaLlm,
   analysisToClassifier,
   manualAnalysisResult,
@@ -23,7 +24,7 @@ import { EDIT_TRIAGE_LEVELS } from './core/types.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
 import { compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
 import { computeAnalysisGate } from './core/requirements.js'
-import { decideValidationAction, type ValidationFlowOutcome } from './core/validation-flow.js'
+import { assessCompleteness, decideValidationAction, type ValidationFlowOutcome } from './core/validation-flow.js'
 import { reconcileLedger } from './core/ledger-reconcile.js'
 import {
   buildConfirmation,
@@ -703,13 +704,15 @@ export function apply(ctx: Context, config: Config) {
               contextTurns: context,
             })
           } else {
-            const analysisOutcome: AnalyzeViaLlmOutcome = await analyzeViaLlm<Message>(
+            const analyzeOnce = (maxTokensOverride?: number): Promise<AnalyzeViaLlmOutcome> =>
+              analyzeViaLlm<Message>(
               ctx.llm as unknown as ClassifierLlm<Message>,
               classifierRoute,
               { raw_input: text, context_turns: context },
               {
                 language,
                 signal: abort.signal,
+                ...(maxTokensOverride ? { maxTokensOverride } : {}),
                 // 推理强度口径与既有 handler 一致:'session' 时原样透传;否则钳该
                 // 路由最低档,解析不到再回退会话值(不冒险构造无效 effort)。
                 resolveLowestEffort: preferSessionEffort
@@ -719,6 +722,19 @@ export function apply(ctx: Context, config: Config) {
                 buildMessage: (payload) => buildOptimizeMessage(payload),
               },
             )
+            // RC:推理模型可能把分析预算吃光(finish_reason=length → 空内容/半截 JSON),
+            // 此时**一次性**把预算翻倍重试(只在下发过截断信号时发生)。
+            let analysisOutcome = await analyzeOnce()
+            // 实测:推理模型在固定预算下更常见的表现是「半截 JSON」(failure=invalid-output),
+            // 而不一定带 truncated 标记 —— 因此解析失败也重试一次。
+            // 但**提供方错误 / 中止**不重试(重试救不了,只会白白多花一次调用)。
+            const retryable =
+              analysisOutcome.failure === 'invalid-output' ||
+              /truncat/i.test(String(analysisOutcome.reason ?? ''));
+            if (analysisOutcome.usedFallback && !analysisOutcome.aborted && retryable) {
+              console.warn(`[${name}] analysis truncated at maxTokens; retrying once with doubled budget`)
+              analysisOutcome = await analyzeOnce(ANALYSIS_MAX_TOKENS * 2)
+            }
             if (analysisOutcome.aborted) {
               // 客户端断连 / 超时:交下方既有分支统一处置(不进入编译)。
               analysisAborted = true
@@ -1028,6 +1044,7 @@ export function apply(ctx: Context, config: Config) {
             })
             const strategy = plan.strategy
             const effectiveClassifier = plan.classifier
+            const reconciledLedgerForValidation = analysis!.ledger
             const missing = plan.vars.missing_constraints
             const message = buildOptimizeMessage(plan.user)
             const system = plan.system
@@ -1124,10 +1141,24 @@ export function apply(ctx: Context, config: Config) {
                   rawOutput: raw.text,
                 })
                 outcome.result.provenance_ok = validation.provenance_ok
+                // Phase RC:完整性评估(执行关键 vs 非关键)—— 关键缺失必须回流,不能只警示。
+                // 例外:max-tokens 截断是**显式可见**的状态(truncated=true + UI 警示),
+                // 不做回流(重跑也只会再次截断),仍按既有语义交付。
+                // 另一个例外:fast 模式的产品契约就是「单段落、无标记」——
+                // 用责任名去卡它自相矛盾,因此 fast 模式不做关键完整性回流。
+                const completeness = raw.truncated || mode === 'fast'
+                  ? { criticalMissing: [], nonCriticalMissing: [], droppedUserRequirements: [] }
+                  : assessCompleteness({
+                      optimizedPrompt: outcome.result.optimized_prompt,
+                      responsibilities: strategy.informationResponsibilities,
+                      ledger: reconciledLedgerForValidation,
+                      visualContract: strategy.type === 'image' || strategy.type === 'video',
+                    })
                 validationOutcome = decideValidationAction({
                   problems: validation.problems,
                   result: outcome.result,
                   rawInput: text,
+                  criticalMissing: completeness.criticalMissing,
                   returns: session?.validationReturns ?? [],
                   round: session?.round ?? 1,
                   liveBlockingCount: 0,

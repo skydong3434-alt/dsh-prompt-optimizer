@@ -137,7 +137,7 @@ export interface DiscoveryAnswerView {
 /** Requirement Confirmation 摘要。 */
 export interface ConfirmationView {
   goal: string
-  confirmed: { text: string; value?: string }[]
+  confirmed: { text: string; value?: string; label?: string }[]
   agentResearches: string[]
   provisional: { text: string; status: string; note?: string }[]
   fingerprint: string
@@ -485,6 +485,7 @@ export function asConfirmationView(value: unknown): ConfirmationView | null {
         .map((item) => ({
           text: String(item.text ?? ''),
           ...(typeof item.value === 'string' && item.value ? { value: item.value } : {}),
+          ...(typeof item.label === 'string' && item.label ? { label: item.label } : {}),
         }))
     : []
   const provisional = Array.isArray(record.provisional)

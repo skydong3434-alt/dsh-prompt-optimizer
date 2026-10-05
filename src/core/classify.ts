@@ -687,6 +687,11 @@ export interface JsonCallOptions<Message = ClassifierLlmMessage> {
   buildMessage?: (payload: string) => Message;
   /** 逐段回调:思考块已剥离的干净增量(宿主透传 SSE 时可注入)。 */
   onDelta?: (text: string) => void;
+  /**
+   * 覆盖 spec 的 maxTokens(RC:推理模型会把固定预算吃光,截断后需要临时加预算重试一次)。
+   * 只影响本次调用的请求快照与下发参数,不改 spec 默认。
+   */
+  maxTokensOverride?: number;
 }
 
 /** 向后兼容别名。 */
@@ -875,10 +880,11 @@ export async function runJsonCallViaLlm<T, Message = ClassifierLlmMessage>(
     ((payload: string): Message => defaultClassifierMessage(payload) as unknown as Message);
 
   // 请求快照:即使提前取消也给出「本应使用的硬参数」,便于审计与回归。
+  const effectiveMaxTokens = options.maxTokensOverride ?? spec.maxTokens;
   const request: JsonCallOutcome<T>["request"] = {
     provider: route.provider,
     model: route.model,
-    maxTokens: spec.maxTokens,
+    maxTokens: effectiveMaxTokens,
     temperature: spec.temperature,
   };
   const finish = (
@@ -933,7 +939,7 @@ export async function runJsonCallViaLlm<T, Message = ClassifierLlmMessage>(
       model: route.model,
       system,
       messages: [buildMessage(user)],
-      maxTokens: spec.maxTokens,
+      maxTokens: effectiveMaxTokens,
       temperature: spec.temperature,
       ...(reasoningEffort ? { reasoningEffort } : {}),
       signal: controller.signal,

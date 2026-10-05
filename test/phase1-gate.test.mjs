@@ -360,7 +360,8 @@ const COMPLETE_PROMPT = [
   const events = sseEvents(res)
   const meta = events.find((e) => e.type === 'meta')
   const done = events.find((e) => e.type === 'done')
-  assert.equal(calls.length, 2, '分析失败也必须继续到编译')
+  // RC:解析失败 → 一次性加预算重试(2 次分析 + 1 次编译)
+  assert.equal(calls.length, 3, 'RC:分析解析失败 → 重试一次,再继续编译')
   assert.ok(done, '分析失败不得阻断用户')
   assert.equal(
     events.some((e) => e.type === 'discovery_required'),

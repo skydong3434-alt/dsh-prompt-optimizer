@@ -18,6 +18,7 @@
  * 纯函数,零 Harness / UI 依赖。
  */
 import type { CompileResult, ValidationProblem } from "./types.js";
+import { containmentRatio } from "./discovery.js";
 
 /** 回流动作(概念枚举;行为语义见文件头)。 */
 export type ValidationAction =
@@ -51,6 +52,12 @@ export const VALIDATION_REASON = {
   returnBudgetExhausted: "VF_RETURN_BUDGET_EXHAUSTED",
   /** 同一失败重复触发(无法通过回流修复)。 */
   repeatedFailure: "VF_REPEATED_FAILURE",
+  /** 执行关键的信息责任缺失(用户约束 / 权限边界 / 成功标准 / 目标契约主责任)。 */
+  criticalResponsibilityMissing: "VF_CRITICAL_RESPONSIBILITY_MISSING",
+  /** 交付稿为空(模型没有产出可用内容)→ 可重跑一次。 */
+  emptyOutput: "VF_EMPTY_OUTPUT",
+  /** 交付稿残留内部协议标记 → 解析降级,剥离后重出。 */
+  protocolLeak: "VF_PROTOCOL_LEAK",
 } as const;
 
 export type ValidationReasonCode = (typeof VALIDATION_REASON)[keyof typeof VALIDATION_REASON];
@@ -66,6 +73,90 @@ export interface ValidationReturnRecord {
   reason_code: string;
   action: string;
   round: number;
+}
+
+/**
+ * 完整性评估:区分**执行关键**(缺失会让 Agent 做错方向)与**非关键**(推荐信息不全)。
+ *
+ * 关键设计决定(RC 审计):**按信息内容判定,不按标题名判定**。
+ * 要求「必须出现某个责任标题」本身就是「Target-template-expander」的病征
+ * (把任务模板换成 Subject/Shot 但仍然机械套模板)——因此:
+ *   · 执行关键 = ① 用户已确认的明确要求 / 约束在交付稿里找不到(丢约束);
+ *                ② 视觉契约完全没有表达任何 negative / 避免项(生成模型会照做不该做的事);
+ *   · 非关键   = 责任标题没出现(结构问题,由策略守卫报 error → 交付 + provenance_ok=false 警示)。
+ * 「结构 ≠ 信息」:少一个标题不必然影响执行,丢一条用户约束一定会。
+ */
+export interface CompletenessAssessment {
+  criticalMissing: string[];
+  nonCriticalMissing: string[];
+  /** 用户已确认但交付稿中找不到的要求(最严重的一类)。 */
+  droppedUserRequirements: string[];
+}
+
+/** 约束 / 安全边界类要求:丢失会改变执行方向的只有这一类。 */
+const CONSTRAINT_LIKE_RE = /不要|不得|禁止|仅限|只(?:检查|看|改|做|用)|必须|保持|不变|不得改动|不修改|不引入|不改|必须带|不少于|不低于|上限|限制|权限|安全|合规/i;
+
+/** 否定 / 排除项的表达(概念级,不要求标题名)。 */
+const NEGATIVE_CONCEPT_RE = /不要|不得|避免|排除|禁止|勿|negative|avoid|exclude|without|no\s+(?:text|watermark|logo)/i;
+
+export function assessCompleteness(input: {
+  optimizedPrompt: string;
+  responsibilities: readonly string[];
+  ledger?: readonly { text: string; source: string; status: string; evidence?: readonly string[] }[];
+  visualContract?: boolean;
+}): CompletenessAssessment {
+  const text = String(input.optimizedPrompt ?? "");
+  const normalized = (value: string) => value.replace(/\s+/g, "").toLowerCase();
+  const haystack = normalized(text);
+  /**
+   * 「这条要求还在不在交付稿里」——**语义级**判定:
+   *   ① 逐字/前缀命中;② 包含率(较短一方 ≥50% 的 bigram 被覆盖)命中。
+   * 后者让「用 dsh 控制 comfyui 生成视频」与「验证 DSH 能成功调用现有 ComfyUI
+   * 工作流并产出视频」判为同一要求,避免把正常改写误判成「丢约束」。
+   */
+  const present = (needle: string): boolean => {
+    const target = normalized(needle);
+    if (!target) return true;
+    if (haystack.includes(target)) return true;
+    const head = target.slice(0, 12);
+    if (head.length >= 4 && haystack.includes(head)) return true;
+    return containmentRatio(needle, text) >= 0.5;
+  };
+
+  const criticalMissing: string[] = [];
+  const nonCriticalMissing: string[] = [];
+
+  // ① 用户已确认的明确要求 / 约束不得丢失(证据或条目文本任一命中即算保留)
+  const droppedUserRequirements: string[] = [];
+  for (const entry of input.ledger ?? []) {
+    if (entry.source !== "USER_EXPLICIT" && entry.source !== "CONTEXT_EXPLICIT") continue;
+    if (entry.status !== "CONFIRMED") continue;
+    const candidates = [...(entry.evidence ?? []), entry.text].filter(Boolean);
+    if (candidates.some((candidate) => present(String(candidate)))) continue;
+    droppedUserRequirements.push(entry.text);
+  }
+  if (droppedUserRequirements.length > 0) {
+    // RC:只有**约束 / 安全边界类**的丢失才会让 Agent 做错方向;
+    // 目标复述类的句子在视觉契约定式里本来就不会原样出现(实测误报 rc12/13/16),
+    // 因此这类记入非关键(仍然可见),不触发回流。
+    const constraintLike = droppedUserRequirements.filter((text) => CONSTRAINT_LIKE_RE.test(text));
+    const goalLike = droppedUserRequirements.filter((text) => !CONSTRAINT_LIKE_RE.test(text));
+    if (constraintLike.length > 0) criticalMissing.push("用户已确认的要求 / 约束");
+    for (const text of goalLike) nonCriticalMissing.push(`要求复述未逐字出现:${text}`);
+  }
+
+  // ② 视觉契约必须表达排除项(概念级:出现任何一种否定表达即可)
+  if (input.visualContract && !NEGATIVE_CONCEPT_RE.test(text)) {
+    criticalMissing.push("排除项 / negative(视觉契约必需)");
+  }
+
+  // ③ 其余责任缺失 = 结构问题 → 非关键(交付 + 警示)
+  for (const name of input.responsibilities ?? []) {
+    if (present(name)) continue;
+    nonCriticalMissing.push(name);
+  }
+
+  return { criticalMissing, nonCriticalMissing, droppedUserRequirements };
 }
 
 export interface ValidationFlowInput {
@@ -86,6 +177,8 @@ export interface ValidationFlowInput {
   visualContract?: boolean;
   /** 目标/引擎是否由优化器假定(分析侧给出的标记)。 */
   targetAssumed?: boolean;
+  /** 执行关键的信息责任缺失(由 assessCompleteness 给出)。 */
+  criticalMissing?: readonly string[];
 }
 
 export interface ValidationFlowOutcome {
@@ -107,6 +200,18 @@ const PROBLEM_ROUTING: readonly {
   reason: ValidationReasonCode;
   requires: ValidationFlowOutcome["requires"];
 }[] = [
+  {
+    match: /EMPTY_OUTPUT/,
+    action: "RETURN_TO_MISSING_RESOLUTION",
+    reason: VALIDATION_REASON.emptyOutput,
+    requires: "disposition_fix",
+  },
+  {
+    match: /PROTOCOL_LEAK/,
+    action: "RETURN_TO_MISSING_RESOLUTION",
+    reason: VALIDATION_REASON.protocolLeak,
+    requires: "disposition_fix",
+  },
   {
     match: /RETIRED_PLACEHOLDER/,
     action: "RETURN_TO_MISSING_RESOLUTION",
@@ -218,7 +323,18 @@ export function decideValidationAction(input: ValidationFlowInput): ValidationFl
     };
   }
 
-  // ③ 问题映射
+  // ③ 执行关键的信息责任缺失 → 必须回流(不能只警示)
+  if ((input.criticalMissing ?? []).length > 0) {
+    return record({
+      action: "RETURN_TO_MISSING_RESOLUTION",
+      reason_code: VALIDATION_REASON.criticalResponsibilityMissing,
+      detail: `交付稿缺少执行关键的信息:${(input.criticalMissing ?? []).join(" / ")}`,
+      requires: "disposition_fix",
+      returns,
+    });
+  }
+
+  // ④ 问题映射
   const errors = input.problems.filter((problem) => problem.severity === "error");
   const matched = errors
     .map((problem) => PROBLEM_ROUTING.find((route) => route.match.test(problem.rule)))
@@ -239,7 +355,7 @@ export function decideValidationAction(input: ValidationFlowInput): ValidationFl
     });
   }
 
-  // ④ 未映射的 error(如「必出段落缺失」这类**完整性**问题):
+  // ⑤ 未映射的 error(如「非关键责任缺失」这类**完整性**问题):
   //    回流解决不了它 —— 它需要模型重写,而不是重新判定缺失或再问用户。
   //    因此**交付并警示**(provenance_ok=false,UI 顶部提示),不静默丢弃内容。
   //    只有能通过「改 provenance / 改处置 / 重判目标」修好的问题才回流(见 ③)。
@@ -251,7 +367,7 @@ export function decideValidationAction(input: ValidationFlowInput): ValidationFl
     };
   }
 
-  // ⑤ 目标/引擎由优化器假定且显著影响结果 → 回到分析
+  // ⑥ 目标/引擎由优化器假定且显著影响结果 → 回到分析
   if (input.targetAssumed) {
     return record({
       action: "RETURN_TO_ANALYSIS",

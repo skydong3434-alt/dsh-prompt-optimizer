@@ -80,6 +80,10 @@ export const VALIDATION_RULE = {
   retiredPlaceholder: "VALIDATION_RETIRED_PLACEHOLDER",
   /** v2 Phase 2(I-2):未决项被写成面向用户的追问。 */
   userFacingQuestion: "VALIDATION_USER_FACING_QUESTION",
+  /** RC:交付稿为空(模型没有产出可用内容)。 */
+  emptyOutput: "VALIDATION_EMPTY_OUTPUT",
+  /** RC:交付稿残留协议标记(<<<DIAGNOSIS>>> 等),说明解析降级。 */
+  protocolLeak: "VALIDATION_PROTOCOL_LEAK",
 } as const;
 
 /** 层名（顺序即执行 / 展示顺序）。 */
@@ -579,6 +583,26 @@ export function validateUnknowns(
   void opts;
   const problems: ValidationProblem[] = [];
   const optimized = String(result.optimized_prompt ?? "");
+
+  // ── RC:交付稿必须非空、且不含内部协议标记 ────────────────────────────────
+  if (optimized.trim().length === 0) {
+    problems.push(
+      issue(
+        "error",
+        VALIDATION_RULE.emptyOutput,
+        "交付稿为空:模型没有产出可用内容,不能作为提示词交付",
+      ),
+    );
+  }
+  if (/<<<[A-Z_]+>>>/.test(optimized)) {
+    problems.push(
+      issue(
+        "error",
+        VALIDATION_RULE.protocolLeak,
+        "交付稿残留内部协议标记(<<<DIAGNOSIS>>> 等):解析降级,必须剥离后重出",
+      ),
+    );
+  }
 
   // ── I-1 / I-2(Phase 2 契约,见 docs/phase2-contract.md)──────────────────
   // [待补充:] / [TODO:] 已退役:**出现即 error**(不再有任何合法用途)。

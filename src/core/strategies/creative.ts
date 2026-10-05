@@ -25,7 +25,7 @@
  * 全部文案为本项目独立撰写;设计思想(实体保真 + 无证据不改设定 + 成功标准强制)为通用
  * 创作工程实践,未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
-import { renderDispositionBrief } from "../disposition-render.js";
+import { renderDispositionBrief, renderTriageDiscipline } from "../disposition-render.js";
 import type {
   CompileVars,
   Guard,
@@ -368,18 +368,24 @@ function renderMissing(
   vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
-  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
-  return renderDispositionBrief(
-    {
-      missing_constraints: vars.missing_constraints,
-      dispositions: vars.missing_dispositions,
-      missing_resolution: vars.missing_resolution,
-    },
-    language,
-    "请在编译中自行识别缺口(尤其平台 / 时长 / 画幅 / 目标受众 / 输出格式)。",
-    "identify gaps during compilation (especially platform / duration / aspect ratio / audience / output format).",
-  );
+  // v2 Phase 2 处置契约 + Phase 4/RC 编辑分诊纪律(RC:实测 PATCH 被重写成模板)
+  const parts = [
+    renderDispositionBrief(
+      {
+        missing_constraints: vars.missing_constraints,
+        dispositions: vars.missing_dispositions,
+        missing_resolution: vars.missing_resolution,
+      },
+      language,
+      "请在编译中自行识别缺口(尤其平台 / 时长 / 画幅 / 目标受众 / 输出格式)。",
+      "identify gaps during compilation (especially platform / duration / aspect ratio / audience / output format).",
+    ),
+  ];
+  if (vars.triage) {
+    const discipline = renderTriageDiscipline(vars.triage, language);
+    if (discipline) parts.push(discipline);
+  }
+  return parts.join("\n\n");
 }
 
 function renderLlmDerived(

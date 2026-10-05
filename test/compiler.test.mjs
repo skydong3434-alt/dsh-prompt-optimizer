@@ -161,7 +161,11 @@ const MARKED = [
   const b = parseCompileOutput(noAnchor)
   assert.equal(b.wellFormed, false)
   assert.deepEqual(b.explicit_requirements, [], '无 OPTIMIZED 锚点不得产出 explicit 记录')
-  assert.equal(b.optimized_prompt, noAnchor.trim(), '整段降级为优化稿')
+  // RC:降级路径必须**剥掉协议标记行**(交付稿不得含内部标记)
+  // RC:降级路径必须**剥掉协议标记行**(交付稿不得含内部标记)
+  assert.equal(b.optimized_prompt, '- 研究目标 [quote: Mac M1 Pro 32GB]', '整段降级为优化稿(剥标记后)')
+  assert.doesNotMatch(b.optimized_prompt, /<<<[A-Z_]+>>>/, 'RC:降级也不得泄漏协议标记')
+  assert.doesNotMatch(b.optimized_prompt, /<<<[A-Z_]+>>>/, 'RC:降级也不得泄漏协议标记')
 
   // Markdown 四段标题回退
   const markdown = [

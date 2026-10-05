@@ -20,7 +20,7 @@
  * 全部文案为本项目独立撰写;设计思想(候选/证据/人工决策点分层)为通用研究工程实践,
  * 未复制任何 AGPL 项目的源码 / 模板文本 / 测试。
  */
-import { renderDispositionBrief } from "../disposition-render.js";
+import { renderDispositionBrief, renderTriageDiscipline } from "../disposition-render.js";
 import type {
   CompileResult,
   CompileVars,
@@ -299,18 +299,24 @@ function renderMissing(
   vars: CompileVars,
   language: StrategyLanguage,
 ): string {
-  // v2 Phase 2 契约(docs/phase2-contract.md):未决项按处置分类交付,
-  // 不再落成 [待补充:] 占位符 —— 见 disposition-render.ts。
-  return renderDispositionBrief(
-    {
-      missing_constraints: vars.missing_constraints,
-      dispositions: vars.missing_dispositions,
-      missing_resolution: vars.missing_resolution,
-    },
-    language,
-    "请在研究中自行识别缺口。",
-    "identify gaps during research.",
-  );
+  // v2 Phase 2 处置契约 + Phase 4/RC 编辑分诊纪律(RC:实测 PATCH 被重写成模板)
+  const parts = [
+    renderDispositionBrief(
+      {
+        missing_constraints: vars.missing_constraints,
+        dispositions: vars.missing_dispositions,
+        missing_resolution: vars.missing_resolution,
+      },
+      language,
+      "请在研究中自行识别缺口。",
+      "identify gaps during research.",
+    ),
+  ];
+  if (vars.triage) {
+    const discipline = renderTriageDiscipline(vars.triage, language);
+    if (discipline) parts.push(discipline);
+  }
+  return parts.join("\n\n");
 }
 
 function renderLlmDerived(

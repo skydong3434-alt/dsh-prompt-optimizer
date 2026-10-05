@@ -263,13 +263,15 @@ function eventsOf(res) {
   const invalid = await boot({ config: { promptType: 'bogus' } })
   const res = await call(invalid.handler, { text: 'x', provider: 'p', model: 'm' })
   const calls = invalid.getCalls()
-  assert.equal(calls.length, 2, '非法默认类型必须回落 AUTO(分析 + 编译)')
+  // RC:该 mock 的分析产物不可解析 → 触发一次性加预算重试(2 分析 + 1 编译)
+  assert.equal(calls.length, 3, '非法默认类型回落 AUTO:分析(含重试)+ 编译')
   assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS, '第 1 次应是分析调用')
+  assert.equal(calls[1].maxTokens, ANALYSIS_MAX_TOKENS * 2, '第 2 次是加预算重试')
   assert.ok(eventsOf(res).find((e) => e.type === 'meta'), '非法默认类型仍应下发 meta')
 
   const absent = await boot({})
   await call(absent.handler, { text: 'x', provider: 'p', model: 'm' })
-  assert.equal(absent.getCalls().length, 2, '未配置默认类型 = AUTO(分析 + 编译)')
+  assert.equal(absent.getCalls().length, 3, '未配置默认类型 = AUTO(分析含重试 + 编译)')
   console.log('✓ cs8 非法/缺省默认类型回落 AUTO')
 }
 
@@ -279,12 +281,13 @@ function eventsOf(res) {
   const res = await call(handler, { text: 'x', provider: 'main-p', model: 'main-m' })
   done(res)
   const calls = getCalls()
-  assert.equal(calls.length, 2, 'AUTO = 分析 1 次 + 编译 1 次')
+  assert.equal(calls.length, 3, 'AUTO = 分析(含一次重试)+ 编译')
   assert.equal(calls[0].provider, 'fast-p', '分析调用应走 classifierModel 指定路由')
   assert.equal(calls[0].model, 'fast-m')
   assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS, '分析调用硬参数不变')
-  assert.equal(calls[1].provider, 'main-p', '编译仍走主路由')
-  assert.equal(calls[1].model, 'main-m')
+  const compileCall = calls[calls.length - 1]
+  assert.equal(compileCall.provider, 'main-p', '编译仍走主路由')
+  assert.equal(compileCall.model, 'main-m')
   console.log('✓ cs9 classifierModel 仅替换分类路由')
 }
 

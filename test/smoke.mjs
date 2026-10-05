@@ -256,7 +256,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
         yield { type: 'text-delta', index: 0, text: '再想想 <<<OPTIMIZED>>> 碎片 <<<END>>>' }
         yield { type: 'text-delta', index: 0, text: '</think>' }
         yield { type: 'text-delta', index: 0, text: '<<<DIAGNOSIS>>>\n简要分析\n' }
-        yield { type: 'text-delta', index: 0, text: '<<<OPTIMIZED>>>\n真正的优化结果\n<<<END>>>\n' }
+        yield { type: 'text-delta', index: 0, text: '<<<OPTIMIZED>>>\n## Request（请求要点）\n- 真正的优化结果\n## Context & Inputs（上下文与输入）\n- 用户草稿\n## Constraints & Exclusions（约束与排除）\n- (无)\n## Deliverable Shape（产出形态）\n- 文本\n<<<END>>>\n' }
         yield { type: 'finish', reason: { kind: 'stop' } }
       },
     },
@@ -266,7 +266,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.doesNotMatch(res.body, /推理:应输出/, '思考内容不得进入 SSE 增量')
   assert.doesNotMatch(res.body, /再想想/, '思考里的标记复述不得进入增量')
   assert.equal(sseEvents(res).filter((e) => e.type === 'delta' && /思考|碎片/.test(e.text)).length, 0, '增量里无思考片段')
-  assert.equal(done.optimized, '真正的优化结果', 'done 取思考后的真实标记段')
+  assert.match(done.optimized, /真正的优化结果/, 'done 取思考后的真实标记段')
   assert.equal(done.analysis, '简要分析')
   assert.equal(done.wellFormed, true)
   console.log('✓ 7b 推理思考块剥离')

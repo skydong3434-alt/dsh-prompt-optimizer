@@ -735,7 +735,8 @@ export function buildConfirmation(input: {
   ledger: readonly RequirementLedgerEntry[];
   raw_input: string;
 }): RequirementConfirmation {
-  const confirmed: { text: string; value?: string }[] = [];
+  // 「你已确认」展示的是**用户答案语义(resolved value)**,不是问题名(§RC 风险 1)。
+  const confirmed: { text: string; value?: string; label?: string }[] = [];
   const provisional: { text: string; status: RequirementStatus; note?: string }[] = [];
   const agentResearches: string[] = [];
   /** 已归属条目(用于互斥):id 与文本。 */
@@ -765,8 +766,10 @@ export function buildConfirmation(input: {
   for (const entry of input.ledger) {
     if (entry.source !== "USER_EXPLICIT" && entry.source !== "CONTEXT_EXPLICIT") continue;
     if (entry.status !== "CONFIRMED" && entry.status !== "REJECTED") continue;
+    // 互斥判定用**问题名(label)**与 id,展示用 resolved value。
     if (isDuplicate(entry.id, entry.text)) continue;
-    confirmed.push({ text: entry.text, ...(entry.evidence[0] ? { value: entry.evidence[0] } : {}) });
+    const value = resolvedValueOf(entry);
+    confirmed.push({ text: value, value, label: entry.text });
     claim(entry.id, entry.text);
   }
 
@@ -793,12 +796,32 @@ export function buildConfirmation(input: {
   }
 
   const goal =
-    confirmed.find((entry) => entry.text.length > 8)?.text ??
-    input.analysis.rationale ??
+    input.analysis.rationale?.trim() ||
+    confirmed.find((entry) => (entry.label ?? entry.text).length > 8)?.label ||
     String(input.raw_input ?? "").trim().slice(0, 80);
 
   const fingerprint = confirmationFingerprint({ goal, confirmed, agentResearches, provisional });
   return { goal, confirmed, agent_researches: agentResearches, provisional, fingerprint };
+}
+
+/**
+ * 取出该台账条目的 **resolved value**(用户答案语义)。
+ *
+ * 优先级:逐字证据(用户原话) > 「你选择了:X」note > 条目文本本身。
+ * 这样「你已确认」展示的是「调用已经存在的 ComfyUI 工作流」而不是问题名
+ * 「复用现有 workflow 还是新建」。
+ */
+export function resolvedValueOf(entry: {
+  text: string;
+  evidence?: readonly string[];
+  note?: string;
+}): string {
+  const evidence = (entry.evidence ?? []).map((item) => String(item).trim()).filter(Boolean);
+  if (evidence.length > 0) return evidence[0]!;
+  const note = String(entry.note ?? "");
+  const picked = /你选择了[:：]\s*([^;；]+)/.exec(note);
+  if (picked?.[1]) return picked[1].trim();
+  return String(entry.text ?? "").trim();
 }
 
 /** 摘要指纹(确认时回传;防止「确认了另一个版本」)。 */

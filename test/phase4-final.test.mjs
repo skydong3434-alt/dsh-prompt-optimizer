@@ -381,8 +381,31 @@ const VIDEO_BODY = [
   const previousLedger = [
     { id: 'ledger-a', text: '已有可工作的 workflow', source: 'USER_EXPLICIT', status: 'CONFIRMED', evidence: ['已经有 workflow'], confidence: 'high' },
   ]
-  // 只改措辞 → 保留(且不得重新问)
-  const keepCase = await setup({ compileOutput: NEUTRAL, analysisRounds: [IMAGE_ANALYSIS] })
+  // 只改措辞 → 保留(且不得重新问)。产物必须**真的保留**该已确认约束,
+  // 否则会被 RC 完整性检查判为「丢约束」而回流(这正是该检查要防的)。
+  const REOPT_OUTPUT = [
+    '<<<DIAGNOSIS>>>',
+    'd',
+    '<<<EXPLICIT>>>',
+    '(无)',
+    '<<<CONTEXT>>>',
+    '(无)',
+    '<<<SUGGESTED>>>',
+    '(无)',
+    '<<<UNKNOWN>>>',
+    '(无)',
+    '<<<OPTIMIZED>>>',
+    '## Request（请求要点）',
+    '- 已有可工作的 workflow,按其现有配置整理提示词',
+    '## Context & Inputs（上下文与输入）',
+    '- 用户给出的草稿',
+    '## Constraints & Exclusions（约束与排除）',
+    '- 复用现有 workflow',
+    '## Deliverable Shape（产出形态）',
+    '- 可直接使用的提示词',
+    '<<<END>>>',
+  ].join('\n')
+  const keepCase = await setup({ compileOutput: REOPT_OUTPUT, analysisRounds: [IMAGE_ANALYSIS] })
   const kept = await call(keepCase.handler, {
     text: '已经有 workflow,帮我把这段画面描述整理成生图提示词。',
     provider: 'p',
@@ -399,7 +422,7 @@ const VIDEO_BODY = [
   )
 
   // 换族 → 失效
-  const switchCase = await setup({ compileOutput: NEUTRAL, analysisRounds: [IMAGE_ANALYSIS] })
+  const switchCase = await setup({ compileOutput: REOPT_OUTPUT, analysisRounds: [IMAGE_ANALYSIS] })
   const switched = await call(switchCase.handler, {
     text: '帮我生成 Midjourney 图片提示词。',
     provider: 'p',

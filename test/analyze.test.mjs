@@ -245,6 +245,9 @@ const FULL = JSON.stringify({
   assert.equal(ok.aborted, false)
   assert.equal(ok.result.prompt_type, 'research')
   assert.equal(ok.request.maxTokens, ANALYSIS_MAX_TOKENS)
+  // RC 回归:真实推理模型实测 1024/2048 会 finish_reason=length 导致整段降级,
+  // 因此分析预算不得低于 4096(改小必须同时给出新的实测证据)
+  assert.ok(ANALYSIS_MAX_TOKENS >= 4096, 'RC:分析预算必须 ≥4096,否则推理模型会写不出 JSON')
   assert.equal(ok.request.temperature, ANALYSIS_TEMPERATURE)
   assert.ok(typeof ok.durationMs === 'number')
 

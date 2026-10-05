@@ -246,6 +246,8 @@ export interface CompileVars {
   context_turns: ConversationTurn[];
   workspace_metadata: NormalizedContext["workspace_metadata"];
   missing_constraints: MissingConstraint[];
+  /** v2 Phase 4/RC:本次的编辑分诊(驱动「改多少」的纪律;KEEP 不进入编译)。 */
+  triage?: EditTriage;
   /**
    * v2:带三分类的未决项(有则优先用于处置分派;无则按 label 做机械三分类)。
    * 处置计划由 `responsibilities.ts` 的纯函数按需推导 —— 确定性且开销可忽略,
@@ -748,8 +750,11 @@ export interface DiscoveryRound {
 export interface RequirementConfirmation {
   /** 一句话:这次要做什么。 */
   goal: string;
-  /** 你已确认(USER_EXPLICIT / CONTEXT_EXPLICIT → CONFIRMED)。 */
-  confirmed: { text: string; value?: string }[];
+  /**
+   * 你已确认(USER_EXPLICIT / CONTEXT_EXPLICIT → CONFIRMED)。
+   * `text` = 用户答案语义(resolved value);`label` = 对应的需求名(辅助)。
+   */
+  confirmed: { text: string; value?: string; label?: string }[];
   /** 执行 Agent 自行调查(AGENT_DISCOVERABLE / DISCOVERABLE)。 */
   agent_researches: string[];
   /** 暂定 / 条件事项(仅存在时显示)。 */

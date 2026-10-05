@@ -21,7 +21,7 @@ import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
 import { COMPILE_MARKERS as M } from '../lib/core/compiler.js'
-import { ANALYSIS_MAX_TOKENS, ANALYSIS_SYSTEM_MARKER } from '../lib/core/analyze.js'
+import { ANALYSIS_MAX_TOKENS, ANALYSIS_SYSTEM_MARKER, isMetaAnalysisCall } from '../lib/core/analyze.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Host harness(与 smoke.mjs 同构:真实 Context + mock llm)
@@ -315,7 +315,14 @@ const LEGACY_OUTPUT = [
   const res = await call(handler, { text: '帮我看看这段代码', provider: 'p', model: 'm' })
   const done = doneOf(res)
   const meta = sseEvents(res).find((e) => e.type === 'meta')
-  assert.equal(calls.length, 2, '分析失败也必须继续到编译')
+  // RC:解析失败会**一次性**加预算重试(2 次分析尝试 + 1 次编译)
+  assert.equal(calls.length, 3, 'RC:分析解析失败 → 重试一次,再继续编译')
+  assert.equal(calls.filter((o) => isMetaAnalysisCall(o.system)).length, 2, '分析最多尝试 2 次')
+  assert.equal(
+    calls.filter((o) => isMetaAnalysisCall(o.system))[1].maxTokens,
+    ANALYSIS_MAX_TOKENS * 2,
+    '★ 重试必须把预算翻倍',
+  )
   assert.equal(calls[0].maxTokens, ANALYSIS_MAX_TOKENS)
   assert.equal(meta.prompt_type, 'general', '分析解析失败必须回退 general')
   assert.equal(meta.confidence_level, 'Low', '回退 general 必须低置信')

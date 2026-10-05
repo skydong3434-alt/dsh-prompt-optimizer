@@ -34,6 +34,7 @@ import type {
   WorkMode,
   TriageDecision,
 } from "./types.js";
+import { containmentRatio } from './discovery.js'
 import {
   EDIT_TRIAGE_LEVELS,
   PROMPT_TARGETS,
@@ -53,10 +54,28 @@ import {
 import { stripThinkBlocks } from "../prompt.js";
 import { getTargetSpec, modalityOf, resolveEngine, resolveTargetDeterministic } from "./targets.js";
 import { decideTriage } from "./triage.js";
-import { buildLedger, classifyUnknowns, computeAnalysisGate, hasBlindTrust, applyBlindTrust } from "./requirements.js";
+import {
+  applyBlindTrust,
+  buildLedger,
+  classifyUnknown,
+  classifyUnknowns,
+  computeAnalysisGate,
+  hasBlindTrust,
+  tradeoffStatements,
+} from "./requirements.js";
 
-/** 分析调用硬参数:比分类的 512 大(结构化字段更多),仍保持确定性。 */
-export const ANALYSIS_MAX_TOKENS = 1024;
+/**
+ * 分析调用硬参数(比分类的 512 大:结构化字段更多)。
+ *
+ * RC 实测(真实模型 opencode-go/deepseek-v4-flash,3 组对照):
+ *   · 1024 token → 推理就吃光预算,`finish_reason=length` + **空内容** → 分析整段降级;
+ *   · 2048 token → 仍 `length`(推理 ~6–7k 字符后才开始写 JSON),或只写半个 JSON;
+ *   · 4096 token → `finish_reason=stop`,完整 JSON。
+ * 且 `reasoning_effort` 在该模型上几乎不缩短推理(实测 minimal 仍 ~6.5k 字符)。
+ * 结论:分析契约(13+ 字段、含数组与选项)必须给足预算,否则**整条 v2 主流程降级**
+ * (Discovery 永不触发、target 只剩确定性兜底)。4096 仍只是**一次**小调用。
+ */
+export const ANALYSIS_MAX_TOKENS = 4096;
 export const ANALYSIS_TEMPERATURE = 0;
 
 /**
@@ -450,6 +469,32 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
   // ── 缺失解析(UNKNOWN ≠ ASK_USER)────────────────────────────────────────
   const unknownInputs = normalizeUnknownInputs(record);
   const missingResolution = classifyUnknowns(unknownInputs);
+
+  // ── RC 安全网:机械补齐模型漏报的**产品取舍**(false negative)───────────────
+  // 实测模型会把「先做能跑的最小版本,还是做成长期工具」归成可自查项 → Discovery 漏问。
+  // 这里对用户原文做机械扫描:出现明确取舍句式而分析没列出来的,补一条阻塞项。
+  // 只补未知项,绝不新增用户来源(仍然要用户来回答)。
+  const coveredText = [
+    ...missingResolution.map((item) => item.text),
+    ...(Array.isArray(record.requirements) ? record.requirements.map((r) => (isPlainObject(r) ? String(r.text ?? "") : "")) : []),
+  ];
+  for (const statement of tradeoffStatements(rawInput)) {
+    const alreadyCovered = coveredText.some((text) => containmentRatio(statement, text) >= 0.5 || text.includes(statement) || statement.includes(text));
+    if (alreadyCovered) continue;
+    issues.push("tradeoff_not_surfaced_by_model");
+    // 用与模型未知项**同一条**机械流水线分类(不绕过保守规则);
+    // 显式 blocking:true 表达「这是真正需要用户答复的取舍」。
+    const item = classifyUnknown({ text: statement, blocking: true });
+    if (!item.blocking) {
+      // 机械判定它不需要用户决定(例如其实是可自查的环境事实)→ 保持不阻塞,不硬塞
+      missingResolution.push(item);
+      continue;
+    }
+    missingResolution.push({
+      ...item,
+      rationale: `${item.rationale ? `${item.rationale};` : ""}机械识别:用户原文出现产品取舍,分析未列出(安全网补齐)`,
+    });
+  }
   const gate = computeAnalysisGate(missingResolution, triage.triage);
 
   // ── 台账(来源 / 状态分离)────────────────────────────────────────────────

@@ -587,15 +587,20 @@ export function createResultDock(controller: OptimizerController) {
       controller.answerDiscovery(answers)
     }
 
-    const renderConfirmGroup = (title: string, items: { text: string; value?: string }[]) =>
+    /** 你已确认:主行是**用户答案语义**,问题名只作弱化的辅助 label。 */
+    const renderConfirmGroup = (title: string, items: { text: string; value?: string; label?: string }[]) =>
       items.length === 0 ? null : (
         <div style={{ marginTop: 8 }}>
           <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{title}({items.length})</div>
           <div style={styles.unknownBox}>
             {items.map((item) => (
-              <div key={item.text} style={styles.groupItem}>
+              <div key={item.label ?? item.text} style={styles.groupItem}>
                 - {item.text}
-                {item.value ? <span style={{ opacity: 0.7 }}>({item.value})</span> : null}
+                {item.label && item.label !== item.text ? (
+                  <span style={{ opacity: 0.65 }}>
+                    {t('panel.confirm.about')}:{item.label}
+                  </span>
+                ) : null}
               </div>
             ))}
           </div>

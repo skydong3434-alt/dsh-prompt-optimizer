@@ -41,6 +41,7 @@ import {
 import { defaultStrategyRegistry, isLegacyGeneral, type StrategyRegistry } from "./registry.js";
 import { routeStrategy, type RouteDecision } from "./router.js";
 import { injectResponsibilityNotes, planResponsibilities } from "./responsibilities.js";
+import { rewriteRetiredPlaceholders } from "./disposition-render.js";
 import {
   buildSystemPrompt,
   buildUserPayload,
@@ -382,6 +383,18 @@ export interface CompiledSections {
  * 解析编译器输出:优先标记协议,缺失时回退 Markdown 四段标题;
  * 两者都没有时整段文本作为 optimized_prompt(wellFormed=false)。
  */
+/** 协议标记行(交付稿中绝不允许出现)。 */
+const PROTOCOL_MARKER_LINE_RE = /^\s*<<<[A-Z_]+>>>\s*$/;
+
+/** 机械剥离交付稿里残留的协议标记行(模型偶发不输出 OPTIMIZED 导致整段降级)。 */
+export function stripProtocolMarkers(text: string): string {
+  return String(text ?? "")
+    .split(/\r?\n/)
+    .filter((line) => !PROTOCOL_MARKER_LINE_RE.test(line))
+    .join("\n")
+    .trim();
+}
+
 export function parseCompileOutput(raw: string): CompiledSections {
   const text = stripThinkBlocks(String(raw ?? "")).trim();
   const positions = collectMarkerPositions(text);
@@ -429,7 +442,9 @@ export function parseCompileOutput(raw: string): CompiledSections {
     suggested_requirements: [],
     unknowns: [],
     missing_constraints: [],
-    optimized_prompt: text,
+    // 降级路径:整段作为优化稿,但**先剥掉协议标记行** —— 交付给用户的
+    // Prompt 里不允许出现 <<<DIAGNOSIS>>> 这类内部标记(RC 实测 rc17 泄漏)。
+    optimized_prompt: stripProtocolMarkers(text),
     wellFormed: false,
   };
 }
@@ -623,6 +638,7 @@ export function compilePrompt(input: CompilePromptInput): CompilePlan {
       ? { missing_resolution: [...input.analysis.missing_resolution] }
       : {}),
     missing_dispositions: dispositionPlan.items,
+    ...(input.analysis?.triage ? { triage: input.analysis.triage.triage } : {}),
   };
 
   // 步骤 7/8/9:输出契约 + 反漂移 + 四段来源协议(组装 system / user)。
@@ -942,6 +958,8 @@ export function finalizeCompile(
     if (detail) problems.push({ severity: "error", rule: guard.id, detail });
   }
 
+  // RC:交付前机械改写退役占位符(I-1 由构造保证,不依赖重试)
+  result.optimized_prompt = rewriteRetiredPlaceholders(result.optimized_prompt);
   result.provenance_ok = provenance.ok && !problems.some((problem) => problem.severity === "error");
   // fast 模式的无标记容错(保留 v0.3.11 的产品行为):fast 是单段落模式,模型常直接
   // 输出整段结果而无标记 —— 此时整段即优化稿,不算「格式退化」。

@@ -187,8 +187,22 @@ export function estimateTokenCount(text: string): number {
  * 判断文本是否以中文为主体(CJK 字数 ≥ 拉丁字母数;平局按中文优先)。
  * 用于语言匹配纪律:中文输入 → 中文输出,英文输入 → 英文输出。
  */
+/**
+ * 中文为主判定(RC 修正)。
+ *
+ * 旧实现是 `cjk >= latin`,对中文技术写作极不稳健:一个 CJK 字承载的信息量远大于
+ * 一个拉丁字母,所以「我想用 dsh 控制 comfyui 生成视频。」(cjk=10 / latin=10)
+ * 被判成英文 → 中文 system + 英文 user 载荷(自相矛盾,模型更容易跑偏)。
+ * 现在改成:只要有实义中文(cjk ≥ 4)且 cjk×2 ≥ latin,就算中文为主;
+ * 纯英文输入(含 'x' 这类短输入)行为不变,仍判英文。
+ */
 export function isChineseDominant(text: string): boolean {
-  return countCjkChars(text) >= countLatinChars(text);
+  const cjk = countCjkChars(text);
+  const latin = countLatinChars(text);
+  if (cjk === 0) return false;
+  if (cjk >= 4 && cjk * 2 >= latin) return true;
+  if (latin === 0) return true;
+  return cjk >= latin;
 }
 
 /** 语言判定(与 isChineseDominant 同源;语言匹配纪律的统一入口)。 */

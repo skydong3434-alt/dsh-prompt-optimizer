@@ -26,6 +26,7 @@ import {
   questionSimilarity,
   recordAsked,
   reopenRequirements,
+  resolvedValueOf,
   resolveAnswers,
   reviseRequirement,
   runDiscoveryTurn,
@@ -519,6 +520,43 @@ const entry = (id, text, status = 'OPEN', source = 'UNKNOWN') => ({
   assert.equal(x.status, 'PROVISIONAL')
   assert.deepEqual(findSessionViolations(session), [], '净化后不得有违规')
   console.log('✓ d12 会话净化:客户端回传的伪造来源被降级,不变量干净')
+}
+
+// 14. RC 风险 1:「你已确认」必须展示**用户答案语义**,问题名只作辅助 label
+{
+  const questions = [
+    {
+      key: 'w::q',
+      requirement_id: 'w',
+      question: '复用现有 workflow 还是创建?',
+      options: [{ id: 'reuse', label: '调用已经存在的 workflow', value: 'REUSE' }],
+      why: '',
+      depends_on: [],
+    },
+  ]
+  const resolved = resolveAnswers({
+    raw_input: '我想用 dsh 控制 comfyui 生成视频',
+    ledger: [entry('w', '复用现有 workflow 还是创建')],
+    questions,
+    answers: [{ key: 'w::q', option_id: 'reuse', text: '调用已经存在的 workflow' }],
+  })
+  const model = analysis({})
+  const confirmation = buildConfirmation({
+    analysis: model,
+    ledger: resolved.ledger,
+    raw_input: '我想用 dsh 控制 comfyui 生成视频',
+  })
+  assert.equal(confirmation.confirmed.length, 1)
+  const item = confirmation.confirmed[0]
+  assert.equal(item.text, '调用已经存在的 workflow', '★ 展示的必须是用户答案(value)')
+  assert.equal(item.label, '复用现有 workflow 还是创建', '问题名只作辅助 label')
+  assert.notEqual(item.text, item.label, 'value 不得等于问题名')
+  assert.ok(!/还是|\?|？/.test(item.text), 'value 不得是问题句式')
+  // resolvedValueOf 的三级取值
+  assert.equal(resolvedValueOf({ text: 'Q?', evidence: ['A'] }), 'A', '优先逐字证据')
+  assert.equal(resolvedValueOf({ text: 'Q?', note: '你选择了:X' }), 'X', '其次「你选择了:」')
+  assert.equal(resolvedValueOf({ text: 'Q?' }), 'Q?', '最后回落条目文本')
+  console.log('✓ d14 RC 风险 1:Confirmation 展示 resolved value(问题名仅辅助)')
 }
 
 console.log('discovery.test.mjs: ALL PASS')

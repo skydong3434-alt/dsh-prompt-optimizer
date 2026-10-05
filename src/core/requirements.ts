@@ -146,6 +146,25 @@ export function isProductDecision(text: string): boolean {
 }
 
 /** 该文本是否为可读取/可验证的环境事实(反方向保护判据)。 */
+/**
+ * 从用户原文里机械提取「产品取舍句」——RC 安全网。
+ *
+ * 实测问题:模型倾向把「先做能跑的最小版本,还是直接做成长期用的工具」这类
+ * **真正的产品取舍**归类成可自查项,导致 Discovery 漏问(false negative)。
+ * 这里在分析结果之上做机械兜底:只要用户原句里出现明确的二选一/取舍表达,
+ * 而分析**没有**把它列为未知项,就补一条 `USER_REQUIRED + blocking`。
+ *
+ * 保守起见:只认明确的取舍句式,且要求句子有实义长度,避免误报阻塞。
+ */
+export function tradeoffStatements(rawInput: string): string[] {
+  const text = String(rawInput ?? "");
+  const sentences = text
+    .split(/[。;；!?\n]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 6);
+  return sentences.filter((sentence) => isProductDecision(sentence));
+}
+
 export function isEnvironmentFact(text: string): boolean {
   return ENVIRONMENT_FACT_RE.test(String(text ?? ""));
 }
