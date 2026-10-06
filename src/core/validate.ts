@@ -545,7 +545,19 @@ export function validateInferenceAndSuggestion(
   }
 
   // 2c. 无证据强断言。
+  //    v0.2.0-apo:provenance 对账(reconcileProvenance)可能已经把某些行**移出**要求组
+  //    (建议降级为 OPTIMIZER_SUGGESTED、无据降级为 UNKNOWN)。此时 raw protocol 里那一行
+  //    不再代表「用户要求」,不应再按要求组规则判罚 —— 只检查仍留在 explicit/context 里的行。
+  const stillRequiredTexts = [
+    ...result.explicit_requirements.map((r) => r.text),
+    ...result.context_requirements.map((r) => r.text),
+  ].filter(Boolean);
   for (const line of requirementLines(result, opts)) {
+    if (stillRequiredTexts.length > 0 && !stillRequiredTexts.some((text) => line.includes(text))) {
+      // 该行已被对账移出要求组(或本来就不是要求行)→ 跳过要求组规则
+      const fromOptimized = result.optimized_prompt.split('\n').some((l) => l === line);
+      if (!fromOptimized) continue;
+    }
     if (!line || isExemptLine(line)) continue;
     const claim =
       line.match(STRONG_CLAIM_RE)?.[0] ??
