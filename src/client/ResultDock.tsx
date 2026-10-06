@@ -363,8 +363,10 @@ export function createResultDock(controller: OptimizerController) {
     const triageText = v2 ? t(`panel.triage.${v2.triage.triage}` as never) : ''
     const targetText = v2 ? v2.target.target : ''
     const engineText = v2?.target.engine ?? ''
-    // 一句结果摘要:PATCH · Video Prompt · Kling(内部术语不喧宾夺主)
-    const summaryLine = [triageText, targetText, engineText].filter(Boolean).join(' · ')
+    // 一句结果摘要,形如「重新构建 · Agent 执行任务 · DSH」:
+    // 只显示中文标签,不暴露 KEEP/PATCH/RESTRUCTURE/REBUILD 英文术语(内部枚举只在展开后出现)
+    const targetLabel = targetText ? t(`panel.target.${targetText}` as never) : ''
+    const summaryLine = [triageText, targetLabel, engineText].filter(Boolean).join(' · ')
     // ── Phase 4:结果页的四类信息(全部来自真实 Requirement Ledger / Missing Resolution)──
     const resultLedger = result?.ledger ?? []
     const confirmedLedger = resultLedger.filter(
@@ -788,7 +790,10 @@ export function createResultDock(controller: OptimizerController) {
               <div style={{ ...styles.sectionTitle, cursor: 'default' }}>
                 {t('panel.discovery.remaining', { count: String(discovery.analysis.gate.blockingItems.length) })}
               </div>
-              <div style={styles.optimizedBox}>{t('panel.discovery.hint')}</div>
+              <div style={styles.optimizedBox}>
+                {t('panel.discovery.hint')}
+                <div style={{ opacity: 0.6, marginTop: 4 }}>{t('panel.discovery.envNote')}</div>
+              </div>
               {discovery.stoppedBy ? (
                 <div style={styles.warnBanner}>
                   <span aria-hidden>ℹ</span>
@@ -942,8 +947,6 @@ export function createResultDock(controller: OptimizerController) {
                 <span style={{ ...styles.chevron, transform: analysisOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
                 {t('panel.analysis')}
               </button>
-              {/* 自动判断说明:即使折叠也让用户知道「不需要选类型」这件事 */}
-              <div style={{ ...styles.groupItem, opacity: 0.75 }}>{t('panel.auto.note')}</div>
               {analysisOpen && (
                 <div style={styles.analysisBody}>
                   {v2 ? (
@@ -965,7 +968,7 @@ export function createResultDock(controller: OptimizerController) {
                         {engineText ? ` · ${engineText}` : ''}
                       </div>
                       <div style={styles.groupItem}>
-                        {t('panel.auto.editScope')}:{triageText}
+                        {t('panel.auto.editScope')}:{triageText}({v2.triage.triage})
                       </div>
                       {v2.resolution.length > 0 ? (
                         <div style={styles.groupItem}>
