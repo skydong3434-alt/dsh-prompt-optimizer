@@ -158,4 +158,35 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R6 协议标记剥离覆盖行内标记(防 VF_PROTOCOL_LEAK)')
 }
 
+// R7:「排除」语义 —— 合法约束不得拦截,无证据结论仍须保护
+{
+  const { validateCompileResult } = await import('../../lib/core/validate.js')
+  const { defaultStrategyRegistry } = await import('../../lib/core/registry.js')
+  const strategy = defaultStrategyRegistry.get('general')
+  const strongClaim = (body, raw = '原始输入') => {
+    const v = validateCompileResult(
+      { optimized_prompt: body, prompt_type: 'general', explicit_requirements: [], context_requirements: [], suggested_requirements: [], unknowns: [] },
+      { rawInput: raw, contextTurns: [], strategy, rawOutput: '' },
+    )
+    return v.problems.some((p) => p.rule === 'VALIDATION_UNPROVEN_STRONG_CLAIM')
+  }
+  // A. 动作 / 约束(合法) → 必须通过
+  for (const line of [
+    '- 请排除所有不相关的方案。',
+    '- 筛选结果时排除重复项。',
+    '- 约束:排除需要国外付费 API 的方案。',
+    '- 排除项:不相关内容',
+    '- 用于排除不符合条件的候选项。',
+  ]) {
+    assert.equal(strongClaim(line), false, `★ R7A 合法约束不得被拦:${line}`)
+  }
+  // B. 事实结论且无证据 → 必须拦
+  for (const line of ['- 已排除网络问题。', '- 可以排除权限问题。', '- 因此排除配置异常。']) {
+    assert.equal(strongClaim(line), true, `★ R7B 无证据结论必须被拦:${line}`)
+  }
+  // B'. 有逐字证据的结论 → 不得误报
+  assert.equal(strongClaim('- 已排除网络问题 [quote: 已排除网络问题]', '已排除网络问题'), false, '★ R7B\' 有证据不得误报')
+  console.log('✓ R7「排除」语义:约束/动作放行(5 例),无证据结论拦截(3 例),有证据不误报')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')

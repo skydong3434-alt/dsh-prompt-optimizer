@@ -99,11 +99,6 @@ export function createOptimizeButton(controller: OptimizerController) {
              按钮宽度恒定,工具行不抖动。 */}
           {t('button.optimize')}
         </button>
-        {/* 首次输入阶段的轻量产品教育(低视觉权重):只在输入区出现,
-            结果页各状态(Discovery / Confirmation / Complete)不再重复这句。 */}
-        <span style={{ fontSize: 12, opacity: 0.55, whiteSpace: 'nowrap' }}>
-          {t('panel.hint.noTypePick')}
-        </span>
       </span>
     )
   }

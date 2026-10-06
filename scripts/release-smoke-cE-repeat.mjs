@@ -81,6 +81,8 @@ function makeLlm() {
   }
 }
 
+const isMeta = (system) => /意图编译器分析器|intent compiler analyzer/.test(String(system ?? ''))
+
 async function boot() {
   const routes = {}
   const calls = []
@@ -203,6 +205,7 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
   }
   return { calls, events, done, discovery, confirmation, stages, ledger, analysis, rounds: round }
 }
+
 
 
 // ── C / E 重复取证(≥5 次/条) ───────────────────────────────────────────────

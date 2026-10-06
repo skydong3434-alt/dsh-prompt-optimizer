@@ -206,6 +206,7 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
 }
 
 const ONLY = null
+const SKIP = (p) => Boolean(ONLY) && !ONLY.includes(p)
 const results = []
 
 /** 终态取证:最后一次事件类型 + 错误/回流原因码 + LLM 调用画像。 */
@@ -291,7 +292,7 @@ const KEEP_INPUT = [
 }
 
 // ── C. RESTRUCTURE:信息完整但组织混乱 → 重新整理 ───────────────────────────
-{
+if (!SKIP('C')) {
   const MESSY = [
     '帮我做个小工具,要求是能读 csv 然后汇总,输出格式要 markdown 表格,输出格式要 markdown 表格,',
     '另外要快一点别卡,另外要快一点别卡,字段要能自动识别,字段要能自动识别,不用装数据库,不用装数据库,',
@@ -334,7 +335,7 @@ const COMFY = '我想用 dsh 控制 comfyui 生成视频。'
 }
 
 // ── E. Image Prompt:自动进入 Image contract,无 Agent 任务模板 ──────────────
-{
+if (!SKIP('E')) {
   const IMAGE_INPUT = '二次元女孩坐在未来 AI 工作台前,三栏桌面布局,冷蓝色屏幕光,帮我生成生图提示词。'
   const { routes, llmLog } = await boot()
   const flow = await runFullFlow(routes, IMAGE_INPUT)
