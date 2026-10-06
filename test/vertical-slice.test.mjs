@@ -13,8 +13,10 @@ import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
 import { isMetaAnalysisCall, ANALYSIS_MAX_TOKENS, ANALYSIS_SYSTEM_MARKER } from '../lib/core/analyze.js'
 
+// RC2 起:模糊目标会先进入 Requirement Discovery(正确行为)。
+// 本套件测的是「直接编译的完整纵切」,因此输入必须**已明确**(有约束/格式/验收)。
 const REAL_CASE =
-  '帮我研究 Mac M1 Pro 32GB 怎么使用 ComfyUI 做 AI 视频,我看到黑鹤001低显流,还有 H3……'
+  '帮我研究 Mac M1 Pro 32GB 怎么使用 ComfyUI 做 AI 视频,我看到黑鹤001低显流,还有 H3。约束:只看本地可跑的方案;输出格式:方案对比表 + 每项优缺点;验收:给出可执行步骤与显存占用实测数据。'
 
 const CLASSIFIER_JSON = JSON.stringify({
   prompt_type: 'research',

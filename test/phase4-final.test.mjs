@@ -476,12 +476,15 @@ const VIDEO_BODY = [
     evidence_quotes: [],
     questions: [],
   })
+  // 本用例测的是「确认页四类互斥」,因此用**已明确**的输入(不触发 RC2 的模糊目标决策),
+  // 只让模型给的那条产品取舍驱动 Discovery。
+  const CONFIRM_INPUT = '帮我用 dsh 控制 comfyui 生成视频。约束:只做本地方案;输出格式:步骤清单;验收:跑通一次生成。'
   const { handler } = await setup({ compileOutput: NEUTRAL, analysisRounds: [blockingAnalysis, cleared] })
-  const first = await call(handler, { text: '我想用 dsh 控制 comfyui 生成视频。', provider: 'p', model: 'm' })
+  const first = await call(handler, { text: CONFIRM_INPUT, provider: 'p', model: 'm' })
   const round1 = sseEvents(first)[0]
   assert.equal(round1.type, 'discovery_required')
   const second = await call(handler, {
-    text: '我想用 dsh 控制 comfyui 生成视频。',
+    text: CONFIRM_INPUT,
     provider: 'p',
     model: 'm',
     discovery: {
@@ -491,7 +494,13 @@ const VIDEO_BODY = [
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
-      answers: [{ key: round1.questions[0].key, option_id: 'reuse', text: '调用现有 workflow' }],
+      // RC2:机械安全层补的「范围」决策没有编造选项 → 用「按你的判断继续」这条
+      // 显式安全出口回答(§5:只有用户主动选择才允许转 PROVISIONAL)。
+      answers: round1.questions.map((q) =>
+        q.options.length > 0
+          ? { key: q.key, option_id: q.options[0].id, text: q.options[0].label }
+          : { key: q.key, text: '按你的判断继续', blind_trust: true },
+      ),
       analysis: round1.analysis,
     },
   })
@@ -534,7 +543,12 @@ const VIDEO_BODY = [
     ].join('\n'),
     analysisRounds: [NEUTRAL],
   })
-  const forgedRes = await call(forged.handler, { text: '帮我做一件事', provider: 'p', model: 'm' })
+  // RC2:模糊目标会先进入 Discovery → 用已明确输入,让校验阶段真的跑到
+  const forgedRes = await call(forged.handler, {
+    text: '帮我做一件事。约束:只做本地方案;输出格式:步骤清单。',
+    provider: 'p',
+    model: 'm',
+  })
   const forgedEvents = sseEvents(forgedRes)
   assert.equal(forgedEvents.some((e) => e.type === 'done'), false, '17:伪造来源不得交付')
   const returned = forgedEvents.find((e) => e.type === 'returned')
@@ -544,7 +558,7 @@ const VIDEO_BODY = [
 
   // 回流预算已用满 → hard error
   const exhausted = await call(forged.handler, {
-    text: '帮我做一件事',
+    text: '帮我做一件事。约束:只做本地方案;输出格式:步骤清单。',
     provider: 'p',
     model: 'm',
     discovery: {

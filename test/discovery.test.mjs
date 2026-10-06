@@ -374,8 +374,17 @@ const entry = (id, text, status = 'OPEN', source = 'UNKNOWN') => ({
   assert.ok(confirmation.goal.length > 0)
   assert.equal(confirmation.confirmed.length, 2)
   assert.ok(confirmation.agent_researches.some((item) => item.includes('ComfyUI')))
-  assert.equal(confirmation.provisional.length, 1)
-  assert.equal(confirmation.provisional[0].status, 'PROVISIONAL')
+  // RC2 §5:只要还有阻塞的用户决策,确认页就**不得**出现暂定项
+  // (否则用户会以为优化器已经替他定了)。这里 blocking=['要不要支持多机'] → 暂定为空。
+  assert.equal(confirmation.provisional.length, 0, '阻塞决策在场时不得展示暂定项')
+  // 无阻塞时才允许暂定(同一台账、去掉阻塞项)
+  const open = buildConfirmation({
+    analysis: analysis({}),
+    ledger,
+    raw_input: '我想用 dsh 控制 comfyui 生成视频',
+  })
+  assert.equal(open.provisional.length, 1, '无阻塞时暂定项照常展示')
+  assert.equal(open.provisional[0].status, 'PROVISIONAL')
   assert.match(confirmation.fingerprint, /^[0-9a-f]{8}$/)
   // 指纹稳定:同输入一致、改一项即变
   assert.equal(
@@ -417,8 +426,12 @@ const entry = (id, text, status = 'OPEN', source = 'UNKNOWN') => ({
     '★ 与已确认项语义等价的暂定项必须被剔除',
   )
   assert.equal(confirmation.agent_researches.length, 1, '同 id 的可自查项只出现一次')
-  assert.equal(confirmation.provisional.length, 1, '独立暂定项保留')
-  assert.equal(confirmation.provisional[0].text, '暂定使用 9:16 画幅')
+  // RC2 §5:该 fixture 的 model 带 blocking('要不要支持多机') → 暂定组整体为空;
+  // 去掉阻塞项后,独立暂定项应保留(且与已确认项语义等价的仍被剔除)。
+  assert.equal(confirmation.provisional.length, 0, '阻塞决策在场时不得展示暂定项')
+  const open = buildConfirmation({ analysis: analysis({}), ledger, raw_input: '我想用 dsh 控制 comfyui 生成视频' })
+  assert.equal(open.provisional.length, 1, '无阻塞时独立暂定项保留')
+  assert.equal(open.provisional[0].text, '暂定使用 9:16 画幅')
   console.log('✓ d9b Confirmation 四类互斥(id + 语义双重去重)')
 }
 

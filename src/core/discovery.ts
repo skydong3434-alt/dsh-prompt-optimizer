@@ -21,6 +21,7 @@
  *
  * 纯函数(除 LLM 契约投影外),零 Harness / UI 依赖。
  */
+import { decisionCategoryOfRequirement } from './requirements.js'
 import type {
   AnalysisResult,
   AskedQuestion,
@@ -716,6 +717,19 @@ export function evaluateSufficiency(input: SufficiencyInput): SufficiencyResult 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * 目标类要求判定(用于 Confirmation 的「本轮目标」取值)。
+ *
+ * 目标句 = 陈述「要做什么」,而不是提问/取舍句(取舍句进「你已确认」)。
+ */
+export function isObjectiveLike(text: string): boolean {
+  const value = String(text ?? "").trim();
+  if (value.length < 4) return false;
+  // 问题 / 取舍句不算目标
+  if (/[?？]|还是|要么|是否|要不要|哪个|哪种|取舍|权衡/.test(value)) return false;
+  return true;
+}
+
+/**
  * 构建确认摘要:目标 / 你已确认 / Agent 自行调查 / 暂定·条件(仅存在时)。
  *
  * **四类必须互斥**(Phase 4 §2):同一个决定只能出现在其中一个当前有效状态里。
@@ -734,6 +748,12 @@ export function buildConfirmation(input: {
   analysis: AnalysisResult;
   ledger: readonly RequirementLedgerEntry[];
   raw_input: string;
+  /**
+   * **当前**仍然阻塞的决策(结合台账重算)。缺省回落到 analysis.gate.blocking_items。
+   * 有了它,「用户已用盲授权暂定」之后确认页才会如实展示那条暂定项
+   * (而不是因为「分析时的 gate 仍标记阻塞」而把它藏起来)。
+   */
+  liveBlocking?: readonly MissingResolutionItem[];
 }): RequirementConfirmation {
   // 「你已确认」展示的是**用户答案语义(resolved value)**,不是问题名(§RC 风险 1)。
   const confirmed: { text: string; value?: string; label?: string }[] = [];
@@ -788,17 +808,47 @@ export function buildConfirmation(input: {
   }
 
   // ③ 暂定 / 条件事项(最后占位:更权威的状态已归属的语义不得再出现)
-  for (const entry of input.ledger) {
-    if (entry.status !== "PROVISIONAL" && entry.status !== "CONDITIONAL" && entry.status !== "DEFERRED") continue;
-    if (isDuplicate(entry.id, entry.text)) continue;
-    provisional.push({ text: entry.text, status: entry.status, ...(entry.note ? { note: entry.note } : {}) });
-    claim(entry.id, entry.text);
+  //
+  // RC2 §5:只要**还存在阻塞的用户决策**,确认页就不得出现任何「暂定」项 ——
+  // 否则用户会看到「优化器已经替你定了最小闭环」,而实际上那个高影响决策
+  // (scope / lifecycle / 产品方向)他从未回答过。PROVISIONAL 只允许用于
+  // 「可以安全暂定、且不改变用户最终意图」的事项,并且只在没有阻塞决策时出现。
+  // (阻塞决策本身会让 gate.blocked=true → 流程进入 Discovery,根本到不了确认页;
+  //  这里是机械兜底,保证不可能靠暂定绕过。)
+  // 阻塞决策(用于 §5 的暂定项拦截):文本 + 决策类别
+  const liveBlocking = input.liveBlocking ?? input.analysis.gate.blocking_items;
+
+  if (liveBlocking.length === 0) {
+    for (const entry of input.ledger) {
+      if (entry.status !== "PROVISIONAL" && entry.status !== "CONDITIONAL" && entry.status !== "DEFERRED") continue;
+      if (isDuplicate(entry.id, entry.text)) continue;
+      provisional.push({ text: entry.text, status: entry.status, ...(entry.note ? { note: entry.note } : {}) });
+      claim(entry.id, entry.text);
+    }
   }
 
+  /**
+   * RC2 §7:「本轮目标」必须是**用户的任务目标 / resolved objective**。
+   * 旧实现回落到 analysis.rationale(优化器诊断/triage 说明)→ 已移除。
+   *   ① 用户已确认的**目标类**要求(用户自己说过的目标句);
+   *   ② 用户本轮原句的第一句;③ 否则留空(宁可空也不放诊断文字)。
+   * Discovery 后若有了更具体的确认值,以「(已确认: …)」机械附加,不编造。
+   */
+  const objectiveFromLedger = confirmed.find(
+    (entry) => entry.label !== undefined && isObjectiveLike(entry.label),
+  );
+  const firstSentence = String(input.raw_input ?? "")
+    .split(/[。;；!?\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)[0];
+  const baseGoal = objectiveFromLedger?.text ?? firstSentence ?? "";
+  const resolvedClauses = confirmed
+    .map((entry) => entry.text)
+    .filter((text) => text && text !== baseGoal && text.length <= 60);
   const goal =
-    input.analysis.rationale?.trim() ||
-    confirmed.find((entry) => (entry.label ?? entry.text).length > 8)?.label ||
-    String(input.raw_input ?? "").trim().slice(0, 80);
+    resolvedClauses.length > 0 && baseGoal
+      ? `${baseGoal}(已确认:${resolvedClauses.slice(0, 3).join(";")})`
+      : baseGoal;
 
   const fingerprint = confirmationFingerprint({ goal, confirmed, agentResearches, provisional });
   return { goal, confirmed, agent_researches: agentResearches, provisional, fingerprint };

@@ -13,6 +13,7 @@
  * (宁可生成后标注「由执行方自行确认」,也不无谓打断用户)。
  * 纯函数,零 LLM / 零 Harness / 零 UI 依赖。
  */
+import { containmentRatio } from './discovery.js'
 import type {
   AnalysisGate,
   ConversationTurn,
@@ -62,7 +63,9 @@ const PRODUCT_DECISION_RE =
  * 例:ComfyUI 版本 / API 地址 / workflow 文件位置 / 当前依赖 / 项目结构。
  */
 const ENVIRONMENT_FACT_RE =
-  /版本号?|(?:api|API|接口)\s*(?:地址|endpoint|url|URL)|地址|端口|路径|目录|文件夹|文件名|文件位置|安装位置|安装路径|依赖(?:版本)?|项目结构|仓库结构|目录结构|表结构|字段类型|字段名|配置(?:项|文件|格式|值)|环境变量|默认值|日志|错误码|堆栈|签名|文档地址|规范/;
+  // RC2 §4 补齐:当前实现 / 可用接口 / 配置字段 / 从环境可读的能力 —— 这些一律
+  // **不得**升级为要问用户(读代码、读配置、读环境就能得到唯一答案)。
+  /版本号?|(?:api|API|接口)\s*(?:地址|endpoint|url|URL)|地址|端口|路径|目录|文件夹|文件名|文件位置|安装位置|安装路径|依赖(?:版本)?|项目结构|仓库结构|目录结构|表结构|字段(?:类型|名)?|配置(?:项|文件|格式|值|字段)?|环境变量|默认值|日志|错误码|堆栈|签名|文档地址|规范|当前实现|现有实现|实现现状|代码现状|现有代码|可用接口|接口能力|环境能力|可读取的能力|能力清单|现有能力/;
 
 /** 高影响:不同答案会导致**明显不同**的产出。 */
 const HIGH_IMPACT_RE =
@@ -120,6 +123,9 @@ export function mechanicalImpact(text: string): "high" | "medium" | "low" {
  */
 export function mechanicalRequirementClass(text: string): RequirementClass {
   const value = String(text ?? "");
+  // ⓪ RC2:高影响决策**类别**优先(与采样无关)——模型某一轮把它写成普通 missing
+  //    甚至 AGENT_DISCOVERABLE,也不能改变它是「只有用户能决定」的事实。
+  if (decisionCategoryOfRequirement(value)) return "USER_REQUIRED";
   // ① 产品取舍 / 用户偏好优先:没有客观唯一答案、读项目也得不到 → 必须问用户。
   //    放在环境事实之前,避免「最小可用版本 vs 完整平台」这类取舍被「版本」二字吃掉。
   if (isProductDecision(value)) return "USER_REQUIRED";
@@ -141,6 +147,202 @@ export function mechanicalRequirementClass(text: string): RequirementClass {
  * `decisions[].kind === 'PRODUCT_DECISION'`(见 analyze.ts);机械规则负责在模型
  * 判错或漏判时把结论**向安全方向纠正**(取舍 → USER_REQUIRED),绝不反向降级。
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// RC2 —— Decision Stability 安全层(通用语义类别,不是固定问题模板)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 高影响用户决策的**语义类别**。
+ *
+ * 判据(用户给定,机械可判定):
+ *   ① 不能通过环境 / 代码 / 文件 / API / 网络调查得到唯一答案;
+ *   ② 不同答案会显著改变 scope / lifecycle / authority / mutation /
+ *      delivery depth / implementation direction 之一;
+ *   ③ 不存在真正安全且等价的默认值。
+ *
+ * 满足三条 → 必须 USER_REQUIRED + impact=high + blocking=true,
+ * **不得**因为模型某一轮把它写成普通 missing 就降级为 AGENT_DISCOVERABLE。
+ *
+ * 这里只有「类别语义」,没有任何具体问题文案(文案由模型/Planner 生成)。
+ */
+export const DECISION_CATEGORIES = [
+  "scope",
+  "lifecycle",
+  "mvp_vs_full",
+  "analysis_vs_execution",
+  "reuse_vs_create",
+  "architecture_change",
+  "mutation_permission",
+  "irreversible_permission",
+  "delivery_depth",
+  "product_direction",
+] as const;
+
+export type DecisionCategory = (typeof DECISION_CATEGORIES)[number];
+
+/**
+ * 类别 → 识别模式。
+ *
+ * 注意:这些是**决策语义**的识别(选择 / 授权 / 方向),不是问题模板;
+ * 每条都要求出现「二选一 / 授权 / 方向」这类信号,避免把普通陈述误判成决策。
+ */
+const DECISION_CATEGORY_PATTERNS: readonly { category: DecisionCategory; re: RegExp }[] = [
+  // 变更授权 / 不可逆动作:必须由用户授予,读环境读不出来
+  {
+    category: "mutation_permission",
+    re: /允许(?:我|你)?(?:改|修改|删除|覆盖|写|创建|推送)|可以(?:改|修改|删|删除|覆盖|推送)|要不要(?:改|修改|删除|覆盖)|自动(?:创建|修改|删除|覆盖|重命名)|是否(?:修改|删除|覆盖)|权限|授权/,
+  },
+  {
+    category: "irreversible_permission",
+    re: /(?:推送|发布|上线|部署|删除|清空|覆盖|回滚|付费|购买|调用付费)[^。;\n]{0,12}(?:吗|可以|允许|要不要|是否)|不可逆|(?:是否|要不要)[^。;\n]{0,10}(?:推送|发布|部署|删除|付费)/,
+  },
+  // 生命周期:一次性验证 vs 长期自动化
+  {
+    category: "lifecycle",
+    re: /长期(?:自动)?(?:运行|使用|维护|自动)|以后(?:都|长期|每次)|自动(?:化)?(?:流程|运行|处理|执行|完成|管理)|定时(?:执行|运行)|周期性|一次性|(?:每|逐)(?:天|周|次)自动|持续(?:运行|集成)|常态(?:化|运行)|以后能自动|(?:都|能|要)?自动(?:跑|做|完成)/,
+  },
+  // MVP vs 完整系统
+  {
+    category: "mvp_vs_full",
+    re: /(?:最小|最简|可跑|能跑)(?:可用|闭环|版本|实现)?|MVP|先(?:做个|搞个|来)(?:能跑|最简|最小)|原型|做完整|做成完整|完整(?:系统|平台|方案)|一步到位|分阶段/,
+  },
+  // 只分析 vs 真正执行(授权范围)
+  {
+    category: "analysis_vs_execution",
+    re: /先(?:看看|评估|调研|确认)(?:能不能|是否|可行性)|能不能(?:实现|做|搞)|可行性|只(?:检查|分析|评估|看)|不要(?:改|动|执行)|仅(?:分析|评估)|先不(?:改|动手|执行)/,
+  },
+  // 复用现有 vs 新建 / 改造
+  {
+    category: "reuse_vs_create",
+    re: /复用|沿用|用现有|基于现有|现有的?[^。;\n]{0,8}(?:还是|或者)|(?:新建|重写|重做|从零|重新做)[^。;\n]{0,10}(?:还是|或者)|(?:还是|或者)[^。;\n]{0,10}(?:新建|重写|复用|沿用)/,
+  },
+  // 架构:保持 vs 允许重构
+  {
+    category: "architecture_change",
+    re: /(?:保持|不动|不要动|维持)[^。;\n]{0,10}(?:架构|结构|设计|分层)|(?:重构|重新设计|重新架构|改造|推翻|优化|调整)[^。;\n]{0,10}(?:架构|结构|设计|分层)|(?:架构|分层)[^。;\n]{0,10}(?:要不要|是否|需不需要|优化|调整|改造|重构)/,
+  },
+  // 交付深度
+  {
+    category: "delivery_depth",
+    re: /(?:原型|demo|演示|能跑通|跑通|可用|生产可用|正式可用|可上线)[^。;\n]{0,10}(?:就行|即可|就好|还是)|做到(?:什么|哪)(?:程度|一步)|交付(?:到|深度)|先(?:做到|交付)/,
+  },
+  // 范围边界
+  {
+    category: "scope",
+    re: /(?:范围|边界|口径)[^。;\n]{0,10}(?:怎么|如何|要不要|是否|是)|只(?:做|要|需|处理)|仅(?:做|限)|顺便|一起(?:做|改)|(?:还是|要么)[^。;\n]{0,14}(?:还是|要么)|二选一|取舍|权衡|继续(?:做|推进|下去|完善)|接着(?:做|推进)|下一步(?:做|推进)/,
+  },
+  // 产品方向 / 优先级
+  {
+    category: "product_direction",
+    re: /哪个(?:更|比较)?(?:重要|优先|值得)|优先(?:做|考虑|保证)|先做哪|(?:方向|路线|方案)[^。;\n]{0,8}(?:取舍|权衡|选择)|取决于(?:你|用户)|由你决定|你(?:更)?希望|你(?:更)?想/,
+  },
+];
+
+/** 该文本属于哪个高影响决策类别(无则 null)。 */
+export function decisionCategoryOf(text: string): DecisionCategory | null {
+  const value = String(text ?? "");
+  if (!value.trim()) return null;
+  for (const { category, re } of DECISION_CATEGORY_PATTERNS) {
+    if (re.test(value)) return category;
+  }
+  return null;
+}
+
+/**
+ * 环境事实的**强**判定:出现环境名词且**没有**选择 / 授权 / 方向信号。
+ *
+ * 这是 §4 的反向保护:加强决策识别之后,不能把「版本 / 路径 / API 地址 /
+ * workflow 文件位置 / 依赖 / 项目结构 / 配置字段」这类可读事实又推回给用户。
+ */
+const CHOICE_OR_AUTHORITY_SIGNAL_RE =
+  /还是|要么|或者|取舍|权衡|二选一|哪个|哪种|要不要|是否|允许|授权|权限|可以(?:改|删|推送|发布)|取决于|由你决定|你(?:更)?希望|你(?:更)?想|优先/;
+
+export function isReadableEnvironmentFact(text: string): boolean {
+  const value = String(text ?? "");
+  if (!ENVIRONMENT_FACT_RE.test(value)) return false;
+  return !CHOICE_OR_AUTHORITY_SIGNAL_RE.test(value);
+}
+
+/**
+ * 机械判定的「决策安全层」:返回必须阻塞的用户决策类别。
+ *
+ * 只做**安全纠偏**(把该问的拉回 USER_REQUIRED),不生成问题文案。
+ */
+/**
+ * 「已写明的规格」不算决策。
+ *
+ * RC2 实测误报:「约束:只看本地可跑的方案,不引入付费 API」被
+ * analysis_vs_execution 模式命中 → 把用户**已经决定好**的约束当成待决策项。
+ * 用户写出来的规格就是答案本身,不得再问一遍。
+ */
+const STATED_SPEC_RE =
+  /^\s*(?:约束|要求|限制|禁止|排除|输出格式|格式|验收|验收标准|成功标准|风格|语气|篇幅|必须|不得|不要)[:：]/;
+
+export function isStatedSpecification(text: string): boolean {
+  return STATED_SPEC_RE.test(String(text ?? ""));
+}
+
+export function decisionCategoryOfRequirement(text: string): DecisionCategory | null {
+  const value = String(text ?? "");
+  if (!value.trim()) return null;
+  // 反向保护优先:① 已写明的规格 ② 明确的可读事实(且无选择/授权信号)→ 都不是决策
+  if (isStatedSpecification(value)) return null;
+  if (isReadableEnvironmentFact(value)) return null;
+  return decisionCategoryOf(value);
+}
+
+/**
+ * 模糊目标本身就是一个未定的**范围 / 交付深度**决策。
+ *
+ * 判据用**机械分诊**的 REBUILD(「没有可保留的提示词结构或成稿要素」)——
+ * 完全确定性,与模型采样无关。这类输入必须先问清范围再构建,不能靠
+ * PROVISIONAL 暂定「先跑最小闭环」把用户的范围决定替掉。
+ *
+ * 只返回类别与用户原句(不生成问题文案)。
+ */
+export function vagueGoalDecision(
+  rawInput: string,
+  mechanicalTriageLevel: string,
+  options: { visualTarget?: boolean } = {},
+): { category: DecisionCategory; text: string } | null {
+  if (mechanicalTriageLevel !== "REBUILD") return null;
+  // 视觉目标(生图 / 视频)有**安全且等价的默认值**:构图 / 画幅 / 运镜可由执行方
+  // 按通用做法决定,不改变用户最终意图 → 不构成高影响决策(否则会无谓打断出图)。
+  // 任务型目标(Agent / 编码 / 规划 / 研究)的模糊范围则会真正改变执行方向 → 必须问。
+  if (options.visualTarget) return null;
+  const first = String(rawInput ?? "")
+    .split(/[。;；!?\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)[0];
+  if (!first || first.length < 4) return null;
+  return { category: "scope", text: first };
+}
+
+/**
+ * 扫描用户原文里的高影响决策(机械、确定性 → 采样无关)。
+ *
+ * 用途:模型某一轮**没有**把决策列出来时,机械层补齐阻塞项
+ * (文本用用户自己的原句,不生成新问题文案)。
+ */
+export function scanDecisionStatements(rawInput: string): { category: DecisionCategory; text: string }[] {
+  const text = String(rawInput ?? "");
+  const sentences = text
+    .split(/[。;；!?\n]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 6);
+  const found: { category: DecisionCategory; text: string }[] = [];
+  const seen = new Set<DecisionCategory>();
+  for (const sentence of sentences) {
+    if (isStatedSpecification(sentence)) continue;
+    if (isReadableEnvironmentFact(sentence)) continue;
+    const category = decisionCategoryOf(sentence);
+    if (!category || seen.has(category)) continue;
+    seen.add(category);
+    found.push({ category, text: sentence });
+  }
+  return found;
+}
+
 export function isProductDecision(text: string): boolean {
   return PRODUCT_DECISION_RE.test(String(text ?? ""));
 }
@@ -163,6 +365,24 @@ export function tradeoffStatements(rawInput: string): string[] {
     .map((part) => part.trim())
     .filter((part) => part.length >= 6);
   return sentences.filter((sentence) => isProductDecision(sentence));
+}
+
+/**
+ * 两条文本是否**确实是同一条要求**(RC2 修正)。
+ *
+ * 只靠「包含率 / 子串」会把「ComfyUI 版本」(11 字)误判成
+ * 「帮我把这段描述整理成提示词,ComfyUI 版本我用最新的」(24 字)的同一条 ——
+ * 后者只是**句子**里含有一个环境事实,不是同一个要求。
+ * 因此加长度比护栏:短的一方必须至少有长的一方的 60%,再看语义重合。
+ */
+export function sameRequirement(a: string, b: string): boolean {
+  const left = String(a ?? "").trim();
+  const right = String(b ?? "").trim();
+  if (!left || !right) return false;
+  const shorter = Math.min(left.length, right.length);
+  const longer = Math.max(left.length, right.length);
+  if (shorter / longer < 0.6) return false;
+  return containmentRatio(left, right) >= 0.8 || left.includes(right) || right.includes(left);
 }
 
 export function isEnvironmentFact(text: string): boolean {

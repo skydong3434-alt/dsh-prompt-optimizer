@@ -117,11 +117,11 @@ for (const q of planned.questions) {
 // ③ 用户回答(选推荐项 —— 模拟「按推荐继续」)
 const answers = planned.questions.map((q) => {
   const pick = q.options.find((o) => o.id === q.recommendation_option_id) ?? q.options[0]
-  return { key: q.key, option_id: pick.id, text: pick.label }
+  // RC2:机械安全层补的决策项不编造选项 → 用「按你的判断继续」这条显式安全出口
+  return pick
+    ? { key: q.key, option_id: pick.id, text: pick.label }
+    : { key: q.key, text: '按你的判断继续', blind_trust: true }
 })
-head('③ 用户回答(选推荐项)')
-for (const a of answers) console.log(`- ${a.text}`)
-
 const resolved = answers.length > 0
   ? resolveAnswers({ raw_input: RAW, ledger: analysis.ledger, questions: planned.questions, answers })
   : { ledger: analysis.ledger }
@@ -132,7 +132,7 @@ console.log('→ 决策完备则进入 Requirement Confirmation;仍有 liveBlock
 
 // ④ Confirmation(真实文案)
 head('A. requirement_confirmation 实际文案')
-const confirmation = buildConfirmation({ analysis, ledger: resolved.ledger, raw_input: RAW })
+const confirmation = buildConfirmation({ analysis, ledger: resolved.ledger, raw_input: RAW, liveBlocking: sufficiency.liveBlocking })
 console.log('本轮目标:')
 console.log(`  ${confirmation.goal}`)
 console.log('\n你已确认:')

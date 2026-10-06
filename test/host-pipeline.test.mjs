@@ -128,7 +128,10 @@ const chunkText = (text) => [
 
 const RESEARCH = {
   type: 'research',
-  raw: '帮我研究 Mac M1 Pro 32GB 怎么使用 ComfyUI 做 AI 视频,我看到黑鹤001低显流,还有 H3……',
+  // RC2 起:模糊目标会先进入 Requirement Discovery(正确行为)。
+  // 需要测「直接编译流程」的用例改用**已明确**的研究请求:
+  // 有目标、有约束、有输出格式、有验收 → 不构成高影响用户决策。
+  raw: '帮我研究 Mac M1 Pro 32GB 怎么使用 ComfyUI 做 AI 视频,我看到黑鹤001低显流,还有 H3。约束:只看本地可跑的方案;输出格式:方案对比表 + 每项优缺点;验收:给出可执行步骤与显存占用实测数据。',
   quote: ['Mac M1 Pro 32GB', 'ComfyUI', 'H3'],
   missing: ['期望的视频产出形式与时长'],
   suggested: ['补充目标产出形式'],
@@ -312,7 +315,9 @@ const LEGACY_OUTPUT = [
     respond: (_options, index) =>
       index === 0 ? chunkText('抱歉,我无法完成分类。') : chunkText(GENERAL_PROTOCOL_OUTPUT),
   })
-  const res = await call(handler, { text: '帮我看看这段代码', provider: 'p', model: 'm' })
+  // RC2:该用例要测「分析失败后编译继续」,因此输入必须已明确;
+  // 模糊输入在分析失败时仍必须阻塞(见下方 h3b)。
+  const res = await call(handler, { text: '帮我看看这段代码。约束:只检查,不修改文件;输出格式:问题清单。', provider: 'p', model: 'm' })
   const done = doneOf(res)
   const meta = sseEvents(res).find((e) => e.type === 'meta')
   // RC:解析失败会**一次性**加预算重试(2 次分析尝试 + 1 次编译)
@@ -332,6 +337,23 @@ const LEGACY_OUTPUT = [
   assert.ok(done.optimized.includes('请求要点'), 'v2:general 走信息责任契约')
   assert.equal(done.provenance_ok, true)
   console.log('✓ h3 分析失败 → general + Low,编译继续(v2 契约)')
+
+  // h3b. RC2:分析失败时**机械决策安全层仍然生效**(采样/模型质量无关)
+  const vague = await setup({
+    respond: (_options, index) =>
+      index === 0 ? chunkText('抱歉,我无法完成分类。') : chunkText(GENERAL_PROTOCOL_OUTPUT),
+  })
+  const vagueRes = await call(vague.handler, { text: '我想用 dsh 控制 comfyui 生成视频。', provider: 'p', model: 'm' })
+  const vagueEvents = sseEvents(vagueRes)
+  const discovery = vagueEvents.find((e) => e.type === 'discovery_required')
+  assert.ok(discovery, '★ 分析失败也不得丢失「模糊目标必须问范围」的保证')
+  assert.equal(vagueEvents.some((e) => e.type === 'done'), false, '有阻塞决策时不得编译')
+  assert.equal(
+    vague.calls.filter((options) => !isMetaAnalysisCall(options.system)).length,
+    0,
+    '★ 兜底路径同样零编译',
+  )
+  console.log('✓ h3b 分析失败 + 模糊目标 → 仍然阻塞(兜底路径也跑安全层)')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

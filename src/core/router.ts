@@ -76,14 +76,27 @@ const EXPLICIT_INTENT_PATTERNS: readonly { intent: WorkIntent; re: RegExp; label
   },
 ];
 
+/** 规格行标记:出现在这里的「只检查 / 只看」是**约束**,不是意图指令。 */
+const SPEC_CLAUSE_RE =
+  /^\s*(?:约束|要求|限制|禁止|排除|输出格式|格式|验收|验收标准|成功标准|风格|语气|篇幅|必须|不得|不要)[:：]/;
+
 /** 从正文里读出「明确意图约束」;没有则 null。 */
 export function explicitIntentFromInput(
   rawInput: string,
 ): { intent: WorkIntent; label: string; matched: string } | null {
   const text = String(rawInput ?? "");
-  for (const pattern of EXPLICIT_INTENT_PATTERNS) {
-    const match = pattern.re.exec(text);
-    if (match) return { intent: pattern.intent, label: pattern.label, matched: match[0] };
+  // 逐句判断:规格行(「约束:只看本地可跑的方案」)里的动词不是意图指令 ——
+  // RC2 实测它会把 research 误判成 review(用户其实是在写约束,不是要求评审)。
+  const clauses = text
+    .split(/[。;；!?\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  for (const clause of clauses) {
+    if (SPEC_CLAUSE_RE.test(clause)) continue;
+    for (const pattern of EXPLICIT_INTENT_PATTERNS) {
+      const match = pattern.re.exec(clause);
+      if (match) return { intent: pattern.intent, label: pattern.label, matched: match[0] };
+    }
   }
   return null;
 }

@@ -886,7 +886,12 @@ export function apply(ctx: Context, config: Config) {
                 })
                 if (planned.verdict === 'READY_TO_CONFIRM') {
                   // 循环安全保护:问不出更有价值的新问题 → 停止追问,交用户确认。
-                  const confirmation = buildConfirmation({ analysis: analysis!, ledger, raw_input: text })
+                  const confirmation = buildConfirmation({
+                    analysis: analysis!,
+                    ledger,
+                    raw_input: text,
+                    liveBlocking: sufficiency.liveBlocking,
+                  })
                   send({
                     type: 'requirement_confirmation',
                     intent: analysis!.intent,

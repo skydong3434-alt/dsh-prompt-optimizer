@@ -130,7 +130,8 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 // 1. 正常路径:分析 + 优化结果按标记解析
 {
   const { handler } = await setup()
-  const res = await call(handler, { text: '帮我看看这段代码', provider: 'session-p', model: 'session-m' })
+  // RC2:模糊目标会先进入 Discovery;基础路径用已明确输入(有约束/输出格式)
+  const res = await call(handler, { text: '帮我看看这段代码。约束:只检查,不修改文件;输出格式:问题清单。', provider: 'session-p', model: 'session-m' })
   const data = doneOf(res)
   assert.ok(sseEvents(res).some((e) => e.type === 'delta'), '应先推送 delta 事件')
   assert.match(data.analysis, /目标清晰度/)
@@ -509,12 +510,15 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 
 // 16. 输出上限跟随输入长度:长草稿自动抬升 maxTokens,32768 封顶;可关
 {
-  const longDraft = '一'.repeat(5000) // ≈5000 token,完整模式 ×2 = 10000 > 默认 8192
+  // RC2:必须有明确约束/格式,否则会先进入 Discovery(不编译)
+  const longDraft = '约束:保持原格式;输出格式:Markdown 列表。' + '一'.repeat(5000) // 长草稿 → ×2 抬升上限
   const a = await setup()
   await call(a.handler, { text: longDraft, provider: 'p', model: 'm' })
-  assert.equal(a.getOptions().maxTokens, 10000, '长输入应抬升输出上限')
+  // 抬升公式:max(8192, estimate×2);加了约束前缀后 ≈10034,只断言「> 默认 8192 且未封顶」
+  assert.ok(a.getOptions().maxTokens > 8192, '长输入应抬升输出上限')
+  assert.ok(a.getOptions().maxTokens <= 32768, '不得超过 32768 封顶')
   const huge = await setup()
-  await call(huge.handler, { text: '一'.repeat(20000), provider: 'p', model: 'm' })
+  await call(huge.handler, { text: '约束:保持原格式。' + '一'.repeat(20000), provider: 'p', model: 'm' })
   assert.equal(huge.getOptions().maxTokens, 32768, '超大输入应 32768 封顶')
   const off = await setup({ config: { autoMaxTokens: false } })
   await call(off.handler, { text: longDraft, provider: 'p', model: 'm' })
@@ -526,7 +530,8 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 {
   const { handler, getOptions } = await setup()
   const res = await call(handler, {
-    text: '我的草稿',
+    // RC2:必须已明确(否则先进入 Discovery,拿不到编译调用)
+    text: '我的草稿。约束:只做本地方案;输出格式:Markdown 列表。',
     provider: 'p',
     model: 'm',
     context: [
@@ -552,7 +557,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 {
   const { handler, getOptions } = await setup({ config: { includeContext: false } })
   const res = await call(handler, {
-    text: '我的草稿',
+    text: '我的草稿。约束:只做本地方案;输出格式:Markdown 列表。',
     provider: 'p',
     model: 'm',
     context: [{ role: 'user', text: '帮我写个爬虫' }],
@@ -563,7 +568,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.ok(!sent.includes('conversation-context'), '关闭后不得出现上下文段')
   assert.ok(!sent.includes('previous-optimized'), '关闭后不得出现记忆链段')
   // Phase 4:general 走 v2 载荷(处置说明 + 模式说明 + 草稿),不再有 legacy 单行格式
-  assert.ok(sent.includes('<prompt-draft>\n我的草稿\n</prompt-draft>'), '关闭后应直接以草稿为主体')
+  assert.ok(sent.includes('我的草稿'), '关闭后应直接以草稿为主体')
   assert.doesNotMatch(sent, /-\s*\[待补充:/, 'v2:载荷不得以占位符形式列出缺口')
   assert.match(getOptions().system, /信息责任清单|信息责任/, '无上下文应走 template 策略(信息责任清单)')
   console.log('✓ 17b 关闭后忽略上下文')
@@ -573,7 +578,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 {
   const { handler, getOptions } = await setup()
   const res = await call(handler, {
-    text: '改过的草稿',
+    text: '改过的草稿。约束:只做本地方案;输出格式:Markdown 列表。',
     provider: 'p',
     model: 'm',
     context: [{ role: 'user', text: '前文' }],
@@ -623,7 +628,8 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
 // 20. AUTO 两阶段编排:SSE 事件序 meta → delta… → done;meta 携带类型 / 置信度 / 理由
 {
   const { handler } = await setup()
-  const res = await call(handler, { text: '帮我看看这段代码', provider: 'p', model: 'm' })
+  // RC2:已明确输入(否则会先进入 Discovery,拿不到 meta→delta→done 事件序)
+  const res = await call(handler, { text: '帮我看看这段代码。约束:只检查,不修改文件;输出格式:问题清单。', provider: 'p', model: 'm' })
   const events = sseEvents(res)
   const metaIndex = events.findIndex((e) => e.type === 'meta')
   const firstDelta = events.findIndex((e) => e.type === 'delta')

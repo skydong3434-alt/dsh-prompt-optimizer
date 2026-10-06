@@ -53,15 +53,19 @@ import {
 } from "./classify.js";
 import { stripThinkBlocks } from "../prompt.js";
 import { getTargetSpec, modalityOf, resolveEngine, resolveTargetDeterministic } from "./targets.js";
-import { decideTriage } from "./triage.js";
+import { decideTriage, mechanicalTriage } from "./triage.js";
 import {
   applyBlindTrust,
   buildLedger,
   classifyUnknown,
   classifyUnknowns,
   computeAnalysisGate,
+  decisionCategoryOfRequirement,
   hasBlindTrust,
+  sameRequirement,
+  scanDecisionStatements,
   tradeoffStatements,
+  vagueGoalDecision,
 } from "./requirements.js";
 
 /**
@@ -117,6 +121,8 @@ export const ANALYSIS_ISSUE = {
   droppedRequirement: "ANALYSIS_DROPPED_REQUIREMENT_WITHOUT_QUOTE",
   /** 模型给的 target 与用户点名的引擎冲突 → 采纳引擎(有机械证据)。 */
   targetEngineConflict: "ANALYSIS_TARGET_ENGINE_CONFLICT",
+  /** RC2:用户原文出现高影响决策,但分析没列出 → 机械安全层补齐(采样无关)。 */
+  tradeoffNotSurfaced: "ANALYSIS_DECISION_NOT_SURFACED_BY_MODEL",
 } as const;
 
 /** JSON 输出契约的逐字段描述(system prompt 与测试断言共用同一份字面量)。 */
@@ -470,32 +476,6 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
   const unknownInputs = normalizeUnknownInputs(record);
   const missingResolution = classifyUnknowns(unknownInputs);
 
-  // ── RC 安全网:机械补齐模型漏报的**产品取舍**(false negative)───────────────
-  // 实测模型会把「先做能跑的最小版本,还是做成长期工具」归成可自查项 → Discovery 漏问。
-  // 这里对用户原文做机械扫描:出现明确取舍句式而分析没列出来的,补一条阻塞项。
-  // 只补未知项,绝不新增用户来源(仍然要用户来回答)。
-  const coveredText = [
-    ...missingResolution.map((item) => item.text),
-    ...(Array.isArray(record.requirements) ? record.requirements.map((r) => (isPlainObject(r) ? String(r.text ?? "") : "")) : []),
-  ];
-  for (const statement of tradeoffStatements(rawInput)) {
-    const alreadyCovered = coveredText.some((text) => containmentRatio(statement, text) >= 0.5 || text.includes(statement) || statement.includes(text));
-    if (alreadyCovered) continue;
-    issues.push("tradeoff_not_surfaced_by_model");
-    // 用与模型未知项**同一条**机械流水线分类(不绕过保守规则);
-    // 显式 blocking:true 表达「这是真正需要用户答复的取舍」。
-    const item = classifyUnknown({ text: statement, blocking: true });
-    if (!item.blocking) {
-      // 机械判定它不需要用户决定(例如其实是可自查的环境事实)→ 保持不阻塞,不硬塞
-      missingResolution.push(item);
-      continue;
-    }
-    missingResolution.push({
-      ...item,
-      rationale: `${item.rationale ? `${item.rationale};` : ""}机械识别:用户原文出现产品取舍,分析未列出(安全网补齐)`,
-    });
-  }
-  const gate = computeAnalysisGate(missingResolution, triage.triage);
 
   // ── 台账(来源 / 状态分离)────────────────────────────────────────────────
   const explicit: ProvenanceRecord[] = [];
@@ -527,11 +507,48 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
     confidence: "medium" as const,
   }));
 
+  // ── RC2 安全层:机械补齐 / 纠正高影响用户决策(与模型质量、采样无关)──────
+  //   与兜底路径共用同一实现:applyDecisionSafety。
+  const safety = applyDecisionSafety({
+    missingResolution,
+    rawInput,
+    triage: triage.triage,
+    target: target.target,
+  });
+  if (safety.added.length > 0) issues.push(ANALYSIS_ISSUE.tradeoffNotSurfaced);
+
+  // ── 产品取舍安全网(RC1 保留:句子级「还是 / 取舍」表达)────────────────────
+  for (const statement of tradeoffStatements(rawInput)) {
+    const already = missingResolution.some((item) => sameRequirement(item.text, statement));
+    if (already) continue;
+    issues.push(ANALYSIS_ISSUE.tradeoffNotSurfaced);
+    const item = classifyUnknown({ text: statement, blocking: true });
+    if (!item.blocking) {
+      missingResolution.push(item);
+      continue;
+    }
+    missingResolution.push({
+      ...item,
+      rationale: `${item.rationale ? `${item.rationale};` : ""}机械识别:用户原文出现产品取舍,分析未列出(安全网补齐)`,
+    });
+  }
+
+  // ── RC2 §5:阻塞决策不得被「优化器建议」替代(PROVISIONAL 不能绕过 Discovery)──
+  // 与**仍然阻塞的**决策语义重合的建议,直接丢弃 —— 它会让确认页看起来
+  // 「已经替你暂定好了」,而实际上用户从未回答过这个高影响决策。
+  const blockingDecisionTexts = missingResolution
+    .filter((item) => item.blocking && item.classification === "USER_REQUIRED")
+    .map((item) => item.text);
+  const filteredSuggested = suggested.filter(
+    (entry) => !blockingDecisionTexts.some((text) => sameRequirement(entry.text, text)),
+  );
+
+  const gate = computeAnalysisGate(missingResolution, triage.triage);
   const baseLedger = buildLedger({
     raw_input: rawInput,
     context_turns: contextTurns,
     explicit,
-    suggested,
+    suggested: filteredSuggested,
     resolution: missingResolution,
   });
   const ledger = applyBlindTrust(baseLedger, rawInput);
@@ -782,6 +799,87 @@ function resolveAnalysisTarget(input: {
  * 保守原则:主意图 general、目标按确定性线索、分诊按机械判据、无未决项。
  * **不制造阻塞**:兜底绝不把用户挡在门外(拿不准就照常生成)。
  */
+
+/**
+ * 机械决策安全层(可复用)——**不依赖模型输出质量**。
+ *
+ * RC2 根因:原先这段逻辑只写在 JSON 解析路径里,一旦模型输出不可解析
+ * (真实环境 6–8/25),整层保证就消失 → 同一输入有时阻塞、有时不阻塞。
+ * 现在抽成纯函数,解析路径与**兜底路径**都必须调用 → 与采样/模型质量无关。
+ */
+function applyDecisionSafety(input: {
+  missingResolution: MissingResolutionItem[];
+  rawInput: string;
+  triage: EditTriage;
+  target: PromptTarget;
+}): { items: MissingResolutionItem[]; added: string[] } {
+  const { rawInput } = input;
+  const items = input.missingResolution;
+  const covered = items.map((item) => item.text);
+  const modelSurfaced = (text: string): boolean =>
+    items.some(
+      (item) =>
+        item.classification === "USER_REQUIRED" &&
+        item.blocking &&
+        sameRequirement(item.text, text),
+    );
+
+  const decisions: { category: string; text: string }[] = scanDecisionStatements(rawInput).map((d) => ({ ...d }));
+  const vague = vagueGoalDecision(rawInput, mechanicalTriage(rawInput).triage, {
+    visualTarget: input.target === "image_generation" || input.target === "video_generation",
+  });
+  if (vague) decisions.push(vague);
+
+  const added: string[] = [];
+  const surfacedCategories = new Set(
+    items
+      .map((item) => decisionCategoryOfRequirement(item.text))
+      .filter((category) => category !== null) as string[],
+  );
+
+  const findCovering = (decision: { category: string; text: string }): number =>
+    items.findIndex((item) => {
+      const itemCategory = decisionCategoryOfRequirement(item.text);
+      if (itemCategory !== null) return itemCategory === decision.category;
+      return sameRequirement(decision.text, item.text);
+    });
+
+  for (const decision of decisions) {
+    const coveringIndex = findCovering(decision);
+    if (coveringIndex >= 0) {
+      const existing = items[coveringIndex]!;
+      if (existing.classification === "USER_REQUIRED" && existing.blocking) continue;
+      items[coveringIndex] = {
+        ...existing,
+        classification: "USER_REQUIRED",
+        impact: "high",
+        blocking: true,
+        user_exclusive: true,
+        // ★ 理由必须**替换**而不是拼接:原理由可能是「执行方可以直接查到」,
+        //   与「只有你能决定」自相矛盾(RC2 实测会直接展示给用户)。
+        rationale: `只有你能决定,且会明显改变方案(高影响用户决策:${decision.category};机械安全层判定,与模型采样无关)`,
+      };
+      added.push(existing.text);
+      surfacedCategories.add(String(decision.category));
+      continue;
+    }
+    if (surfacedCategories.has(String(decision.category)) || modelSurfaced(decision.text)) continue;
+    const item = classifyUnknown({ text: decision.text, blocking: true, impact: "high" });
+    items.push({
+      ...item,
+      classification: "USER_REQUIRED",
+      impact: "high",
+      blocking: true,
+      user_exclusive: true,
+      rationale: `只有你能决定,且会明显改变方案(高影响用户决策:${decision.category};机械安全层判定,与模型采样无关)`,
+    });
+    added.push(decision.text);
+    surfacedCategories.add(String(decision.category));
+    covered.push(decision.text);
+  }
+  return { items, added };
+}
+
 export function fallbackAnalysisResult(
   reason = "分析失败,按通用目标与最小干预处理",
   ctx: { rawInput?: string; contextTurns?: readonly ConversationTurn[] } = {},
@@ -793,6 +891,14 @@ export function fallbackAnalysisResult(
     context_texts: contextTurns.filter((turn) => turn.role === "user").map((turn) => turn.text),
   });
   const triage: TriageDecision = decideTriage({ raw_input: rawInput });
+  // ★ RC2:兜底路径同样必须跑机械决策安全层 —— 否则「模型输出不可解析」的那一轮
+  //   就会丢失全部阻塞保证(这正是 Decision Stability 的根因)。
+  const safety = applyDecisionSafety({
+    missingResolution: [],
+    rawInput,
+    triage: triage.triage,
+    target: target.target,
+  });
   return {
     intent: {
       primary: "general",
@@ -802,14 +908,16 @@ export function fallbackAnalysisResult(
     },
     target,
     triage,
-    missing_resolution: [],
-    gate: computeAnalysisGate([], triage.triage),
+    missing_resolution: safety.items,
+    gate: computeAnalysisGate(safety.items, triage.triage),
     ledger: [],
     confidence_internal: 0.5,
     rationale: reason,
     evidence_quotes: [],
     prompt_type: "general",
-    missing_constraints: [],
+    missing_constraints: safety.items
+      .filter((item) => item.classification !== "OPTIONAL")
+      .map((item) => item.text),
   };
 }
 

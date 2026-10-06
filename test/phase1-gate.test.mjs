@@ -136,7 +136,8 @@ const GENERAL_OUTPUT = [
   '<<<END>>>',
 ].join('\n')
 
-const RESEARCH_TEXT = '帮我研究 Mac M1 Pro 32GB 怎么做 AI 视频'
+// RC2 起:模糊目标会先进入 Discovery;测「直接编译」的用例用已明确输入
+const RESEARCH_TEXT = '帮我研究 Mac M1 Pro 32GB 怎么做 AI 视频。约束:只看本地可跑的方案;输出格式:方案对比表 + 每项优缺点;验收:给出可执行步骤与显存占用实测数据。'
 
 /** 分析输出:含一个「只有用户能决定 + 高影响」的阻塞项(预算)。 */
 const ANALYSIS_BLOCKED = JSON.stringify({
@@ -216,8 +217,9 @@ const COMPLETE_PROMPT = [
   assert.equal(gate.gate.blocking_items.length, 1)
   assert.equal(gate.gate.blocking_items[0].text, '预算范围')
   assert.equal(gate.gate.discoverable_items.length, 1, '可自查项不得阻塞')
-  // Phase 4:模糊目标 → 机械 REBUILD(Discovery 前的分诊;模型 PATCH 不得降级)
-  assert.equal(gate.triage.triage, 'REBUILD')
+  // RC2:该 fixture 已补成「已明确」的研究请求(有约束/格式/验收)→ 机械判为
+  // RESTRUCTURE(信息齐但缺结构);关键是它**不再**因模糊目标进入 Discovery。
+  assert.equal(gate.triage.triage, 'RESTRUCTURE')
   assert.equal(gate.intent.primary, 'planning')
   assert.deepEqual(gate.intent.supporting, ['research'])
   assert.equal(gate.target.target, 'agent_task')
@@ -247,7 +249,7 @@ const COMPLETE_PROMPT = [
   assert.equal(meta.intent.work_mode, 'exploratory')
   assert.equal(meta.target.target, 'research')
   assert.equal(meta.target.modality, 'text')
-  assert.equal(meta.triage.triage, 'REBUILD')
+  assert.equal(meta.triage.triage, 'RESTRUCTURE')
   assert.ok(Array.isArray(meta.ledger))
   assert.equal(meta.missing_resolution.length, 1)
   assert.equal(meta.missing_resolution[0].classification, 'AGENT_DISCOVERABLE')
@@ -260,7 +262,7 @@ const COMPLETE_PROMPT = [
   assert.ok(discoverable, '可自查项应标 DISCOVERABLE 而非 [待补充:] 语义')
   assert.ok(done.optimized.includes('研究任务'), '编译产出正常返回')
   assert.equal(done.target.target, 'research')
-  assert.equal(done.triage.triage, 'REBUILD')
+  assert.equal(done.triage.triage, 'RESTRUCTURE')
   console.log('✓ p1g2 无阻塞 → 正常生成 + meta/done 带完整分析结论')
 }
 

@@ -59,7 +59,9 @@ const VIDEO_ANALYSIS = {
   target_engine: '可灵',
   edit_triage: 'PATCH',
   unknowns: [
-    { text: '是否已有可复用的分镜模板', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '决定是否新建' },
+    // RC2:reuse_vs_create 属于高影响用户决策(必须问用户)→ 这里换成
+    // 「纯可读事实 + 分支语义」来验证条件式分支渲染。
+    { text: '现有分镜模板是否存在', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '决定是否新建' },
     { text: '画幅与帧率', classification: 'USER_REQUIRED', blocking: false, rationale: '有默认值' },
   ],
   requirements: [{ text: '雨夜推镜到撑伞的人', quote: '镜头从雨夜街道推近到一个撑着伞的人' }],
@@ -241,7 +243,9 @@ function runContract(name, analysisJson, rawInput, body, unknownLines = [], quot
     VIDEO_ANALYSIS,
     VIDEO_RAW,
     VIDEO_BODY,
-    ['- 是否已有可复用的分镜模板'],
+    // RC2:「是否已有可复用的分镜模板」属于 reuse_vs_create 高影响决策(必须问用户),
+    // 因此这里改用**纯可读事实 + 分支语义**的文本来验证「条件式分支」渲染。
+    ['- 现有分镜模板是否存在'],
     '镜头从雨夜街道推近到一个撑着伞的人',
   )
   assert.equal(decision.strategy.type, 'video')
@@ -260,6 +264,7 @@ function runContract(name, analysisJson, rawInput, body, unknownLines = [], quot
   assert.ok(
     outcome.result.optimized_prompt.includes('存在则优先复用'),
     'D:决定分支的可自查项必须落成条件式指令',
+
   )
   // 非阻塞的用户决定项不得进正文
   assert.equal(outcome.result.optimized_prompt.includes('画幅与帧率'), false, 'D:用户决定项不注入正文')

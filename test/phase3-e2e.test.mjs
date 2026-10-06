@@ -101,7 +101,10 @@ async function setup({ compileOutput, analysisRounds }) {
   }
 }
 
-const COMFY_RAW = '我想用 dsh 控制 comfyui 生成视频。'
+// RC2:模糊目标会**无条件**进入 Requirement Discovery(Decision Stability)。
+// 本套件测的是 Discovery 机制本身(depends_on / invalidates / 循环保护 / 分诊钉住),
+// 因此输入改成**已明确**的版本;模糊目标的行为由 test/rc2 + scripts/rc2-stability.mjs 覆盖。
+const COMFY_RAW = '我想用 dsh 控制 comfyui 生成视频。约束:只做本地方案;输出格式:步骤清单;验收:跑通一次生成。'
 
 /** 第一轮分析:两个真正会改变方案的用户取舍(工作流来源 / 本轮目标)。 */
 const ROUND1 = JSON.stringify({
@@ -288,8 +291,8 @@ const COMPILE_OUTPUT = [
   }
   assert.ok(round1.agent_researches.includes('ComfyUI 版本'), '可自查项弱展示')
   assert.ok(round1.analysis, '必须回传分析结论供确认时复用')
-  // Phase 4:模糊目标 → 机械 REBUILD;Discovery 全程不得改变它
-  assert.equal(round1.triage.triage, 'REBUILD', 'Edit Triage = REBUILD(模糊目标)')
+  // RC2:该输入已明确 → 机械 PATCH(有可保留的成稿要素);Discovery 全程不得改变它
+  assert.equal(round1.triage.triage, 'PATCH', 'Edit Triage 全程不变')
 
   // ── ② 用户回答 → 重新分析 → requirement_confirmation(仍不编译) ──────────
   const answers = round1.questions.map((q) => ({
@@ -304,7 +307,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -342,7 +345,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'confirm',
       round: confirmationEvent.round,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: confirmationEvent.ledger,
       asked: confirmationEvent.asked,
       answers: [],
@@ -358,7 +361,7 @@ const COMPILE_OUTPUT = [
   assert.equal(compileCalls().length, 1, '★ Compiler 在确认后才第一次运行(且只有 1 次)')
   assert.equal(analysisCalls().length, 2, '确认不再触发额外分析调用')
   assert.ok(done.optimized.includes('Objective'), '编译产出正常')
-  assert.equal(done.triage.triage, 'REBUILD', 'Discovery 全流程未改变 Edit Triage(仍 REBUILD)')
+  assert.equal(done.triage.triage, 'PATCH', 'Discovery 全流程未改变 Edit Triage')
   assert.equal(done.target.target, 'agent_task')
   assert.equal(done.contract, 'agent', 'Agent 目标走 Agent 任务指令契约')
   console.log('✓ e2e1 ComfyUI 完整闭环:发现(0 编译)→ 回答 → 确认(0 编译)→ 确认后首次编译')
@@ -378,7 +381,9 @@ const COMPILE_OUTPUT = [
       // 用户没有回答「本轮目标」这一项(与 ROUND1 的 unknown-2 同文本)
       { text: '本轮目标是先验证控制链路还是建立长期自动化', classification: 'USER_REQUIRED', blocking: true, impact: 'high', rationale: '用户取舍' },
     ],
-    requirements: [],
+    // RC2:用户目标已被模型抽成 requirement → 机械安全层不会重复补「范围」决策,
+    // 因此本轮确实「问不出新价值」→ 循环保护生效(本用例要测的正是这一点)。
+    requirements: [{ text: '用 dsh 控制 comfyui 生成视频', quote: '用 dsh 控制 comfyui 生成视频' }],
     suggestions: [],
     confidence_internal: 0.9,
     rationale: 'r',
@@ -399,7 +404,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -436,7 +441,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -486,7 +491,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -559,7 +564,7 @@ const COMPILE_OUTPUT = [
     discovery: {
       mode: 'confirm',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: round1.ledger,
       asked: round1.asked,
       answers: [],
@@ -587,7 +592,9 @@ const CLEAN_ANALYSIS = JSON.stringify({
   target: 'general',
   edit_triage: 'PATCH',
   unknowns: [{ text: 'ComfyUI 版本', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '自查' }],
-  requirements: [],
+  // RC2:模型已抽出用户目标 → 模糊目标兜底不叠加;本用例要证明的是
+  // 「**环境事实**缺失不会触发 Discovery」(不是「任何输入都不触发」)。
+  requirements: [{ text: '把这段描述整理成提示词', quote: '帮我把这段描述整理成提示词' }],
   suggestions: [],
   confidence_internal: 0.9,
   rationale: 'r',
@@ -600,9 +607,18 @@ const CLEAN_ANALYSIS = JSON.stringify({
   const { handler, compileCalls } = await setup({ compileOutput: NEUTRAL_OUTPUT, analysisRounds: [CLEAN_ANALYSIS] })
   const res = await call(handler, { text: '帮我把这段描述整理成提示词,ComfyUI 版本我用最新的', provider: 'p', model: 'm' })
   const events = sseEvents(res)
-  assert.equal(events.some((e) => e.type === 'discovery_required'), false, 'Case5:纯环境缺失不得进入 Discovery')
-  assert.ok(events.find((e) => e.type === 'done'))
-  assert.equal(compileCalls().length, 1, '直接编译')
+  const discovery = events.find((e) => e.type === 'discovery_required')
+  // RC2:该输入是模糊目标 → 会问「范围」决策;但**环境事实**(ComfyUI 版本)不得被问。
+  // 「范围」问题的文本是用户原句(可能包含「版本」二字),因此判定要看**短语级**事实:
+  // 不得出现以环境事实本身作为问题的条目。
+  const envAsQuestion = (discovery?.questions ?? []).filter(
+    (q) => q.question.length <= 24 && /版本|地址|端口|文件位置|安装位置|项目结构/.test(q.question),
+  )
+  assert.deepEqual(envAsQuestion, [], 'Case5:环境事实不得成为问题')
+  assert.ok(
+    (discovery?.agent_researches ?? []).some((item) => item.includes('版本')),
+    'Case5:环境事实必须落在「Agent 自行调查」',
+  )
   console.log('✓ e2e6 Case5 纯环境信息缺失 → 直接编译,不进入 Discovery')
 }
 
@@ -769,7 +785,9 @@ const CLEAN_ANALYSIS = JSON.stringify({
         rationale: '用户取舍',
       },
     ],
-    requirements: [],
+    // RC2:模型把用户目标抽成 requirement 后,机械安全层不会重复补「范围」决策
+    // (同一句已被覆盖)→ 本轮确实没有新问题 → 循环保护生效(这正是本用例要测的)。
+    requirements: [{ text: '用 dsh 控制 comfyui 生成视频', quote: '用 dsh 控制 comfyui 生成视频' }],
     suggestions: [],
     confidence_internal: 0.7,
     rationale: 'r',
@@ -792,10 +810,22 @@ const CLEAN_ANALYSIS = JSON.stringify({
   const res = await call(handler, { text: '帮我看看这个项目', provider: 'p', model: 'm' })
   const event = sseEvents(res)[0]
   assert.equal(event.type, 'discovery_required')
-  assert.equal(event.questions.length, 1)
-  assert.doesNotMatch(event.questions[0].question, /Research|Planning|Review|Execution/, 'Case2:不得问内部枚举')
-  assert.match(event.questions[0].question, /问题|方案|完成/, 'Case2:必须转成用户目标问题')
-  assert.ok(event.questions[0].options.length >= 2, 'Case2:必须给具体选项')
+  // RC2:输入「帮我看看这个项目」是模糊目标 → 机械安全层还会补一条「范围」决策,
+  // 因此本轮问题可能 ≥1(单轮上限 3)。关键是**不得**问内部枚举,且给出具体选项。
+  assert.ok(event.questions.length >= 1 && event.questions.length <= 3, 'Case2:单轮问题数 1–3')
+  const ambiguity = event.questions.find((q) => /问题|方案|完成/.test(q.question))
+  assert.ok(ambiguity, 'Case2:必须把歧义转成用户目标问题')
+  for (const q of event.questions) {
+    assert.doesNotMatch(q.question, /Research|Planning|Review|Execution/, 'Case2:不得问内部枚举')
+  }
+  // 模型给的问法必须带具体选项;机械安全层补的项只带用户原句(不编造选项),
+  // 由 UI 的自由输入 / 「按你的判断继续」承接(RC2 §3:机械层不生成问题文案)。
+  assert.ok(ambiguity.options.length >= 2, 'Case2:模型问法必须给具体选项')
+  const mechanical = event.questions.filter((q) => q !== ambiguity)
+  for (const q of mechanical) {
+    assert.ok(q.options.length === 0, '机械项不得编造选项')
+    assert.equal(q.allow_blind_trust, true, '机械项必须允许「按你的判断继续」这条安全出口')
+  }
   console.log('✓ e2e11 Case2 模糊请求:歧义转用户目标问题(不问内部枚举)')
 }
 
@@ -822,9 +852,19 @@ const CLEAN_ANALYSIS = JSON.stringify({
   const { handler, compileCalls } = await setup({ compileOutput: NEUTRAL_OUTPUT, analysisRounds: [kbAnalysis] })
   const res = await call(handler, { text: '帮我做一个 AI 知识库。', provider: 'p', model: 'm' })
   const events = sseEvents(res)
-  assert.equal(events.some((e) => e.type === 'discovery_required'), false, 'Case1:可调查项不得触发提问')
-  assert.ok(events.find((e) => e.type === 'done'))
-  assert.equal(compileCalls().length, 1)
+  const discovery = events.find((e) => e.type === 'discovery_required')
+  // RC2:「帮我做一个 AI 知识库。」是模糊目标(机械 REBUILD)→ 必须问「范围 / 交付深度」。
+  // 但**可调查项一律不得变成问题**(§4):它们只出现在 agent_researches(弱显示)。
+  assert.ok(discovery, 'Case1:模糊目标必须问范围决策')
+  const askedTexts = discovery.questions.map((q) => q.question).join(' | ')
+  for (const probe of ['技术栈', '向量库', '项目结构']) {
+    assert.ok(!askedTexts.includes(probe), `Case1:可调查项「${probe}」不得被问`)
+    assert.ok(
+      discovery.agent_researches.some((item) => item.includes(probe)),
+      `Case1:可调查项「${probe}」必须出现在「Agent 自行调查」里`,
+    )
+  }
+  assert.equal(compileCalls().length, 0, 'Case1:有阻塞决策时不得编译')
 
   // 若其中确实存在产品取舍(单机自用 vs 多人协作),则只问这一条
   const kbWithTradeoff = JSON.stringify({
@@ -838,7 +878,13 @@ const CLEAN_ANALYSIS = JSON.stringify({
   const res2 = await call(h2, { text: '帮我做一个 AI 知识库。', provider: 'p', model: 'm' })
   const event2 = sseEvents(res2)[0]
   assert.equal(event2.type, 'discovery_required')
-  assert.equal(event2.questions.length, 1, 'Case1:只问真正需要用户决定的那一条')
+  // RC2:除了模型给的产品取舍,机械安全层还会补「范围/交付深度」(模糊目标),
+  // 因此单轮 1–3 条;关键仍然是**可调查项不进问题**。
+  assert.ok(event2.questions.length >= 1 && event2.questions.length <= 3, 'Case1:单轮问题数 1–3')
+  assert.ok(
+    event2.questions.some((q) => /单机自用|多人协作/.test(q.question)),
+    'Case1:模型给的产品取舍必须被问到',
+  )
   assert.match(event2.questions[0].question, /单机|协作|多人|自用/)
   for (const q of event2.questions) {
     assert.doesNotMatch(q.question, /技术栈|框架|向量库|依赖|项目结构/, 'Case1:不得问可调查项')
@@ -885,7 +931,8 @@ const CLEAN_ANALYSIS = JSON.stringify({
     target: 'agent_task',
     edit_triage: 'PATCH',
     unknowns: [{ text: 'DSH 当前可用的控制方式', classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '自查' }],
-    requirements: [],
+    // RC2:回答轮里模型已抽出用户目标 → 模糊目标兜底不叠加(否则会重复提问范围)
+    requirements: [{ text: '用 dsh 控制 comfyui 生成视频', quote: '我想用 dsh 控制 comfyui 生成视频。' }],
     suggestions: [],
     confidence_internal: 0.9,
     rationale: 'r',
@@ -895,8 +942,14 @@ const CLEAN_ANALYSIS = JSON.stringify({
   const { handler, compileCalls } = await setup({ compileOutput: COMPILE_OUTPUT, analysisRounds: [round1, round2] })
   const first = await call(handler, { text: '我想用 dsh 控制 comfyui 生成视频。', provider: 'p', model: 'm' })
   const r1 = sseEvents(first)[0]
-  assert.equal(r1.questions.length, 1, '依赖分轮:首轮只问无依赖的 Q1')
-  assert.match(r1.questions[0].question, /复用|新建/)
+  // RC2:机械安全层会再补一条「范围」决策(模糊目标),但依赖分轮纪律不变:
+  // 带依赖的 Q2 不得与 Q1 同轮出现。
+  const q1 = r1.questions.find((q) => /复用|新建/.test(q.question))
+  assert.ok(q1, '依赖分轮:首轮必须问无依赖的 Q1')
+  assert.ok(
+    !r1.questions.some((q) => /长期自动化|验证控制链路/.test(q.question)),
+    '带依赖的 Q2 不得与 Q1 同轮',
+  )
 
   const second = await call(handler, {
     text: '我想用 dsh 控制 comfyui 生成视频。',
@@ -905,7 +958,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: r1.ledger,
       asked: r1.asked,
       questions: r1.questions,
@@ -932,15 +985,15 @@ const CLEAN_ANALYSIS = JSON.stringify({
 // Phase 4 triage 审计:Discovery 不得修改 Edit Triage(即使模型在后续轮次改口)
 // ═════════════════════════════════════════════════════════════════════════════
 {
-  // 第二轮分析**故意**声明 PATCH:钉住的 REBUILD 必须胜出
-  const round2SaysPatch = JSON.stringify({ ...JSON.parse(ROUND2), edit_triage: 'PATCH' })
+  // 第二轮分析**故意**声明 RESTRUCTURE:钉住的 PATCH 必须胜出
+  const round2SaysPatch = JSON.stringify({ ...JSON.parse(ROUND2), edit_triage: 'RESTRUCTURE' })
   const { handler, compileCalls } = await setup({
     compileOutput: COMPILE_OUTPUT,
     analysisRounds: [ROUND1, round2SaysPatch],
   })
   const first = await call(handler, { text: COMFY_RAW, provider: 'p', model: 'm' })
   const round1 = sseEvents(first)[0]
-  assert.equal(round1.triage.triage, 'REBUILD', '首轮:模糊目标 → REBUILD')
+  assert.equal(round1.triage.triage, 'PATCH', '首轮:机械分诊(该输入已明确)')
 
   const second = await call(handler, {
     text: COMFY_RAW,
@@ -949,7 +1002,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
     discovery: {
       mode: 'answer',
       round: 1,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: round1.ledger,
       asked: round1.asked,
       questions: round1.questions,
@@ -959,7 +1012,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
   })
   const confirmation = sseEvents(second)[0]
   assert.equal(confirmation.type, 'requirement_confirmation')
-  assert.equal(confirmation.triage.triage, 'REBUILD', '★ 回答轮不得把 REBUILD 改成 PATCH')
+  assert.equal(confirmation.triage.triage, 'PATCH', '★ 回答轮不得改变首轮分诊')
 
   const third = await call(handler, {
     text: COMFY_RAW,
@@ -968,7 +1021,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
     discovery: {
       mode: 'confirm',
       round: confirmation.round,
-      triage: 'REBUILD',
+      triage: 'PATCH',
       ledger: confirmation.ledger,
       asked: confirmation.asked,
       answers: [],
@@ -977,7 +1030,7 @@ const CLEAN_ANALYSIS = JSON.stringify({
     },
   })
   const done = sseEvents(third).find((e) => e.type === 'done')
-  assert.equal(done.triage.triage, 'REBUILD', '★ 编译结果的分诊必须仍是首轮钉住的 REBUILD')
+  assert.equal(done.triage.triage, 'PATCH', '★ 编译结果的分诊必须仍是首轮钉住的 PATCH')
   assert.equal(compileCalls().length, 1)
   console.log('✓ e2e14 triage 审计:模糊目标 = REBUILD,且 Discovery 不得改动它')
 }
