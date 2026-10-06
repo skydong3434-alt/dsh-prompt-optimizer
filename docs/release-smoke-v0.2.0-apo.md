@@ -5,7 +5,19 @@
 > 真实模型 OpenCode Go / `deepseek-v4-flash`
 > 脚本:`node scripts/release-smoke-v0.2.0-apo.mjs`（结果 JSON 落在 `logs/release/`）
 
-**结论:未通过发布门禁（NOT_READY_FOR_RELEASE）** —— 见下方「发现的 release blocker」。
+**结论:仍未通过发布门禁（NOT_READY_FOR_RELEASE）** —— 见下方 §1/§3。
+
+## 0. 本轮（Release Blocker Fix）进展
+
+| 项 | 状态 |
+|---|---|
+| H:re-optimize 只改措辞 → 保留已确认要求、不重复询问、直达 complete | ✅ **已修复**（根因:reoptimize 的 gate 未与对账后台账对齐;见 §1 Blocker 3）;regression R3 通过 |
+| confirm 两个死循环的 regression | ✅ 新增 `test/release/release-blockers.test.mjs` R1/R2（含「Compiler 仅调用一次」） |
+| C / E 终态定性 | ⏳ **部分完成**:已证明产品在**最坏情况**（模型每轮都报新决策）下仍能自行到达终态（3 轮 → confirmation → complete）;C 的失败终态是 `returned`(RETURN_TO_MISSING_RESOLUTION/VF_S…),即**明确终态**而非「无终态」;尚需判定该回流是安全网正常工作还是误报 |
+| G 断言误报 | ⏳ 已定位为**测试断言误报**（输出同时含「只检查」约束与「直接修改」字样,后者出现在否定语境）;断言已改为否定感知,尚未重跑确认 |
+| 8 项 smoke 全绿 | ❌ 最近一次完整运行 6/8（A/B/D/E/F 通过;C=returned;G=断言误报;H 未跑完） |
+
+> 本轮**未能**在预算内完成一次干净的 8/8 运行;`docs/release-smoke-v0.2.0-apo.md` 的最终数字需在下次运行后更新。
 
 ## 1. 本轮发现并修复的 release blocker（真实功能缺陷）
 

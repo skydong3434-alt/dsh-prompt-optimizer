@@ -796,6 +796,27 @@ export function apply(ctx: Context, config: Config) {
             console.log(`[${name}] ${reconciled.summary}`)
             // 对账结果必须**贯穿**后续所有分支(编译 / 确认 / 门禁都读 analysis.ledger)
             analysis = { ...analysis, ledger: reconciled.ledger }
+            // ★ v0.2.0-apo release blocker 修复:gate 也必须与**对账后的台账**对齐。
+            //   再优化时 fresh analysis 会重新报出同样的决策项,而它在台账里早已确认/暂定;
+            //   旧写法直接沿用 analysis.gate.blocked=true → 流程又被送回确认页
+            //   (用户只改了无关措辞,却被要求把已经确认过的决定再确认一遍)。
+            //   契约:对账后「仍然成立」的决策不再阻塞;只有**新出现**的 blocking 才进 Discovery。
+            const reSufficiency = evaluateSufficiency({
+              analysis,
+              ledger: reconciled.ledger,
+              round: session?.round ?? 1,
+            })
+            if (reSufficiency.ready && reSufficiency.liveBlocking.length === 0) {
+              analysis = {
+                ...analysis,
+                gate: {
+                  ...analysis.gate,
+                  blocked: false,
+                  blocking_items: [],
+                  reason: '再优化对账后决策仍然完备(已确认要求保留,不重复询问)',
+                },
+              }
+            }
           }
           const classifier: ClassifierResult | null = analysis ? analysisToClassifier(analysis) : null
 

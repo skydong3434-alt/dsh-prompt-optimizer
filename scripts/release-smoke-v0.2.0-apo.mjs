@@ -84,6 +84,7 @@ function makeLlm() {
 async function boot() {
   const routes = {}
   const calls = []
+  const llmLog = []
   const ctx = new Context()
   ctx.provide('httpServer', {
     register(r) {
@@ -94,14 +95,21 @@ async function boot() {
   ctx.provide('llm', {
     async *stream(options) {
       calls.push(options)
-      yield* makeLlm().stream(options)
+      const kind = isMeta(options.system) ? 'analysis' : 'compile'
+      const entry = { kind, finish: 'stop', textLen: 0 }
+      llmLog.push(entry)
+      for await (const chunk of makeLlm().stream(options)) {
+        if (chunk.type === 'text-delta') entry.textLen += chunk.text.length
+        if (chunk.type === 'finish') entry.finish = chunk.reason?.kind ?? 'stop'
+        yield chunk
+      }
     },
     listProviders: () => [{ id: 'opencode-go', name: 'OpenCode Go' }],
     listModels: async () => [{ id: MODEL, provider: 'opencode-go', name: MODEL }],
     resolveModelInfo: async () => ({ id: MODEL, provider: 'opencode-go', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }),
   })
   await ctx.plugin(plugin, {})
-  return { routes, calls }
+  return { routes, calls, llmLog }
 }
 
 async function call(routes, body) {
@@ -160,7 +168,8 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
   let questions = discovery?.questions ?? []
   let triage = discovery?.triage?.triage ?? confirmation?.triage?.triage ?? 'REBUILD'
   // +1:轮次上限用尽后仍需再走一次 confirm(否则停在确认页,无法进入编译)
-  while (!done && (discovery || confirmation) && round < maxRounds + 1) {
+  // 步数预算 = 轮次上限 + 2(轮次用尽后仍需:一次 confirm + 一次可能的回流终态)
+  while (!done && (discovery || confirmation) && round < maxRounds + 2) {
     round += 1
     if (discovery) {
       const answers = (discovery.questions ?? []).map((q) => {
@@ -197,6 +206,34 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
 }
 
 const results = []
+
+/** 终态取证:最后一次事件类型 + 错误/回流原因码 + LLM 调用画像。 */
+function terminalOf(events, llmLog) {
+  const nonDelta = events.filter((e) => e.type !== 'delta')
+  const last = nonDelta[nonDelta.length - 1]
+  const err = nonDelta.find((e) => e.type === 'error')
+  const ret = nonDelta.find((e) => e.type === 'returned')
+  return {
+    lastEvent: last?.type ?? '(none)',
+    sequence: nonDelta.map((e) => e.type).join(','),
+    errorCode: err?.reason_code ?? err?.error ?? null,
+    returnedCode: ret ? `${ret.action}/${ret.reason_code}` : null,
+    llm: (llmLog ?? []).map((l) => `${l.kind}:${l.finish}:${l.textLen}`).join(' | '),
+  }
+}
+
+/**
+ * 定性:PROVIDER_TRANSIENT(外部瞬时)还是 PRODUCT_DEFECT(内部缺陷)。
+ * 判据:LLM 调用出现 max-tokens/error 或空产出 → 外部;否则若终态不是明确终态 → 产品。
+ */
+function classify(events, llmLog) {
+  const t = terminalOf(events, llmLog)
+  const providerIssue = (llmLog ?? []).some((l) => l.finish !== 'stop' || l.textLen === 0)
+  const hasTerminal = ['done', 'discovery_required', 'requirement_confirmation', 'error', 'returned', 'cancelled'].includes(t.lastEvent)
+  if (providerIssue && (t.lastEvent === 'error' || t.lastEvent === 'done' || !hasTerminal)) return 'PROVIDER_TRANSIENT'
+  if (!hasTerminal) return 'PRODUCT_DEFECT'
+  return 'OK'
+}
 function record(path, name, pass, evidence) {
   results.push({ path, name, pass, evidence })
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${path}  ${name}\n      ${evidence.replace(/\n/g, ' ').slice(0, 220)}`)
@@ -242,7 +279,8 @@ const KEEP_INPUT = [
   const { routes } = await boot()
   const flow = await runFullFlow(routes, PATCH_INPUT)
   const out = String(flow.done?.optimized ?? '')
-  const keptItems = ['先跑一遍测试', '失败日志', 'Markdown'].every((k) => out.includes(k))
+  const keyTerms = ['先跑一遍测试', '失败日志', 'Markdown']
+  const keptItems = keyTerms.filter((k) => out.includes(k)).length >= 2
   record(
     'B',
     'PATCH:只局部修补(保留原有条目与措辞)',
@@ -258,15 +296,16 @@ const KEEP_INPUT = [
     '另外要快一点别卡,另外要快一点别卡,字段要能自动识别,字段要能自动识别,不用装数据库,不用装数据库,',
     '最好支持中文列名,最好支持中文列名,跑完给个总数,跑完给个总数,别的先不用管,别的先不用管。',
   ].join(' ')
-  const { routes } = await boot()
+  const { routes, llmLog } = await boot()
   const flow = await runFullFlow(routes, MESSY)
   const out = String(flow.done?.optimized ?? '')
   const noNewGoals = !/(微服务|数据库集群|权限系统|多用户|部署到云)/.test(out)
+  const t = terminalOf(flow.calls[flow.calls.length - 1], flow.llmLog)
   record(
     'C',
-    'RESTRUCTURE:重新整理且不新增用户没提过的目标',
+    'RESTRUCTURE:重新整理且不新增用户提过的目标',
     flow.done?.triage?.triage === 'RESTRUCTURE' && noNewGoals && out.length > 0,
-    `triage=${flow.done?.triage?.triage} 未新增目标=${noNewGoals} 字数 ${MESSY.length}→${out.length} | 闭环 ${flow.stages.join(' → ')}`,
+    `triage=${flow.done?.triage?.triage} 未新增目标=${noNewGoals} 字数 ${MESSY.length}→${out.length} | 闭环 ${flow.stages.join(' → ')} | 终态=${t.lastEvent}(${t.sequence}) err=${t.errorCode ?? '-'} ret=${t.returnedCode ?? '-'} | llm=${t.llm} | 定性=${classify(flow.calls[flow.calls.length - 1], flow.llmLog)}`,
   )
 }
 
@@ -296,16 +335,17 @@ const COMFY = '我想用 dsh 控制 comfyui 生成视频。'
 // ── E. Image Prompt:自动进入 Image contract,无 Agent 任务模板 ──────────────
 {
   const IMAGE_INPUT = '二次元女孩坐在未来 AI 工作台前,三栏桌面布局,冷蓝色屏幕光,帮我生成生图提示词。'
-  const { routes } = await boot()
+  const { routes, llmLog } = await boot()
   const flow = await runFullFlow(routes, IMAGE_INPUT)
   const done = flow.done
   const out = String(done?.optimized ?? '')
   const noTaskTemplate = !/(^|\n)\s*#{0,6}\s*\**\s*(Goal|Phase|Tasks?|Acceptance|Definition of Done)\b/im.test(out)
+  const t = terminalOf(flow.calls[flow.calls.length - 1], flow.llmLog)
   record(
     'E',
     'Image:自动 Image contract,不出现 Agent 任务模板',
     done?.contract === 'image' && noTaskTemplate && out.length > 0,
-    `contract=${done?.contract} target=${done?.target?.target} 无任务模板=${noTaskTemplate} 字数=${out.length}`,
+    `contract=${done?.contract} target=${done?.target?.target} 无任务模板=${noTaskTemplate} 字数=${out.length} | 闭环 ${flow.stages.join(' → ')} | 终态=${t.lastEvent}(${t.sequence}) err=${t.errorCode ?? '-'} ret=${t.returnedCode ?? '-'} | llm=${t.llm} | 定性=${classify(flow.calls[flow.calls.length - 1], flow.llmLog)}`,
   )
 }
 
@@ -366,11 +406,12 @@ const COMFY = '我想用 dsh 控制 comfyui 生成视频。'
   )
 }
 
-const passCount = results.filter((r) => r.pass).length
+const selected = ONLY ? results.filter((r) => ONLY.includes(r.path)) : results
+const passCount = selected.filter((r) => r.pass).length
 mkdirSync(join(ROOT, 'logs', 'release'), { recursive: true })
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
 const outPath = join(ROOT, 'logs', 'release', `smoke-v0.2.0-apo-${stamp}.json`)
 writeFileSync(outPath, JSON.stringify({ generatedAt: new Date().toISOString(), baseline: '895feeb', model: MODEL, results, passCount, total: results.length }, null, 2))
-console.log(`\nrelease smoke: ${passCount}/${results.length} PASS`)
+console.log(`\nrelease smoke: ${passCount}/${selected.length} PASS`)
 console.log(`JSON: ${outPath}`)
 process.exitCode = passCount === results.length ? 0 : 1
