@@ -550,14 +550,41 @@ const VIDEO_BODY = [
     model: 'm',
   })
   const forgedEvents = sseEvents(forgedRes)
-  assert.equal(forgedEvents.some((e) => e.type === 'done'), false, '17:伪造来源不得交付')
-  const returned = forgedEvents.find((e) => e.type === 'returned')
-  assert.ok(returned, '17:必须下发 returned')
-  assert.equal(returned.reason_code, 'VF_FABRICATED_USER_EXPLICIT')
-  assert.equal(returned.requires, 'provenance_downgrade')
+  // v0.2.0-apo:可机械修复的 provenance 错误**自动降级后交付**(用户裁决 §四),
+  // 但伪造来源绝不得留在 explicit(不得冒充用户要求)。
+  const forgedDone = forgedEvents.find((e) => e.type === 'done')
+  assert.ok(forgedDone, '17:可机械修复的 provenance 错误不得把用户挡在门外')
+  assert.doesNotMatch(
+    (forgedDone.explicit_requirements ?? []).map((r) => r.text).join(' '),
+    /伪造要求/,
+    '★ 17:伪造来源绝不得留在 explicit',
+  )
+  assert.equal(forgedEvents.some((e) => e.type === 'returned'), false, '17:可修复情形不得退回用户')
 
-  // 回流预算已用满 → hard error
-  const exhausted = await call(forged.handler, {
+  // 回流预算已用满 → hard error。
+  // 注意:v0.2.0-apo 起「伪造来源」会被 provenance 自动修复(不再消耗回流预算),
+  // 因此这里用一个**不可机械修复**的问题来触发回流:面向用户的追问。
+  const unrepairable = await setup({
+    compileOutput: [
+      '<<<DIAGNOSIS>>>',
+      'd',
+      '<<<EXPLICIT>>>',
+      '(无)',
+      '<<<CONTEXT>>>',
+      '(无)',
+      '<<<SUGGESTED>>>',
+      '(无)',
+      '<<<UNKNOWN>>>',
+      '(无)',
+      '<<<OPTIMIZED>>>',
+      '## Request（请求要点）',
+      '- 做点事',
+      '- 请先回答预算范围',
+      '<<<END>>>',
+    ].join('\n'),
+    analysisRounds: [NEUTRAL],
+  })
+  const exhausted = await call(unrepairable.handler, {
     text: '帮我做一件事。约束:只做本地方案;输出格式:步骤清单。',
     provider: 'p',
     model: 'm',
@@ -570,10 +597,11 @@ const VIDEO_BODY = [
       answers: [],
       questions: [],
       analysis: null,
-      // 预算已用满(两个**不同**的 reason code)→ 新失败应判「预算耗尽」硬错误
+      // 预算已用满(两个**不同且与本次失败不同**的 reason code)→ 判「预算耗尽」硬错误。
+      // (若预置码与本次相同,会先命中 VF_REPEATED_FAILURE —— 那是另一条有界性规则。)
       validationReturns: [
-        { reason_code: 'VF_USER_FACING_QUESTION', action: 'RETURN_TO_MISSING_RESOLUTION', round: 1 },
-        { reason_code: 'VF_RETIRED_PLACEHOLDER', action: 'RETURN_TO_MISSING_RESOLUTION', round: 2 },
+        { reason_code: 'VF_RETIRED_PLACEHOLDER', action: 'RETURN_TO_MISSING_RESOLUTION', round: 1 },
+        { reason_code: 'VF_PROTOCOL_LEAK', action: 'RETURN_TO_MISSING_RESOLUTION', round: 2 },
       ],
     },
   })

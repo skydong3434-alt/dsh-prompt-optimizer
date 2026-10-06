@@ -379,8 +379,10 @@ const LEGACY_OUTPUT = [
   // 结论失败不代表内容丢失:优化稿仍完整下发,交 UI 顶部警示(不静默丢弃)。
   assert.ok(done.optimized.length > 0)
 
-  // h4b. 伪造 quote(不在用户输入中)→ Phase 4:Validator **可控回流**而非交付。
-  //      交付一个「声称是用户要求」的稿子是不可接受的;回流带 reason code。
+  // h4b. 伪造 quote(不在用户输入中)→ v0.2.0-apo:**机械修复后交付**,绝不冒充用户要求。
+  //      契约变化(用户裁决 §四):找不到逐字证据 → 降级 UNKNOWN → 交缺失解析机械分类;
+  //      只要不产生 blocking USER_REQUIRED 就继续交付 —— 但该内容**不得**出现在
+  //      explicit_requirements(不得显示为「你已确认」)。
   const forged = await setup({
     respond: () => chunkText(researchOutput(RESEARCH.body, ['- 伪造要求 [quote: 用户从未说过这句]'])),
   })
@@ -391,14 +393,12 @@ const LEGACY_OUTPUT = [
     model: 'm',
   })
   const forgedEvents = sseEvents(forgedRes)
-  assert.equal(forgedEvents.some((e) => e.type === 'done'), false, '伪造来源不得交付结果')
-  const returned = forgedEvents.find((e) => e.type === 'returned')
-  assert.ok(returned, '必须下发 returned 事件')
-  assert.equal(returned.action, 'RETURN_TO_MISSING_RESOLUTION')
-  assert.equal(returned.reason_code, 'VF_FABRICATED_USER_EXPLICIT')
-  assert.equal(returned.requires, 'provenance_downgrade')
-  assert.equal(returned.returns.length, 1, '必须记录回流次数(有界)')
-  console.log('✓ h4 非 legacy:三层守卫决定交付 / 可控回流')
+  const forgedDone = forgedEvents.find((e) => e.type === 'done')
+  assert.ok(forgedDone, '★ h4b:可机械修复的 provenance 错误不得把用户挡在门外(应交付)')
+  const forgedExplicit = (forgedDone.explicit_requirements ?? []).map((r) => r.text).join(' ')
+  assert.doesNotMatch(forgedExplicit, /伪造要求/, '★ h4b:伪造来源绝不得留在 explicit(不得冒充用户要求)')
+  console.log('✓ h4 非 legacy:三层守卫 + provenance 自动修复(伪造来源降级后仍交付,但不冒充用户要求)')
+
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

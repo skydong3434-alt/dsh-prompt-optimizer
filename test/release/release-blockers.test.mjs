@@ -211,4 +211,62 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R8 视觉缺排除项 → 交付+提示;丢用户约束仍拦')
 }
 
+// R9–R11:Recoverable Provenance Correction(模型错标 → 机械修复 → 交付,而非拒交付)
+{
+  const { reconcileProvenance } = await import('../../lib/core/provenance-recovery.js')
+  const record = (id, text, evidence = []) => ({ id, text, source: 'USER_EXPLICIT', evidence, confidence: 'high' })
+  const base = {
+    prompt_type: 'general', optimized_prompt: '## Request\n- x',
+    explicit_requirements: [], context_requirements: [], suggested_requirements: [], unknowns: [],
+  }
+
+  // R9:模型把 optimizer 建议写进 USER_EXPLICIT(无用户证据)→ 降级 OPTIMIZER_SUGGESTED
+  {
+    const r = reconcileProvenance(
+      { ...base, explicit_requirements: [record('e1', '建议增加缓存')] },
+      { rawInput: '帮我做个工具', contextTurns: [], suggestions: ['建议增加缓存'] },
+    )
+    assert.equal(r.result.explicit_requirements.length, 0, '★ R9:不得留在 USER_EXPLICIT')
+    assert.equal(r.result.suggested_requirements.length, 1, '★ R9:必须降级为 OPTIMIZER_SUGGESTED')
+    assert.equal(r.result.suggested_requirements[0].source, 'OPTIMIZER_SUGGESTED')
+    assert.equal(r.corrections[0].reason_code, 'VF_SUGGESTION_UPGRADED')
+    assert.equal(r.recovered, 1)
+  }
+
+  // R10:证据不在本轮输入但在**上下文用户发言**中 → CONTEXT_EXPLICIT
+  {
+    const r = reconcileProvenance(
+      { ...base, explicit_requirements: [record('e2', '用 Node 写 CLI', ['用 Node 写 CLI'])] },
+      { rawInput: '继续上面的', contextTurns: [{ role: 'user', text: '用 Node 写 CLI' }], suggestions: [] },
+    )
+    assert.equal(r.result.explicit_requirements.length, 0)
+    assert.equal(r.result.context_requirements.length, 1, '★ R10:必须降级为 CONTEXT_EXPLICIT')
+    assert.equal(r.result.context_requirements[0].source, 'CONTEXT_EXPLICIT')
+    assert.equal(r.corrections[0].reason_code, 'VF_FABRICATED_USER_EXPLICIT')
+  }
+
+  // R11:既无用户证据也不是建议 → UNKNOWN(交缺失解析),不留在用户要求里
+  {
+    const r = reconcileProvenance(
+      { ...base, explicit_requirements: [record('e3', '支持多机部署', ['用户说过要支持多机'])] },
+      { rawInput: '帮我做个工具', contextTurns: [], suggestions: ['建议增加缓存'] },
+    )
+    assert.equal(r.result.explicit_requirements.length, 0)
+    assert.equal(r.result.unknowns.length, 1, '★ R11:必须降级为 UNKNOWN')
+    assert.equal(r.unresolved.length, 1, 'R11:必须交缺失解析机械分类')
+    assert.equal(r.unresolved[0].source, 'UNKNOWN')
+  }
+
+  // R11b:合法 USER_EXPLICIT 不得被误降级
+  {
+    const r = reconcileProvenance(
+      { ...base, explicit_requirements: [record('e4', '不要引入新依赖', ['不要引入新依赖'])] },
+      { rawInput: '做个工具,不要引入新依赖', contextTurns: [], suggestions: [] },
+    )
+    assert.equal(r.result.explicit_requirements.length, 1, '★ R11b:合法证据必须保留')
+    assert.equal(r.recovered, 0)
+  }
+  console.log('✓ R9–R11 provenance 自动恢复:建议→OPTIMIZER_SUGGESTED、上下文→CONTEXT_EXPLICIT、无据→UNKNOWN、合法保留')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')

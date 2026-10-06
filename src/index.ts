@@ -26,6 +26,7 @@ import { compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity 
 import { computeAnalysisGate } from './core/requirements.js'
 import { assessCompleteness, decideValidationAction, type ValidationFlowOutcome } from './core/validation-flow.js'
 import { reconcileLedger } from './core/ledger-reconcile.js'
+import { describeProvenanceRecovery, reconcileProvenance } from './core/provenance-recovery.js'
 import {
   buildConfirmation,
   evaluateSufficiency,
@@ -1174,6 +1175,26 @@ export function apply(ctx: Context, config: Config) {
               // Phase 4:Validator 从「只 fail-closed」升级为**可控回流控制器** ——
               // 机械判定 PASS / RETURN_TO_* / HARD_ERROR,回流有 reason code、有次数上限、
               // 同一失败不重复循环(见 core/validation-flow.ts)。
+              // ★ v0.2.0-apo release blocker 修复:可恢复的 provenance 错误**自动修复**
+              //   模型偶尔把自己的建议/对不上证据的内容写进 USER_EXPLICIT 组 → 守卫会拒交付。
+              //   provider 已成功返回、用户输入无错,不该把内部分组错误转嫁给用户:
+              //   先机械对账(降级到 CONTEXT_EXPLICIT / OPTIMIZER_SUGGESTED / UNKNOWN),
+              //   再校验;降级为 UNKNOWN 的条目交缺失解析机械分类,只有新出现的 blocking
+              //   USER_REQUIRED 才进 Discovery。不放松 provenance 红线。
+              const provenanceRecovery = reconcileProvenance(outcome.result, {
+                rawInput: text,
+                contextTurns: context ?? [],
+                suggestions: [
+                  ...analysis!.ledger
+                    .filter((entry) => entry.source === 'OPTIMIZER_SUGGESTED')
+                    .map((entry) => entry.text),
+                  ...(outcome.result.suggested_requirements ?? []).map((record) => record.text),
+                ],
+              })
+              if (provenanceRecovery.recovered > 0) {
+                console.log(`[${name}] ${describeProvenanceRecovery(provenanceRecovery.corrections)}`)
+                outcome.result = provenanceRecovery.result
+              }
               let validationOutcome: ValidationFlowOutcome | null = null
               if (!plan.legacy) {
                 // 六态 UI:校验阶段是真实阶段,先告知客户端(不是假动画)

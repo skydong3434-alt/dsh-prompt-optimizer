@@ -15,6 +15,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
+import { mechanicalTriage } from '../lib/core/triage.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(here, '..')
@@ -289,6 +290,7 @@ if (!SKIP('B')) { EXECUTED += 1;
   const PATCH_INPUT = ['1. 先跑一遍测试', '2. 再看失败日志', '3. 输出格式:Markdown 表格'].join('\n')
   const { routes } = await boot()
   const flow = await runFullFlow(routes, PATCH_INPUT)
+  DIAG.push({ case: 'B', rawInput: PATCH_INPUT, mechanicalTriage: mechanicalTriage(PATCH_INPUT).triage, finalTriage: flow.done?.triage?.triage ?? null, compileRaw: (flow.llmLog ?? []).filter((l) => l.kind === 'compile').map((l) => l.text).join('\n---\n'), analysisRaw: (flow.llmLog ?? []).filter((l) => l.kind === 'analysis').map((l) => l.text).join('\n---\n') })
   const out = String(flow.done?.optimized ?? '')
   const keyTerms = ['先跑一遍测试', '失败日志', 'Markdown']
   const keptItems = keyTerms.filter((k) => out.includes(k)).length >= 2
@@ -439,6 +441,7 @@ if (ONLY) {
     writeFileSync(join(caseDir, `${stamp}.json`), JSON.stringify({
       case: r.path, name: r.name, pass: r.pass, evidence: r.evidence,
       generatedAt: new Date().toISOString(), model: MODEL, runs: RUNS,
+      diag: DIAG.find((d) => d.case === r.path) ?? null,
     }, null, 2))
   }
   writeFileSync(join(dir, `summary-${stamp}.json`), JSON.stringify({ generatedAt: new Date().toISOString(), only: ONLY, runs: RUNS, executed: EXECUTED, results: selected }, null, 2))
