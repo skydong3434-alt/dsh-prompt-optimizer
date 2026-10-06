@@ -1,13 +1,13 @@
 # dsh-prompt-optimizer
 
 > ⭐ **This repository = DSH Adaptive Prompt Optimizer** (a derived, enhanced fork of
-> `@y1x1n/dsh-prompt-optimizer`, MIT). On top of the upstream "analyze and optimize"
-> button it adds a full **Intent Classifier (AUTO / manual seven types) → Strategy
-> Registry (7 strategies) → Prompt Compiler → Provenance audit → Result panel → user
-> manually replaces the input** pipeline, and it **never auto-sends / auto-executes /
-> auto-decides**. Release `v0.1.0-apo`; design provenance & license boundaries in
-> [NOTICE.md](NOTICE.md); changelog in [CHANGELOG.md](CHANGELOG.md); DoD checklist in
-> [docs/dod.md](docs/dod.md).
+> `@y1x1n/dsh-prompt-optimizer`, MIT). It upgrades the fork from a fixed-template prompt
+> *expander* into an **adaptive prompt editor**: it detects the task intent, prompt type,
+> target model and how much to change, asks only the few decisions that truly need you,
+> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.2.0-apo`
+> (previous: `v0.1.0-apo`); design provenance & license boundaries in
+> [NOTICE.md](NOTICE.md); changelog in [CHANGELOG.md](CHANGELOG.md); release notes in
+> [docs/release-notes-v0.2.0-apo.md](docs/release-notes-v0.2.0-apo.md).
 
 [中文](README.md) | **English** | 🐣 [Beginner guide (中文)](README.simple.md)
 
@@ -46,43 +46,64 @@ A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the com
 
 ## This fork's additions (DSH Adaptive Prompt Optimizer)
 
-On top of the upstream abilities, this repository adds an **adaptive prompt-compilation
-pipeline** (fork-specific, v0.1.0-apo):
+### How to use (two steps)
 
-```
-Casual user input → [AUTO ▾][✨ Optimize] → Intent Classifier (AUTO / manual override)
-  → Strategy Registry (7 strategies + general fallback) → Prompt Compiler (four-section protocol)
-  → Provenance audit (verbatim quote matching) → Result panel (type badge + diagnosis + 4 source groups + gap list)
-  → user reviews/edits → [Replace input] → user sends it themselves
-```
+1. Type your prompt in the composer (casual wording is fine)
+2. Click **Optimize**
 
-- **Seven typed strategies**: research / planning / execution / diagnostic / review /
-  creative / general — each an independent versioned file; the AUTO dropdown supports
-  manual override, and an override always wins without calling the classifier.
-- **Provenance red lines**: explicit requirements must carry verbatim quotes from the
-  user's own words; optimizer suggestions (ignorable) live in their own section and never
-  mix into requirements; assistant speech is not intent evidence; anything without
-  evidence becomes `[待补充: …]` — **the optimizer never invents constraints**.
-- **Mis-classification guards**: current request first / current request vs. past
-  discussion / assistant suggestions ≠ user decisions; low-confidence types show a yellow
-  banner plus manual override as a fallback.
-- **Regression evidence**: 14 real-corpus fixtures with a deterministic hard gate plus an
-  evaluator reference line (see [docs/regression.md](docs/regression.md)); isolated-profile
-  smoke and desktop probes (see [docs/p08-smoke.md](docs/p08-smoke.md) /
-  [docs/p08-desktop.md](docs/p08-desktop.md); note: these docs are in Chinese).
-- **Install/uninstall same as upstream** (below); the formal profile install was completed
-  under gate G-7 (bundles=21, rollback backup at
-  `~/.dsh/backups/apo/g7-install-20261004-140136/`, restore script
-  `scripts/backup-profile.sh`).
-- **License cleanliness**: design provenance and credits in [NOTICE.md](NOTICE.md); zero
-  AGPL copying is enforced by `scripts/check-license-contamination.mjs` (PASS).
+**You normally do not pick a task type** — the type dropdown is gone from the main UI.
 
-![The result panel: five-dimension diagnosis and the rewrite streamed live, with replace/undo/copy; the badge shows the actual route and duration](docs/screenshots/optimize-panel.png)
+### What is detected automatically
 
-| | |
+| Item | Meaning |
 |---|---|
-| ![Composer idle state: the ✨ Optimize button next to the model picker, disabled while empty](docs/screenshots/composer-idle.png) | ![Panel error state: upstream model errors surface in full, with one-click retry](docs/screenshots/panel-error.png) |
-| ![Settings card collapsed: the header shows a "model · mode" summary](docs/screenshots/settings-collapsed.png) | ![Settings card expanded: model / generation parameters / context groups](docs/screenshots/settings-expanded.png) |
+| Task intent | what you actually want (research / planning / execution / diagnostic / review / creative …) |
+| Prompt type | which prompt shape fits (structured task instruction / image description / video description / agent task) |
+| Target model | who consumes the result (e.g. ComfyUI, Kling, a coding agent, a DSH agent) |
+| How much to change | see the four levels below |
+
+### How much to change (four levels)
+
+| Level | Meaning |
+|---|---|
+| **Keep as-is** (KEEP) | your draft is already good → kept **verbatim**, no rewriting at all |
+| **Light patch** (PATCH) | structure and wording stand → only a few gaps filled; no reordering, no new sections |
+| **Restructure** (RESTRUCTURE) | information is complete but messy → dedupe and reorganize, **adding nothing** you did not ask for |
+| **Rebuild** (REBUILD) | only a vague goal → key trade-offs are asked first, then the prompt is built from scratch (still only what the task truly needs) |
+
+### What it will and will not ask you
+
+- If information **truly needs your decision and would significantly change the plan**
+  (scope trade-offs, one-off validation vs long-term automation, analysis-only vs real
+  execution, permission to modify/delete, irreversible actions …), it asks **a few key
+  questions first** (1–3 per round) and **does not generate** a prompt before you answer.
+- If the information **can be investigated by the executing agent from the environment,
+  code, files, APIs or the project** (versions, paths, endpoint addresses, project
+  structure, dependencies, current implementation, config file locations …), you are
+  **never asked to fill it in** — the agent is told to investigate it.
+- Decisions you answered are kept in a requirement ledger: if you later re-optimize after
+  a wording-only edit, **confirmed requirements are retained** and not asked again.
+
+### Typical supported tasks
+
+Research · Planning · Execution / Coding · Diagnostic · Review · Creative ·
+Image Generation · Video Generation (text-to-video / image-to-video / first-last-frame)
+
+> Compatibility: the plugin works with **any** DSH session model (it reuses your current
+> session model route), but output quality varies by model — in particular **reasoning
+> models need a larger output budget** for the analysis stage. We do not claim "works
+> perfectly with every model". See the Known limitations in the release notes.
+
+### Retained guarantees
+
+- **Provenance red line**: explicit requirements need verbatim user evidence; optimizer
+  suggestions are labelled separately and never mixed into requirements; assistant
+  messages are never treated as user intent; **no constraints are invented for you**.
+- The old **`[待补充:]` placeholder mechanism is retired from the normal production path**:
+  open items are expressed as before-acting instructions / conditional branches, or
+  omitted — you no longer face blank fields to fill.
+- **No auto-send / auto-execute / auto-decide**: the panel lets you review and replace;
+  sending is still your action.
 
 ## Features
 

@@ -1,11 +1,11 @@
 # dsh-prompt-optimizer
 
 > ⭐ **本仓库 = DSH Adaptive Prompt Optimizer**（`@y1x1n/dsh-prompt-optimizer` 的派生增强版，MIT）。
-> 在上游「一键分析并优化提示词」基础上，增加 **Intent Classifier（AUTO/手动七类型）→
-> Strategy Registry（七策略）→ Prompt Compiler → Provenance 审计 → 结果面板 → 用户
-> 手动替换** 的完整管线，且**不自动发送 / 不自动执行 / 不自动决策**。
-> 发布版本 `v0.1.0-apo`；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
-> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；DoD 终检清单见 [docs/dod.md](docs/dod.md)。
+> 从「固定模板式 Prompt 扩写器」升级为**自适应提示词编辑器**：自动判断任务意图、
+> Prompt 类型、目标模型与需要修改多少，只在真正需要你决定时问少量关键问题，
+> 且**不自动发送 / 不自动执行 / 不自动决策**。
+> 发布版本 `v0.2.0-apo`（上一版 `v0.1.0-apo`）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
+> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.2.0-apo.md](docs/release-notes-v0.2.0-apo.md)。
 
 **中文** | [English](README.en.md) | [🐣 小白版](README.simple.md)
 
@@ -44,31 +44,60 @@ DeepSeek Harness 插件:在会话输入框(发送栏)旁提供一个「优化」
 
 ## 本 fork 增强（DSH Adaptive Prompt Optimizer）
 
-本仓库在上游能力之上新增 **自适应 Prompt 编译管线**（本 fork 特有，v0.1.0-apo）：
+### 怎么用（两步）
 
-```
-用户口语输入 → [AUTO ▾][✨ 优化] → Intent Classifier(AUTO/手动覆盖)
-  → Strategy Registry(7 策略 + general 回落) → Prompt Compiler(四段协议)
-  → Provenance 审计(quote 逐字比对) → 结果面板(类型徽章+需求诊断+四组来源+缺口清单)
-  → 用户检查/编辑 → [替换输入框] → 用户自己发送
-```
+1. 在输入框写下你的 Prompt（口语化也行）
+2. 点「优化」
 
-- **七类型策略**：research / planning / execution / diagnostic / review /
-  creative / general，每策略独立文件 + 独立版本，可单独升级；AUTO 下拉可手动覆盖，
-  override 恒优先且不调 classifier。
-- **Provenance 红线**：明确要求必须有用户原话 quote 证据；优化器建议（可忽略）
-  独立分段永不混入要求段；assistant 发言不作意图证据；证据不足一律
-  `[待补充: …]`，**不替用户发明约束**。
-- **防误判**：当前请求优先 / 当前请求 vs 历史讨论 / assistant 建议≠用户决定；
-  低置信类型黄条提示 + 手动覆盖兜底。
-- **回归证据**：14 例真实语料 deterministic 硬 Gate + evaluator 参考线
-  （见 [docs/regression.md](docs/regression.md)）；隔离 profile 冒烟与桌面端
-  实测（见 [docs/p08-smoke.md](docs/p08-smoke.md) / [docs/p08-desktop.md](docs/p08-desktop.md)）。
-- **安装/卸载同上游**（见下节）；已随 G-7 完成正式 profile 安装（bundles=21，
-  备份 `~/.dsh/backups/apo/g7-install-20261004-140136/` 可回滚，恢复脚本
-  `scripts/backup-profile.sh`）。
+**通常不需要选择任务类型** —— 主界面已经没有类型下拉了。
+
+### 系统会自动判断
+
+| 判断项 | 说明 |
+|---|---|
+| 任务意图 | 你到底要做什么（研究 / 规划 / 执行 / 排查 / 评审 / 创作…） |
+| Prompt 类型 | 该用哪种提示词形态（结构化任务指令 / 图像描述 / 视频描述 / Agent 任务） |
+| 目标模型 | 产物要交给谁用（例如 ComfyUI、可灵 / Kling、编码 Agent、DSH Agent） |
+| 需要修改多少 | 见下方四档 |
+
+### 需要修改多少（四档）
+
+| 档位 | 含义 |
+|---|---|
+| **无需修改**（KEEP） | 你的草稿已经足够好 → **原文逐字保留**，不做任何改写 |
+| **局部修补**（PATCH） | 结构与措辞基本成立 → 只补少量缺口，不重排、不加章节 |
+| **重新整理**（RESTRUCTURE） | 信息齐了但组织混乱 → 只去重重排，**不新增**你没提过的目标 |
+| **重新构建**（REBUILD） | 只有模糊目标 → 先问清关键取舍，再从零构建（仍只写完成任务真正需要的信息） |
+
+### 会问你什么、不会问你什么
+
+- 如果存在**真正需要你决定、并且会显著改变方案**的信息（范围取舍、一次性验证 vs 长期自动化、
+  只分析 vs 真执行、能否修改/删除、不可逆动作授权…），系统会**先问少量关键问题**（单轮 1–3 条），
+  在你说清楚之前**不会生成**提示词。
+- 如果信息**可以由执行 Agent 从环境、代码、文件、API 或项目中自行调查**
+  （版本、路径、接口地址、项目结构、依赖、现有实现、配置文件位置…），
+  **不会要求你填写**，而是交给 Agent 自行调查。
+- 你答过的决定会记在需求台账里；之后再改措辞重新优化时，**已确认的要求会被保留**，不会重复问你。
+
+### 典型支持的任务
+
+Research（研究调研）· Planning（项目规划）· Execution / Coding（直接执行与编码）·
+Diagnostic（故障排查）· Review（代码 / 架构评审）· Creative（创作）·
+Image Generation（生图提示词）· Video Generation（文生 / 图生 / 首尾帧视频提示词）
+
+> 兼容性说明:插件对**任何** DSH 会话模型都可用(它复用你当前的会话模型路由),
+> 但不同模型的输出质量与稳定性不同 —— 尤其是**推理型模型**在分析阶段需要较大的输出预算,
+> 我们不做「所有模型完美适配」的承诺。见 [CHANGELOG](CHANGELOG.md) 与发布说明中的已知限制。
+
+### 保留的既有能力
+
+- **Provenance 红线**：明确要求必须有用户原话证据；优化器建议独立标注、永不混入要求；
+  assistant 发言不作意图证据；**不替用户发明约束**。
+- **旧的 `[待补充:]` 占位符机制已退出正常生产路径**：未决项改为按处置契约表达
+  （执行前须知 / 分支条件 / 直接省略），不再让用户面对待填字段。
+- **不自动发送 / 不自动执行 / 不自动决策**：结果面板只给你检查与替换，发送仍由你按。
 - **License 清洁**：设计来源与致谢见 [NOTICE.md](NOTICE.md)；AGPL 零复制由
-  `scripts/check-license-contamination.mjs` 扫描保证（PASS）。
+  `scripts/check-license-contamination.mjs` 扫描保证。
 
 ![结果面板:五维诊断与优化稿流式上屏,可替换/撤回/复制;徽章显示实际路由与用时](docs/screenshots/optimize-panel.png)
 
@@ -184,6 +213,10 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 - **卸载后按钮还在?** 插件集合变更需重启 `dsh web` 才生效;刷新页面不够。
 
 ## 验证状态
+
+> 以下为**上游版本**的验证历史（保留原文，便于对照）；本 fork `v0.2.0-apo` 的行为差异
+> 见上方「本 fork 增强」，发布前真实验收记录见
+> [docs/release-smoke-v0.2.0-apo.md](docs/release-smoke-v0.2.0-apo.md)。
 
 已在真实环境验证(dsh 0.1.0-rc.8 实测 + 0.1.1-rc.2 复测,Windows,详见「兼容性」);macOS 端自动化实测通过(2026-09-02,macOS 26.5,62 项测试全绿,CI 亦常驻 macos-latest 跑全量测试);**v0.3.16 起 0.1.2 线(dsh 0.1.2-rc.1 / 0.1.2-alpha.5)完成端到端实测**(发送栏按钮、结果面板、设置卡片、优化路由与 SSE);**v0.3.17 起 0.1.5-rc.1 完成端到端实测**(2026-09-10,Windows,真实 profile + 浏览器驱动:发送栏「优化」按钮随输入启停、点击后面板打开并按 SSE 透传上游错误、设置卡片折叠摘要与展开配置齐全),**并在 0.1.5-rc.2 上完成全链路复测**(2026-09-11:组合层注入、Host 加载、路由契约、SSE 端到端、四种策略路径、client bundle 槽位与设置卡 API 全项通过);v0.3.9–0.3.11 另在**第三方免费模型**(openrouter 的 `minimax/minimax-m3:free`,不输出标记格式)上完成端到端实测:模板/意图双策略、保真逐要素保留、待补充标记、记忆链与取消保留等行为均按设计工作,并据此修复了快速模式的格式误报。
 

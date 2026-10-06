@@ -1,6 +1,6 @@
 # NOTICE — dsh-adaptive-prompt-optimizer
 
-版本：v0.1.0-apo（2026-10-04）
+版本：v0.2.0-apo（2026-10-06）
 
 本项目是 [@y1x1n/dsh-prompt-optimizer](https://github.com/Y1X1n/dsh-prompt-optimizer)
 的派生增强（DSH Adaptive Prompt Optimizer，MIT）。本文件按 PLAN-v1 §3/§16 记录
@@ -32,7 +32,7 @@
 
 ## 3. 发布版本与仓库
 
-- 发布版本：`v0.1.0-apo`（annotated tag；本 fork 的首个可发布版本）
+- 发布版本：`v0.2.0-apo`（当前；Adaptive Prompt Editor）· 上一版 `v0.1.0-apo`（首个可发布版本）
 - 包名：沿用派生包 `@y1x1n/dsh-prompt-optimizer`（`package.json name`，上游同名，
   便于既有安装链路无缝替换；如需更名按新契约流程另行决定）
 - upstream（Y1X1n）：只读，不 push；origin（自有仓库）待用户提供 URL 后关联。
