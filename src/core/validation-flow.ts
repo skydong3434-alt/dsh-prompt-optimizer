@@ -145,9 +145,12 @@ export function assessCompleteness(input: {
     for (const text of goalLike) nonCriticalMissing.push(`要求复述未逐字出现:${text}`);
   }
 
-  // ② 视觉契约必须表达排除项(概念级:出现任何一种否定表达即可)
+  // ② 视觉契约的排除项:缺失**不拦交付**,只作非关键提示(用户仍能拿到可用的描述式 Prompt)。
+  //    实测:模型有时不写 negative 行 → 旧规则把它判成「执行关键缺失」→ 拒绝交付(returned),
+  //    重试还可能撞回流上限变 HARD_ERROR → 用户拿不到生图提示词。
+  //    语义上:少一行排除项不会让 Prompt 变错(它不改变用户要求);丢**用户已确认的约束**才会。
   if (input.visualContract && !NEGATIVE_CONCEPT_RE.test(text)) {
-    criticalMissing.push("排除项 / negative(视觉契约必需)");
+    nonCriticalMissing.push("排除项 / negative(视觉契约建议项)");
   }
 
   // ③ 其余责任缺失 = 结构问题 → 非关键(交付 + 警示)

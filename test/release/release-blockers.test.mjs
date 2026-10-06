@@ -189,4 +189,26 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R7「排除」语义:约束/动作放行(5 例),无证据结论拦截(3 例),有证据不误报')
 }
 
+// R8:视觉契约缺排除项 → 交付 + 提示(不得拦交付);丢用户约束仍须拦
+{
+  const { assessCompleteness } = await import('../../lib/core/validation-flow.js')
+  const imageNoNegative = assessCompleteness({
+    optimizedPrompt: '二次元女孩坐在工作台前,冷蓝光,16:9,中景。',
+    responsibilities: ['Subject', 'Scene', 'Style'],
+    visualContract: true,
+  })
+  assert.deepEqual(imageNoNegative.criticalMissing, [], '★ R8:图像 Prompt 缺排除项不得拦交付')
+  assert.ok(
+    imageNoNegative.nonCriticalMissing.some((x) => /排除项/.test(x)),
+    'R8:应作为非关键提示可见',
+  )
+  const droppedConstraint = assessCompleteness({
+    optimizedPrompt: '做点事。',
+    responsibilities: ['Request'],
+    ledger: [{ text: '不要修改任何文件', source: 'USER_EXPLICIT', status: 'CONFIRMED', evidence: ['不要修改任何文件'] }],
+  })
+  assert.deepEqual(droppedConstraint.criticalMissing, ['用户已确认的要求 / 约束'], '★ R8:丢用户约束仍必须拦')
+  console.log('✓ R8 视觉缺排除项 → 交付+提示;丢用户约束仍拦')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')

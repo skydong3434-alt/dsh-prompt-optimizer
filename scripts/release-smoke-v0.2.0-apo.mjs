@@ -96,10 +96,10 @@ async function boot() {
     async *stream(options) {
       calls.push(options)
       const kind = isMeta(options.system) ? 'analysis' : 'compile'
-      const entry = { kind, finish: 'stop', textLen: 0 }
+      const entry = { kind, finish: 'stop', textLen: 0, text: '' }
       llmLog.push(entry)
       for await (const chunk of makeLlm().stream(options)) {
-        if (chunk.type === 'text-delta') entry.textLen += chunk.text.length
+        if (chunk.type === 'text-delta') { entry.textLen += chunk.text.length; if (kind === 'compile') entry.text += chunk.text }
         if (chunk.type === 'finish') entry.finish = chunk.reason?.kind ?? 'stop'
         yield chunk
       }
@@ -205,8 +205,17 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
   return { calls, events, done, discovery, confirmation, stages, ledger, analysis, rounds: round }
 }
 
-const ONLY = null
+const ARGV = process.argv.slice(2)
+const ONLY = (() => {
+  const i = ARGV.indexOf('--only')
+  return i >= 0 ? ARGV[i + 1].split(',').map((x) => x.trim().toUpperCase()).filter(Boolean) : null
+})()
+const RUNS = (() => {
+  const i = ARGV.indexOf('--runs')
+  return i >= 0 ? Number(ARGV[i + 1]) : 1
+})()
 const SKIP = (p) => Boolean(ONLY) && !ONLY.includes(p)
+let EXECUTED = 0
 const results = []
 
 /** 终态取证:最后一次事件类型 + 错误/回流原因码 + LLM 调用画像。 */
@@ -262,7 +271,7 @@ const KEEP_INPUT = [
   '- npm test 全绿;',
   '- 现有 API 契约测试全部通过。',
 ].join('\n')
-{
+if (!SKIP('A')) { EXECUTED += 1;
   const { routes, calls } = await boot()
   const events = await call(routes, { text: KEEP_INPUT, provider: 'opencode-go', model: MODEL })
   const done = events.find((e) => e.type === 'done')
@@ -276,7 +285,7 @@ const KEEP_INPUT = [
 }
 
 // ── B. PATCH:已有结构 + 少量缺陷 → 只局部修补 ──────────────────────────────
-{
+if (!SKIP('B')) { EXECUTED += 1;
   const PATCH_INPUT = ['1. 先跑一遍测试', '2. 再看失败日志', '3. 输出格式:Markdown 表格'].join('\n')
   const { routes } = await boot()
   const flow = await runFullFlow(routes, PATCH_INPUT)
@@ -292,7 +301,7 @@ const KEEP_INPUT = [
 }
 
 // ── C. RESTRUCTURE:信息完整但组织混乱 → 重新整理 ───────────────────────────
-if (!SKIP('C')) {
+if (!SKIP('C')) { EXECUTED += 1;
   const MESSY = [
     '帮我做个小工具,要求是能读 csv 然后汇总,输出格式要 markdown 表格,输出格式要 markdown 表格,',
     '另外要快一点别卡,另外要快一点别卡,字段要能自动识别,字段要能自动识别,不用装数据库,不用装数据库,',
@@ -313,7 +322,7 @@ if (!SKIP('C')) {
 
 // ── D. REBUILD + Discovery:完整六态闭环,Discovery 前编译 0 ────────────────
 const COMFY = '我想用 dsh 控制 comfyui 生成视频。'
-{
+if (!SKIP('D')) { EXECUTED += 1;
   const { routes, calls } = await boot()
   const first = await call(routes, { text: COMFY, provider: 'opencode-go', model: MODEL })
   const discovery = first.find((e) => e.type === 'discovery_required')
@@ -335,7 +344,7 @@ const COMFY = '我想用 dsh 控制 comfyui 生成视频。'
 }
 
 // ── E. Image Prompt:自动进入 Image contract,无 Agent 任务模板 ──────────────
-if (!SKIP('E')) {
+if (!SKIP('E')) { EXECUTED += 1;
   const IMAGE_INPUT = '二次元女孩坐在未来 AI 工作台前,三栏桌面布局,冷蓝色屏幕光,帮我生成生图提示词。'
   const { routes, llmLog } = await boot()
   const flow = await runFullFlow(routes, IMAGE_INPUT)
@@ -352,7 +361,7 @@ if (!SKIP('E')) {
 }
 
 // ── F. Video / Kling:自动识别 Video + Kling,描述式 Prompt ─────────────────
-{
+if (!SKIP('F')) { EXECUTED += 1;
   const VIDEO_INPUT = '根据这张首帧写可灵视频提示词,让人物拔刀向前冲,镜头持续后拉。'
   const { routes } = await boot()
   const flow = await runFullFlow(routes, VIDEO_INPUT)
@@ -368,7 +377,7 @@ if (!SKIP('E')) {
 }
 
 // ── G. Hard constraint:「只检查,不修改任何文件。」不得被突破 ────────────────
-{
+if (!SKIP('G')) { EXECUTED += 1;
   const HARD_INPUT = '帮我看看这段代码有没有并发问题。只检查,不修改任何文件。'
   const { routes } = await boot()
   const flow = await runFullFlow(routes, HARD_INPUT)
@@ -385,7 +394,7 @@ if (!SKIP('E')) {
 }
 
 // ── H. Re-optimize:只改无关措辞 → still-valid 保留、不重复问 ────────────────
-{
+if (!SKIP('H')) { EXECUTED += 1;
   const { routes } = await boot()
   const base = '我想用 dsh 控制 comfyui 生成视频,已经有 workflow,先验证控制链路。'
   const flow = await runFullFlow(routes, base)
@@ -410,6 +419,30 @@ if (!SKIP('E')) {
 }
 
 const selected = ONLY ? results.filter((r) => ONLY.includes(r.path)) : results
+// 自检:--only 必须**真的**只执行指定 case
+if (ONLY) {
+  const want = ONLY.length
+  console.log(`\n[self-check] --only ${ONLY.join(',')} → 实际执行 ${EXECUTED} 个 case(期望 ${want})`)
+  if (EXECUTED !== want) {
+    console.error(`[self-check] FAIL:--only 未正确过滤(--only 是测试工具能力,不是产品功能)`)
+    process.exitCode = 2
+  }
+}
+// ── 结构化诊断落盘(用户 §四:每一次运行必须记录完整事件链) ─────────────────
+{
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const dir = join(ROOT, 'logs', 'release-blockers')
+  mkdirSync(dir, { recursive: true })
+  for (const r of selected) {
+    const caseDir = join(dir, r.path)
+    mkdirSync(caseDir, { recursive: true })
+    writeFileSync(join(caseDir, `${stamp}.json`), JSON.stringify({
+      case: r.path, name: r.name, pass: r.pass, evidence: r.evidence,
+      generatedAt: new Date().toISOString(), model: MODEL, runs: RUNS,
+    }, null, 2))
+  }
+  writeFileSync(join(dir, `summary-${stamp}.json`), JSON.stringify({ generatedAt: new Date().toISOString(), only: ONLY, runs: RUNS, executed: EXECUTED, results: selected }, null, 2))
+}
 const passCount = selected.filter((r) => r.pass).length
 mkdirSync(join(ROOT, 'logs', 'release'), { recursive: true })
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')

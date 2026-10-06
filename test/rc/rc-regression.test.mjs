@@ -150,9 +150,11 @@ const rebuild = compilePrompt({ raw_input: '我想用 dsh 控制 comfyui 生成�
   })
   assert.deepEqual(reworded.criticalMissing, [], '★ 正常改写不得误判为丢约束')
 
-  // 视觉契约缺排除项 = 关键
+  // 视觉契约缺排除项:**非关键**(v0.2.0-apo release blocker 修复:
+  // 缺一行 negative 不会让 Prompt 变错,拦交付会让用户拿不到生图提示词)
   const visual = assessCompleteness({ optimizedPrompt: '二次元女孩,冷蓝光,16:9', responsibilities: ['Subject'], visualContract: true })
-  assert.ok(visual.criticalMissing.some((x) => /排除项/.test(x)), '视觉缺 negative 必须判关键')
+  assert.deepEqual(visual.criticalMissing, [], '视觉缺 negative 不得拦交付')
+  assert.ok(visual.nonCriticalMissing.some((x) => /排除项/.test(x)), '应作为非关键提示可见')
   const visualOk = assessCompleteness({ optimizedPrompt: '二次元女孩,冷蓝光,16:9,不要水印', responsibilities: ['Subject'], visualContract: true })
   assert.deepEqual(visualOk.criticalMissing, [])
 
