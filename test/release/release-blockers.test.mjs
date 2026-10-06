@@ -148,4 +148,14 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R5 re-optimize 更换 Target:INVALIDATED 生效(NOT_APPLICABLE=1)')
 }
 
+// R6:协议标记剥离必须覆盖**行内**标记(交付稿不得含 <<<...>>>)
+{
+  const { stripProtocolMarkers } = await import('../../lib/core/compiler.js')
+  assert.equal(stripProtocolMarkers('<<<DIAGNOSIS>>>\n正文'), '正文', 'R6:整行标记')
+  assert.equal(stripProtocolMarkers('正文 <<<END>>> 结束'), '正文 结束', '★ R6:行内标记必须就地剥离')
+  assert.equal(stripProtocolMarkers('前 <<<OPTIMIZED>>> 后'), '前 后', '★ R6:行内 OPTIMIZED')
+  assert.doesNotMatch(stripProtocolMarkers('a <<<UNKNOWN>>> b <<<END>>>'), /<<<[A-Z_]+>>>/, 'R6:不得残留任何标记')
+  console.log('✓ R6 协议标记剥离覆盖行内标记(防 VF_PROTOCOL_LEAK)')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')

@@ -205,6 +205,7 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
   return { calls, events, done, discovery, confirmation, stages, ledger, analysis, rounds: round }
 }
 
+const ONLY = null
 const results = []
 
 /** 终态取证:最后一次事件类型 + 错误/回流原因码 + LLM 调用画像。 */
@@ -372,7 +373,8 @@ const COMFY = '我想用 dsh 控制 comfyui 生成视频。'
   const flow = await runFullFlow(routes, HARD_INPUT)
   const out = String(flow.done?.optimized ?? '')
   const keepsConstraint = /不(?:要|得|允许)?\s*(?:修改|改动|写入|变更)|只(?:做)?检查|保持现状|不产生(?:任何)?(?:写入|改动)/.test(out)
-  const noEditInstruction = !/(直接修改|立即修复并提交|提交补丁|自动修复)/.test(out)
+  // 否定感知:「不得/不要/禁止 直接修改」是在**守住**约束,不是越权
+  const noEditInstruction = !/(?<![不没禁勿])(?<!不要)(?<!不得)(?<!禁止)(直接修改|立即修复并提交|提交补丁|自动修复)/.test(out)
   record(
     'G',
     'Hard constraint:不修改文件约束不得被突破',

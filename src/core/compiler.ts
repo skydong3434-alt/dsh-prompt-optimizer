@@ -388,10 +388,19 @@ const PROTOCOL_MARKER_LINE_RE = /^\s*<<<[A-Z_]+>>>\s*$/;
 
 /** 机械剥离交付稿里残留的协议标记行(模型偶发不输出 OPTIMIZED 导致整段降级)。 */
 export function stripProtocolMarkers(text: string): string {
-  return String(text ?? "")
+  const source = String(text ?? "");
+  // ① 独占一行的标记 → 整行删除
+  const withoutLines = source
     .split(/\r?\n/)
     .filter((line) => !PROTOCOL_MARKER_LINE_RE.test(line))
-    .join("\n")
+    .join("\n");
+  // ② **行内**标记 → 就地删除(RC 实测:模型会把标记写在正文同一行,
+  //    只处理整行会让 <<<DIAGNOSIS>>> 之类的内部标记泄漏到交付稿,
+  //    并被 Validator 判为 VF_PROTOCOL_LEAK 而拒绝交付)。
+  return withoutLines
+    .replace(/\s*<<<[A-Z_]+>>>\s*/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +\n/g, "\n")
     .trim();
 }
 
