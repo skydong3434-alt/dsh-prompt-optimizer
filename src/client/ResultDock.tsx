@@ -942,18 +942,34 @@ export function createResultDock(controller: OptimizerController) {
                 <span style={{ ...styles.chevron, transform: analysisOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
                 {t('panel.analysis')}
               </button>
+              {/* 自动判断说明:即使折叠也让用户知道「不需要选类型」这件事 */}
+              <div style={{ ...styles.groupItem, opacity: 0.75 }}>{t('panel.auto.note')}</div>
               {analysisOpen && (
                 <div style={styles.analysisBody}>
                   {v2 ? (
                     <>
-                      <div style={styles.groupItem}>Primary Intent:{v2.intent.primary}</div>
-                      <div style={styles.groupItem}>Supporting:{v2.intent.supporting.join(', ') || '(无)'}</div>
-                      <div style={styles.groupItem}>Prompt Target:{v2.target.target}</div>
-                      <div style={styles.groupItem}>Target Engine:{engineText || '(未指定)'}</div>
-                      <div style={styles.groupItem}>Triage:{v2.triage.triage}</div>
+                      <div style={styles.groupItem}>
+                        {t('panel.auto.intent')}:{v2.intent.primary}
+                      </div>
+                      <div style={styles.groupItem}>
+                        {t('panel.auto.supporting')}:{v2.intent.supporting.join(', ') || '(无)'}
+                      </div>
+                      <div style={styles.groupItem}>
+                        {t('panel.auto.promptType')}:
+                        {result?.contract
+                          ? t(`panel.contract.${result.contract}` as never)
+                          : t('panel.type.auto')}
+                      </div>
+                      <div style={styles.groupItem}>
+                        {t('panel.auto.targetModel')}:{v2.target.target}
+                        {engineText ? ` · ${engineText}` : ''}
+                      </div>
+                      <div style={styles.groupItem}>
+                        {t('panel.auto.editScope')}:{triageText}
+                      </div>
                       {v2.resolution.length > 0 ? (
                         <div style={styles.groupItem}>
-                          Dispositions:
+                          {t('panel.auto.dispositions')}:
                           {v2.resolution.map((item) => `${item.text}[${item.classification}]`).join(' / ')}
                         </div>
                       ) : null}
