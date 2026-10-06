@@ -41,13 +41,34 @@ const RUNS = (() => {
   return i >= 0 ? Number(ARGV[i + 1]) : 1
 })()
 const SELFTEST = ARGV.includes('--selftest')
+const MAX = (() => {
+  const i = ARGV.indexOf('--max')
+  return i >= 0 ? Number(ARGV[i + 1]) : RUNS
+})()
+
+/**
+ * 命中即停判据(用户 §四/§六):
+ *   E:validator 命中 VF_SUGGESTION_UPGRADED
+ *   B:VF_FABRICATED_USER_EXPLICIT 或 mechanical=PATCH 且 model=RESTRUCTURE(漂移)
+ */
+function hitReason(diag) {
+  const reasons = []
+  const v = JSON.stringify(diag.hostValidatorLines ?? [])
+  if (v.includes('VF_SUGGESTION_UPGRADED')) reasons.push('VF_SUGGESTION_UPGRADED')
+  if (v.includes('VF_FABRICATED_USER_EXPLICIT')) reasons.push('VF_FABRICATED_USER_EXPLICIT')
+  if (diag.triage?.mechanical === 'PATCH' && diag.triage?.modelOrMerged === 'RESTRUCTURE') reasons.push('TRIAGE_DRIFT_PATCH_TO_RESTRUCTURE')
+  return reasons
+}
 
 // ── host 日志捕获(不过滤;用于拿 recovery 审计与 validator trigger) ──────────
 const HOST_LOGS = []
 const origLog = console.log
 const origErr = console.error
+const origWarn = console.warn
 console.log = (...a) => { HOST_LOGS.push(`LOG ${a.join(' ')}`); origLog(...a) }
 console.error = (...a) => { HOST_LOGS.push(`ERR ${a.join(' ')}`); origErr(...a) }
+// ★ host 用 console.warn 打 validator 回流与预算重试 —— 必须一起挂钩,否则命中判定失效
+console.warn = (...a) => { HOST_LOGS.push(`WARN ${a.join(' ')}`); origWarn(...a) }
 const hostLines = (re) => HOST_LOGS.filter((l) => re.test(l)).map((l) => l.replace(/^\[dsh-prompt-optimizer\]\s*/, '').replace(/^(LOG|ERR) /, ''))
 
 const isMeta = (system) => /意图编译器分析器|intent compiler analyzer/.test(String(system ?? ''))
@@ -266,7 +287,10 @@ if (!CASE || !CASES[CASE]) {
 const raw = CASES[CASE]
 const outDir = join(ROOT, 'logs', 'release-blockers', 'diag', CASE)
 mkdirSync(outDir, { recursive: true })
-for (let run = 1; run <= RUNS; run += 1) {
+let hit = null
+let executed = 0
+for (let run = 1; run <= MAX; run += 1) {
+  executed = run
   HOST_LOGS.length = 0
   const { routes, llmLog } = await boot()
   const flow = await runFullFlow(routes, raw)
@@ -278,4 +302,12 @@ for (let run = 1; run <= RUNS; run += 1) {
   console.log(`  recovery : ${JSON.stringify(diag.hostRecoveryLines)}`)
   if (diag.suggestions.length) console.log(`  suggestions: ${JSON.stringify(diag.suggestions.map((s) => [s.verdict, s.category, s.text.slice(0, 40)]))}`)
   console.log(`  → ${join(outDir, `run${run}-${stamp}.json`)}`)
+  const reasons = hitReason(diag)
+  if (reasons.length > 0) {
+    hit = { run, reasons }
+    console.log(`\n[HIT] ${CASE} run${run} 命中:${reasons.join(',')} → 立即停止采样(不再烧模型)`)
+    break
+  }
 }
+if (!hit) console.log(`\n[NO-HIT] ${CASE} 已运行 ${executed} 次,未命中停止条件(达到上限 ${MAX})`)
+console.log(`[summary] ${CASE}: executed=${executed} hit=${hit ? JSON.stringify(hit) : 'none'}`)
