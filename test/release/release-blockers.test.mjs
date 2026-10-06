@@ -269,4 +269,73 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R9–R11 provenance 自动恢复:建议→OPTIMIZER_SUGGESTED、上下文→CONTEXT_EXPLICIT、无据→UNKNOWN、合法保留')
 }
 
+// R12:2b 作用域修正 —— optimized 正文不是 provenance 来源组(用户裁决 §一/§三)
+{
+  const { validateCompileResult } = await import('../../lib/core/validate.js')
+  const { defaultStrategyRegistry } = await import('../../lib/core/registry.js')
+  const strategy = defaultStrategyRegistry.get('general')
+  const rec = (id, text, source, evidence) => ({ id, text, source, evidence, confidence: 'high' })
+  const flagged = (explicit, suggested, optimized, raw) =>
+    validateCompileResult(
+      { optimized_prompt: optimized, prompt_type: 'general', explicit_requirements: explicit, context_requirements: [], suggested_requirements: suggested, unknowns: [] },
+      { rawInput: raw, contextTurns: [], strategy, rawOutput: '' },
+    ).problems.some((p) => p.rule === 'VALIDATION_SUGGESTED_IN_REQUIREMENTS')
+
+  const RAW = '二次元女孩坐在未来 AI 工作台前,冷蓝色屏幕光'
+  // Case A:建议在 suggested group,同文本正常出现在正文 → 不得触发
+  assert.equal(
+    flagged(
+      [rec('r1', '冷蓝色屏幕光', 'USER_EXPLICIT', ['冷蓝色屏幕光'])],
+      [rec('s1', '冷蓝色屏幕光作为主光、环境补一层低强度暗部冷色反光', 'OPTIMIZER_SUGGESTED', [])],
+      '## Subject\n- 冷蓝色屏幕光作为主光、环境补一层低强度暗部冷色反光',
+      RAW,
+    ),
+    false,
+    '★ R12-A:建议出现在正文不得判为 provenance 升级',
+  )
+  // Case A2:短用户要求被更长建议**包含** → 也不得触发(旧口径误报)
+  assert.equal(
+    flagged(
+      [rec('r2', '冷蓝色屏幕光', 'USER_EXPLICIT', ['冷蓝色屏幕光'])],
+      [rec('s2', '冷蓝色屏幕光作为主光、环境补一层低强度暗部冷色反光', 'OPTIMIZER_SUGGESTED', [])],
+      '## Subject\n- 冷蓝色屏幕光',
+      RAW,
+    ),
+    false,
+    '★ R12-A2:用户元素被建议细化 ≠ 建议升级',
+  )
+  // Case B:建议被错误放进 USER_EXPLICIT(同文本)→ 必须触发
+  assert.equal(
+    flagged(
+      [rec('r3', '建议增加缓存', 'USER_EXPLICIT', [])],
+      [rec('s3', '建议增加缓存', 'OPTIMIZER_SUGGESTED', [])],
+      '## Request\n- x',
+      '做个工具',
+    ),
+    true,
+    '★ R12-B:建议混入 USER_EXPLICIT 必须仍然触发(红线未放松)',
+  )
+  // Case C:建议被错误放进 CONTEXT_EXPLICIT(同文本)→ 必须触发
+  const contextFlagged = (() => {
+    const v = validateCompileResult(
+      { optimized_prompt: '## Request\n- x', prompt_type: 'general', explicit_requirements: [], context_requirements: [rec('c1', '建议增加缓存', 'CONTEXT_EXPLICIT', [])], suggested_requirements: [rec('s4', '建议增加缓存', 'OPTIMIZER_SUGGESTED', [])], unknowns: [] },
+      { rawInput: '做个工具', contextTurns: [], strategy, rawOutput: '' },
+    )
+    return v.problems.some((p) => p.rule === 'VALIDATION_SUGGESTED_IN_REQUIREMENTS')
+  })()
+  assert.equal(contextFlagged, true, '★ R12-C:建议混入 CONTEXT_EXPLICIT 必须仍然触发')
+  // Case D:合法 USER_EXPLICIT 内容也出现在正文 → 正常通过
+  assert.equal(
+    flagged(
+      [rec('r4', '不要引入新依赖', 'USER_EXPLICIT', ['不要引入新依赖'])],
+      [],
+      '## Request\n- 不要引入新依赖',
+      '做个工具,不要引入新依赖',
+    ),
+    false,
+    'R12-D:合法要求出现在正文不得触发',
+  )
+  console.log('✓ R12 2b 作用域修正:正文出现建议不再违规(A/A2);混入 explicit/context 仍拦(B/C);合法要求不受影响(D)')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')

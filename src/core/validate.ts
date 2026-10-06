@@ -32,6 +32,7 @@
  * 设计来源为通用守卫工程实践（引用字面比对、层次化校验），实现与文案均本项目独立撰写。
  */
 import { RETIRED_PLACEHOLDER_RE, USER_QUESTION_RE } from "./disposition-render.js";
+import { sameRequirement } from "./requirements.js";
 import type {
   CompileResult,
   ConversationTurn,
@@ -510,8 +511,12 @@ export function validateInferenceAndSuggestion(
   for (const record of suggested) {
     const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(String(record?.text ?? "")))).trim();
     if (!text) continue;
+    // 长度护栏(与 core/requirements.sameRequirement 同口径):
+    //   「冷蓝色屏幕光」(用户逐字要求)被更长的建议「冷蓝色屏幕光作为主光、环境补…」**包含**
+    //   不等于「建议被升级成用户要求」——后者要求两边基本等长且语义重合。
+    //   实测:旧口径把这类「优化器在用户元素上做细化」误报为 SUGGESTION_UPGRADED。
     const hit = requirementRecords.find((item) =>
-      sameSemanticUnit(text, String(item?.text ?? "")),
+      sameRequirement(text, String(item?.text ?? "")),
     );
     if (hit) {
       problems.push(
@@ -524,25 +529,12 @@ export function validateInferenceAndSuggestion(
     }
   }
 
-  // 2b. 建议无标注地混入优化稿正文（被无痕升级为要求）。
-  const optimized = String(result.optimized_prompt ?? "");
-  for (const rawLine of optimized.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || isExemptLine(line)) continue;
-    for (const record of suggested) {
-      const text = stripSuggestionLabel(stripSuggestionReason(stripSuggestionQuotedRefs(String(record?.text ?? "")))).trim();
-      if (text && line.includes(text)) {
-        problems.push(
-          issue(
-            "error",
-            VALIDATION_RULE.suggestedUpgraded,
-            `优化器建议「${text}」无标注地出现在优化稿要求语境:建议必须独立成段并带「${SUGGESTION_LABEL_ZH}」前缀`,
-          ),
-        );
-        break;
-      }
-    }
-  }
+  // 2b. 【已按产品裁决移出】optimized prompt 正文**不是** provenance source group。
+  //     正文里出现与建议同义的内容属于正常提示词内容(执行卫生/组织/细化),
+  //     不构成「建议被升级成用户要求」。该 provenance 违规只由 2a 判定
+  //     (建议是否出现在 explicit / context 来源组)。
+  //     备注:若将来出现「建议在 provenance 正确的前提下仍被编译成未经授权的高影响
+  //     binding decision」的真实失败样本,再单独设计规则 —— 当前无此证据。
 
   // 2c. 无证据强断言。
   //    v0.2.0-apo:provenance 对账(reconcileProvenance)可能已经把某些行**移出**要求组

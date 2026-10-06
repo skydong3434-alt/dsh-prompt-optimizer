@@ -270,24 +270,49 @@ const FULL_BODY = [
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v8. suggested 无标注混入优化稿正文 → error;带建议前缀 → 豁免
-// ─────────────────────────────────────────────────────────────────────────────
+// v8. 【v0.2.0-apo 契约变更】suggested 出现在 optimized 正文 → 不再算 provenance 违规;
+//     只有混入 explicit / context **来源组**才是违规(用户裁决:正文不是 provenance source group)
 {
-  const upgraded = makeResult({
+  const inBody = makeResult({
     suggested_requirements: [rec('补充受众定位', 'OPTIMIZER_SUGGESTED', [])],
     optimized_prompt: '## Constraints\n- 补充受众定位',
   })
-  const bad = validateCompileResult(upgraded, { rawInput: '帮我写个方案' })
-  assert.ok(byRule(bad.problems, VALIDATION_RULE.suggestedUpgraded).length >= 1)
-  assert.equal(bad.provenance_ok, false)
+  const okBody = validateCompileResult(inBody, { rawInput: '帮我写个方案' })
+  assert.equal(
+    byRule(okBody.problems, VALIDATION_RULE.suggestedInRequirements).length,
+    0,
+    '★ 建议出现在正文不得判为 provenance 升级',
+  )
 
-  const labelled = makeResult({
+  const inExplicit = makeResult({
+    explicit_requirements: [rec('补充受众定位', 'USER_EXPLICIT', [])],
     suggested_requirements: [rec('补充受众定位', 'OPTIMIZER_SUGGESTED', [])],
-    optimized_prompt: '## Constraints\n- 建议(可忽略) 补充受众定位',
+    optimized_prompt: '## Constraints\n- x',
   })
-  const good = validateCompileResult(labelled, { rawInput: '帮我写个方案' })
-  assert.deepEqual(byRule(good.problems, VALIDATION_RULE.suggestedUpgraded), [])
-  console.log('✓ v8 suggested 无标注混入正文 → error;带前缀 → 豁免')
+  const badExplicit = validateCompileResult(inExplicit, { rawInput: '帮我写个方案' })
+  assert.ok(
+    byRule(badExplicit.problems, VALIDATION_RULE.suggestedInRequirements).length >= 1,
+    '★ 建议混入 explicit 来源组必须仍然报错(红线未放松;规则 id = SUGGESTED_IN_REQUIREMENTS)',
+  )
+  assert.equal(badExplicit.provenance_ok, false)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v8b. 【契约变更】建议出现在正文(无论是否带前缀)都不再是 provenance 违规
+{
+  for (const body of ['## Constraints\n- 补充受众定位', '## Constraints\n- 建议(可忽略) 补充受众定位']) {
+    const r = makeResult({
+      suggested_requirements: [rec('补充受众定位', 'OPTIMIZER_SUGGESTED', [])],
+      optimized_prompt: body,
+    })
+    const v = validateCompileResult(r, { rawInput: '帮我写个方案' })
+    assert.deepEqual(
+      byRule(v.problems, VALIDATION_RULE.suggestedInRequirements),
+      [],
+      '★ 正文出现建议不得判为来源组违规',
+    )
+  }
+  console.log('✓ v8b 正文出现建议 → 不再违规(正文不是 provenance 来源组)')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
