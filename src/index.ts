@@ -685,7 +685,13 @@ export function apply(ctx: Context, config: Config) {
               asked: session.asked,
               round: session.round,
             })
-            confirmBlocked = confirmSufficiency.liveBlocking.length > 0
+            // ★ v0.2.0-apo release blocker 修复:达到 Discovery 轮次上限时,
+            //   evaluateSufficiency 会返回 ready:true(设计上「未决项按暂定处理,不再追问」),
+            //   但 liveBlocking 仍然非空。旧写法只看 liveBlocking.length → confirm 被**永久拒绝**:
+            //   界面显示 blocked=false(没有任何可回答的问题),用户却怎么点都进不了编译。
+            //   语义应为「ready 才代表可以放行」:未达上限仍阻塞(fail-closed 不变),
+            //   达上限则按暂定继续(与 sufficiency 的 ready/stopped_by 契约一致)。
+            confirmBlocked = confirmSufficiency.liveBlocking.length > 0 && !confirmSufficiency.ready
             forceDiscovery = confirmBlocked
             if (confirmBlocked) {
               console.warn(
@@ -694,9 +700,21 @@ export function apply(ctx: Context, config: Config) {
             }
           }
           if (discoveryReq?.mode === 'confirm' && clientAnalysis && !confirmBlocked) {
+            // ★ v0.2.0-apo release blocker 修复:confirm 时 `clientAnalysis` 是**用户确认前**
+            //   的分析快照,它的 `gate` 仍标着 blocked=true(当时确实还没问完)。
+            //   而此刻 `confirmBlocked=false` 已经由 evaluateSufficiency 按**当前台账**
+            //   重算过 —— 决策已完备(或已达轮次上限按暂定处理)。
+            //   旧写法原样沿用旧 gate → 流程又被送回确认页,用户怎么点都进不了编译。
+            //   正确语义:确认时刻以 sufficiency 为准,快照 gate 不再是阻塞依据。
             analysis = {
               ...clientAnalysis,
               ...(session && session.ledger.length ? { ledger: session.ledger } : {}),
+              gate: {
+                ...clientAnalysis.gate,
+                blocked: false,
+                blocking_items: [],
+                reason: '用户已确认,且按当前台账重算的决策完备性判定为可继续',
+              },
             }
           } else if (manualType) {
             analysis = manualAnalysisResult(manualType, {
