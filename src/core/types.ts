@@ -480,6 +480,12 @@ export interface TriageDecision {
   signals: string[];
   /** KEEP 才为 true:机械判据确认「原样可用」(含安全阈值)。 */
   keep_safe: boolean;
+  /**
+   * 是否存在**确定性结构混乱证据**(RESTRUCTURE 的唯一合法依据)。
+   * 由既有机械信号派生(重复/冗长/无结构 ∧ 长度 ∧ 成稿特征),不引入模型调用。
+   * mergeTriage 用它阻止「机械 PATCH 被模型借道升级为 RESTRUCTURE」。
+   */
+  restructure_eligible?: boolean;
   /** 是否由 LLM 建议参与合并(审计用)。 */
   llm_advised?: boolean;
   /** 机械判据给出的级别(审计 / 回归用)。 */

@@ -155,8 +155,14 @@ const MESSY_BUT_COMPLETE = [
 // 9. 合并规则:严重度取大 / 模型未给建议则纯机械
 {
   assert.equal(mergeTriage(mechanicalTriage('帮我写个周报,要 300 字以内,输出 markdown。'), undefined).llm_advised, undefined)
-  const upgraded = mergeTriage(mechanicalTriage('帮我写个周报,要 300 字以内,输出 markdown。'), 'RESTRUCTURE')
-  assert.equal(upgraded.triage, 'RESTRUCTURE', '取严重度较大者(PATCH → RESTRUCTURE)')
+  // v0.2.0-apo 契约变更(TRIAGE_ESCALATION 修复):
+  //   机械 PATCH + 模型 RESTRUCTURE,**无确定性结构混乱证据** → 保持 PATCH。
+  const notUpgraded = mergeTriage(mechanicalTriage('帮我写个周报,要 300 字以内,输出 markdown。'), 'RESTRUCTURE')
+  assert.equal(notUpgraded.triage, 'PATCH', '无结构混乱证据时,模型无权把 PATCH 升为 RESTRUCTURE')
+  // 有确定性结构混乱证据时才允许升级(取严重度较大者仍然成立)
+  const MESSY = '帮我做个小工具,要求是能读 csv 然后汇总,输出格式要 markdown 表格,输出格式要 markdown 表格,另外要快一点别卡,另外要快一点别卡,字段要能自动识别,字段要能自动识别,不用装数据库,不用装数据库。'
+  const upgraded = mergeTriage(mechanicalTriage(MESSY), 'RESTRUCTURE')
+  assert.equal(upgraded.triage, 'RESTRUCTURE', '有结构混乱证据时 → 采纳 RESTRUCTURE')
   const mech = mechanicalTriage(COMPLETE_PROMPT)
   assert.equal(mergeTriage(mech, 'bogus-value').triage, mech.triage, '非法建议必须被忽略')
   // 严重度表单调且覆盖全部枚举

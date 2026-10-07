@@ -124,6 +124,27 @@ function qualitySignalCount(signals: InputSignals): number {
  *  4. 有可保留的东西(结构 / 成稿要素)   → PATCH
  *  5. 只有模糊目标(无可保留内容)         → REBUILD
  */
+
+/**
+ * 是否存在**确定性结构混乱证据**(RESTRUCTURE 的唯一合法依据)。
+ *
+ * 与 mechanicalTriage 的 RESTRUCTURE 分支同一判据(复用同一 InputSignals,
+ * 不再调用模型、不引入评分系统):
+ *   组织混乱(重复行 / 重复分句 / 单段落多句 / 长且无结构)
+ *   ∧ 长度达阈值 ∧ 成稿特征 ≥2
+ *
+ * 注意:**缺信息**(项目名 / 命令 / 环境 / API / 路径 / 日志位置)不是 restructure 证据 ——
+ * 那些走 Missing Resolution / AGENT_DISCOVERABLE / USER_REQUIRED,不扩大编辑权限。
+ */
+export function hasRestructureEvidence(signals: InputSignals): boolean {
+  const messy =
+    signals.repeatedLines > 0 ||
+    signals.repeatedClauses > 0 ||
+    (signals.paragraphs <= 1 && signals.sentences >= 6) ||
+    (signals.length >= RESTRUCTURE_MIN_LENGTH && signals.structures.length === 0 && signals.sentences >= 3);
+  return signals.length >= RESTRUCTURE_MIN_LENGTH && messy && qualitySignalCount(signals) >= 2;
+}
+
 export function mechanicalTriage(rawInput: string): TriageDecision {
   const signals = analyzeInputSignals(rawInput);
 
@@ -225,6 +246,8 @@ function decide(
     signals: [...extraSignals, ...signals.structures.map((id) => `structure:${id}`)],
     keep_safe: keepSafe,
     mechanical: triage,
+    // 最小布尔量:确定性结构混乱证据(mergeTriage 判「模型能否升级到 RESTRUCTURE」用)
+    restructure_eligible: hasRestructureEvidence(signals),
   };
 }
 
@@ -275,7 +298,22 @@ export function mergeTriage(
   }
   if (merged === "REBUILD" && mechanicalLevel !== "REBUILD") {
     merged = "RESTRUCTURE";
-    reasons.push("REBUILD 需机械判据确认;模型无权重写用户的成稿,已降级为 RESTRUCTURE");
+    reasons.push("REBUILD 需机械判据确认;模型无权重写用户的成稿");
+  }
+
+  // ★ v0.2.0-apo release blocker 修复(TRIAGE_ESCALATION):
+  //   机械判为 PATCH 时,RESTRUCTURE **只能**由确定性结构混乱证据支持。
+  //   旧行为:模型给 REBUILD 被守卫拦下后**借道**降级成 RESTRUCTURE —— 等于模型
+  //   虽未获得 REBUILD 权限,却绕道拿到了 RESTRUCTURE 权限,并实际发生大面积重组
+  //   (真实证据:B fixture 39 字 → 1058 字、7 个新标题、原条目措辞丢失)。
+  //   违反 Edit Triage = 最小必要编辑。
+  if (merged === "RESTRUCTURE" && mechanicalLevel === "PATCH") {
+    if (mechanical.restructure_eligible === true) {
+      reasons.push("模型建议 RESTRUCTURE,且存在确定性结构混乱证据(重复/冗长/无结构),采纳");
+    } else {
+      merged = "PATCH";
+      reasons.push("模型建议 RESTRUCTURE,但无确定性结构混乱证据 → 保持 PATCH(最小必要编辑;不得借道升级)");
+    }
   }
 
   return {

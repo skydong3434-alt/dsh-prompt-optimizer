@@ -338,4 +338,101 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R12 2b 作用域修正:正文出现建议不再违规(A/A2);混入 explicit/context 仍拦(B/C);合法要求不受影响(D)')
 }
 
+// R13:PATCH→RESTRUCTURE 升级漏洞(真实 B run4 证据;TRIAGE_ESCALATION)
+{
+  const { decideTriage, mechanicalTriage } = await import('../../lib/core/triage.js')
+  const B = '1. 先跑一遍测试\n2. 再看失败日志\n3. 输出格式:Markdown 表格'
+  const MESSY = '帮我做个小工具,要求是能读 csv 然后汇总,输出格式要 markdown 表格,输出格式要 markdown 表格,另外要快一点别卡,另外要快一点别卡,字段要能自动识别,字段要能自动识别,不用装数据库,不用装数据库。'
+  const VAGUE = '我想用 dsh 控制 comfyui 生成视频。'
+  const KEEP = ['你是一名资深后端工程师,请审查并重构订单服务模块。', '', '要求:', '1. 保持对外 HTTP 接口签名完全不变,不得改动任何路由路径。', '2. 数据库迁移必须可回滚,禁止在迁移里删除字段。', '3. 所有新增逻辑必须带单元测试,覆盖率不低于 80%。', '', '约束:', '- 仅限修改 src/order 目录下的文件,不要动其他模块。', '- 依赖版本不得升级。', '', '输出格式:先给出问题清单(含文件路径与行号),再给出改动后的代码。', '', '验收标准:', '- npm test 全绿;', '- 现有 API 契约测试全部通过。'].join('\n')
+
+  // R13-A:mechanical=PATCH + model=REBUILD → 不得 REBUILD,也不得借道 RESTRUCTURE
+  const a = decideTriage({ raw_input: B, llm_suggestion: 'REBUILD' })
+  assert.equal(a.mechanical, 'PATCH', 'R13-A:机械必须是 PATCH')
+  assert.equal(a.triage, 'PATCH', '★ R13-A:不得借道升级为 RESTRUCTURE')
+  // R13-B:mechanical=PATCH + model=RESTRUCTURE 且无结构混乱证据 → PATCH
+  assert.equal(decideTriage({ raw_input: B, llm_suggestion: 'RESTRUCTURE' }).triage, 'PATCH', '★ R13-B:无证据不得升级')
+  // R13-C:真实结构混乱(证据=true)→ 允许 RESTRUCTURE(功能没被废掉)
+  const messyMech = mechanicalTriage(MESSY)
+  assert.equal(messyMech.triage, 'RESTRUCTURE', 'R13-C:机械判据本身认可 RESTRUCTURE')
+  assert.equal(messyMech.restructure_eligible, true, 'R13-C:确定性证据=true')
+  assert.equal(decideTriage({ raw_input: MESSY, llm_suggestion: 'RESTRUCTURE' }).triage, 'RESTRUCTURE', 'R13-C:有证据则采纳')
+  // R13-D:REBUILD 的机械一致性行为保持
+  assert.equal(decideTriage({ raw_input: VAGUE, llm_suggestion: 'REBUILD' }).triage, 'REBUILD', 'R13-D:REBUILD 双方一致 → REBUILD')
+  assert.equal(decideTriage({ raw_input: B, llm_suggestion: 'REBUILD' }).triage, 'PATCH', 'R13-D:REBUILD 未被机械确认 → 不得 REBUILD')
+  // R13-E:KEEP 行为保持(需双方一致)
+  assert.equal(decideTriage({ raw_input: KEEP, llm_suggestion: 'KEEP' }).triage, 'KEEP', 'R13-E:KEEP 双方一致 → KEEP')
+  assert.equal(decideTriage({ raw_input: KEEP, llm_suggestion: 'PATCH' }).triage, 'PATCH', 'R13-E:模型想改 → 不 KEEP')
+  console.log('✓ R13 PATCH 不得被模型借道升级为 RESTRUCTURE(A/B);有证据仍可 RESTRUCTURE(C);REBUILD/KEEP 行为保持(D/E)')
+}
+
+// R13-F:最小编辑行为保护 —— PATCH 载荷必须带「不得新增章节」纪律
+{
+  const { compilePrompt } = await import('../../lib/core/compiler.js')
+  const { decideTriage } = await import('../../lib/core/triage.js')
+  const B = '1. 先跑一遍测试\n2. 再看失败日志\n3. 输出格式:Markdown 表格'
+  const decision = decideTriage({ raw_input: B, llm_suggestion: 'REBUILD' })
+  assert.equal(decision.triage, 'PATCH')
+  const analysis = {
+    intent: { primary: 'execution', supporting: [], work_mode: 'one_shot', rationale: '' },
+    target: { target: 'general', modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: '' },
+    triage: decision,
+    missing_resolution: [],
+    gate: { blocked: false, blocking_items: [], discoverable_items: [], optional_items: [], reason: '' },
+    ledger: [], confidence_internal: 0.9, rationale: '', evidence_quotes: [], prompt_type: 'execution', missing_constraints: [],
+  }
+  const plan = compilePrompt({ raw_input: B, analysis, language: 'zh' })
+  assert.match(plan.user, /编辑分诊纪律:PATCH/, '★ R13-F:载荷必须声明 PATCH 纪律')
+  assert.match(plan.user, /保持原稿的结构与措辞/, '★ R13-F:必须要求保持原结构')
+  assert.match(plan.user, /不得[\s\S]{0,20}新增章节/, '★ R13-F:必须禁止新增章节(防 39→1000+ 字模板重构)')
+  console.log('✓ R13-F PATCH 载荷纪律齐备(保持原结构 + 不得新增章节)')
+}
+
+// R14:deterministic Replay 1 —— 真实观察过的 FABRICATED provenance shape([r-3])
+{
+  const { reconcileProvenance } = await import('../../lib/core/provenance-recovery.js')
+  const { classifyUnknown } = await import('../../lib/core/requirements.js')
+  const RAW = '做个工具,不要引入新依赖'
+  const record = (id, text, evidence) => ({ id, text, source: 'USER_EXPLICIT', evidence, confidence: 'high' })
+  const base = { prompt_type: 'general', optimized_prompt: '## Request\n- x', explicit_requirements: [], context_requirements: [], suggested_requirements: [], unknowns: [] }
+
+  // ① 真实 failure shape:quote 与 raw/context 都不匹配、也不是建议 → UNKNOWN → Missing Resolution
+  const r = reconcileProvenance(
+    { ...base, explicit_requirements: [record('r-3', '支持多机部署', ['用户说过要支持多机'])] },
+    { rawInput: RAW, contextTurns: [], suggestions: ['建议增加缓存'] },
+  )
+  assert.equal(r.result.explicit_requirements.length, 0, '★ R14:不得继续显示为「你已确认」')
+  assert.equal(r.result.unknowns.length, 1, '★ R14:必须降级为 UNKNOWN')
+  const disposition = classifyUnknown({ text: r.unresolved[0].text, blocking: true })
+  assert.ok(
+    ['AGENT_DISCOVERABLE', 'OPTIONAL', 'USER_REQUIRED'].includes(disposition.classification),
+    '★ R14:必须由 Missing Resolution 机械分类',
+  )
+  assert.equal(
+    disposition.blocking === true,
+    disposition.classification === 'USER_REQUIRED',
+    '★ R14:只有 blocking USER_REQUIRED 才应进入 Discovery',
+  )
+  // ② context 有证据 → CONTEXT_EXPLICIT
+  const c = reconcileProvenance(
+    { ...base, explicit_requirements: [record('r-4', '用 Node 写 CLI', ['用 Node 写 CLI'])] },
+    { rawInput: '继续上面的', contextTurns: [{ role: 'user', text: '用 Node 写 CLI' }], suggestions: [] },
+  )
+  assert.equal(c.result.context_requirements[0]?.source, 'CONTEXT_EXPLICIT', '★ R14:context 证据 → CONTEXT_EXPLICIT')
+  // ③ 可确定是建议 → OPTIMIZER_SUGGESTED
+  const g = reconcileProvenance(
+    { ...base, explicit_requirements: [record('r-5', '建议增加缓存', [])] },
+    { rawInput: RAW, contextTurns: [], suggestions: ['建议增加缓存'] },
+  )
+  assert.equal(g.result.suggested_requirements[0]?.source, 'OPTIMIZER_SUGGESTED', '★ R14:建议 → OPTIMIZER_SUGGESTED')
+  // ④ raw 有证据 → 保持 USER_EXPLICIT
+  const k = reconcileProvenance(
+    { ...base, explicit_requirements: [record('r-6', '不要引入新依赖', ['不要引入新依赖'])] },
+    { rawInput: RAW, contextTurns: [], suggestions: [] },
+  )
+  assert.equal(k.result.explicit_requirements.length, 1, '★ R14:raw 有证据 → 保持 USER_EXPLICIT')
+  assert.equal(k.recovered, 0)
+  console.log('✓ R14 Replay 1:FABRICATED provenance 四路机械解析(UNKNOWN→Missing Resolution / CONTEXT / SUGGESTED / 保持)')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')
