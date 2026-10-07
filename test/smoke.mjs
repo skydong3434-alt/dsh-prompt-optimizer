@@ -24,14 +24,11 @@ const CANNED = [
   '<<<UNKNOWN>>>',
   '(无)',
   '<<<OPTIMIZED>>>',
-  '## Request（请求要点）',
-  '- 你是一名资深代码评审,请审查以下 PR……',
-  '## Context & Inputs（上下文与输入）',
-  '- 用户提供的 PR 片段',
-  '## Constraints & Exclusions（约束与排除）',
-  '- 用户未给出额外约束',
-  '## Deliverable Shape（产出形态）',
-  '- Markdown 评审意见',
+  // v0.2.0-apo:PATCH 行为不变量要求保留原始语义单元且不得重建骨架,
+  // 因此这里的产物是「原结构内局部补强」形态(仍含「资深代码评审」以覆盖既有断言)。
+  '- 你是一名资深代码评审,请帮我看看这段代码。',
+  '- 约束:只检查,不修改文件。',
+  '- 输出格式:问题清单(Markdown)。',
   '<<<END>>>',
 ].join('\n')
 
@@ -107,9 +104,25 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   ctx.provide('llm', {
     async *stream(options) {
       lastOptions = options
-      for (const line of CANNED.split('\n')) {
-        yield { type: 'text-delta', index: 0, text: line + '\n' }
-      }
+      // v0.2.0-apo:PATCH 行为不变量要求产物保留原始语义单元。
+      // 共享 fixture 被多个不同输入复用 → 把**用户草稿行**并入 OPTIMIZED 段,
+      // 使产物对任何输入都满足「原始要求未被删除」(KEEP 路径不调用编译,不受影响)。
+      const lastUser = [...(options.messages ?? [])].reverse().find((m) => m.role === 'user')
+      const rawText = Array.isArray(lastUser?.content)
+        ? lastUser.content.map((c) => c.text ?? '').join('\n')
+        : String(lastUser?.content ?? '')
+      const draftLines = rawText
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !/^[<#`]/.test(l) && !/^(?:原始输入|用户输入|上下文|conversation-context|\/)/i.test(l))
+        .slice(-6)
+      const [head, ...tail] = CANNED.split('\n')
+      const endIdx = tail.lastIndexOf('<<<END>>>')
+      const body = endIdx >= 0 ? tail.slice(0, endIdx) : tail
+      for (const line of head ? [head] : []) yield { type: 'text-delta', index: 0, text: line + '\n' }
+      for (const line of body) yield { type: 'text-delta', index: 0, text: line + '\n' }
+      for (const line of draftLines) yield { type: 'text-delta', index: 0, text: '- ' + line + '\n' }
+      yield { type: 'text-delta', index: 0, text: '<<<END>>>\n' }
       yield { type: 'finish', reason: { kind: 'stop' } }
     },
     listProviders: () => [{ id: 'deepseek-official', name: 'DeepSeek 官方' }],

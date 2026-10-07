@@ -1200,6 +1200,7 @@ export function apply(ctx: Context, config: Config) {
                 // 六态 UI:校验阶段是真实阶段,先告知客户端(不是假动画)
                 send({ type: 'validating' })
                 const validation = validateCompileResult(outcome.result, {
+                  triage: analysis!.triage?.triage,
                   rawInput: text,
                   contextTurns: context ?? [],
                   strategy,

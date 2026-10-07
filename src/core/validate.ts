@@ -33,6 +33,7 @@
  */
 import { RETIRED_PLACEHOLDER_RE, USER_QUESTION_RE } from "./disposition-render.js";
 import { sameRequirement } from "./requirements.js";
+import { assessPatchScope, describePatchScopeViolation } from "./patch-scope.js";
 import type {
   CompileResult,
   ConversationTurn,
@@ -70,6 +71,8 @@ export const VALIDATION_RULE = {
   suggestedInRequirements: "VALIDATION_SUGGESTED_IN_REQUIREMENTS",
   /** 优化器建议无标注地出现在优化稿正文（被无痕升级为要求）。 */
   suggestedUpgraded: "VALIDATION_SUGGESTED_UPGRADED",
+  /** PATCH 行为越界(删原始要求 / 重建结构骨架)。 */
+  patchScopeViolation: "VALIDATION_PATCH_SCOPE_VIOLATION",
   /** 无证据强断言（不可行 / 最终 / 确定 / 采用 / 淘汰…）。 */
   unprovenStrongClaim: "VALIDATION_UNPROVEN_STRONG_CLAIM",
   /** 无证据量化硬约束（预算 / 时间 / 平台 / 模型…）。 */
@@ -130,6 +133,8 @@ export interface ValidateCompileOptions {
   rawOutput?: string;
   /** 是否执行策略自带 guards（缺省 true；仅当提供 strategy 时生效）。 */
   runStrategyGuards?: boolean;
+  /** 编辑分诊(用于 PATCH 行为不变量;仅 PATCH 时检查)。 */
+  triage?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -562,6 +567,20 @@ export function validateInferenceAndSuggestion(
           VALIDATION_RULE.unprovenStrongClaim,
           `发现无证据强断言「${claim}」:只能写成假设 / 研究问题 / 执行前须知(动作式),不得作为结论`,
         ),
+      );
+    }
+  }
+
+  // 2e. PATCH 行为不变量(仅当分诊为 PATCH)。
+  //     PATCH = minimal local edit:不得删除原始语义单元、不得重建结构骨架。
+  if (opts.triage === "PATCH") {
+    const scope = assessPatchScope({
+      rawInput: opts.rawInput ?? "",
+      optimizedPrompt: String(result.optimized_prompt ?? ""),
+    });
+    if (scope.violated) {
+      problems.push(
+        issue("error", VALIDATION_RULE.patchScopeViolation, describePatchScopeViolation(scope)),
       );
     }
   }

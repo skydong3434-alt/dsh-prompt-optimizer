@@ -435,4 +435,63 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   console.log('✓ R14 Replay 1:FABRICATED provenance 四路机械解析(UNKNOWN→Missing Resolution / CONTEXT / SUGGESTED / 保持)')
 }
 
+// R15:PATCH 行为不变量(真实 B run2 证据:39 字 → 1109 字/11 标题/丢原条目)
+{
+  const { assessPatchScope, extractSemanticUnits } = await import('../../lib/core/patch-scope.js')
+  const { validateCompileResult } = await import('../../lib/core/validate.js')
+  const { defaultStrategyRegistry } = await import('../../lib/core/registry.js')
+  const B = '1. 先跑一遍测试\n2. 再看失败日志\n3. 输出格式:Markdown 表格'
+  const TEMPLATE = [
+    '# 测试运行 → 失败日志 → Markdown 表格输出', '',
+    '## Goal & Definition of Done', '- 运行项目现有测试。', '- 读取测试失败日志。', '',
+    '## Scope & Boundaries', '- 执行范围:运行测试、查看失败日志。', '',
+    '## 执行前须知', '- 动手前先确认:失败日志的来源和格式。', '',
+    '## Tools & Permissions', '- 使用项目现有的测试运行入口。', '',
+    '## Verification', '- 存在测试运行产生的输出结果。',
+  ].join('\n')
+  const LOCAL = '1. 先跑一遍测试(优先用项目现有测试命令)。\n2. 再看失败日志,输出 Markdown 表格:用例/状态/失败原因三列。'
+  const RAW_MD = '## 目标\n- 做 X\n\n## 约束\n- 不改 Y'
+
+  // P1:三条原始语义必须全部保留
+  assert.deepEqual(extractSemanticUnits(B).length, 3, 'P1:输入应为 3 个语义单元')
+  // P2:原始无 headings → 不得创建完整任务模板骨架
+  const p2 = assessPatchScope({ rawInput: B, optimizedPrompt: TEMPLATE })
+  assert.equal(p2.violated, true, '★ P2:大面积模板重构必须判越界')
+  assert.equal(p2.skeletonChanged, true, '★ P2:骨架被重建')
+  assert.ok(p2.missingUnits.length > 0, '★ P1:丢失的原始语义必须被指出')
+  // P3:原始已有 headings → 允许原结构下局部修改
+  assert.equal(
+    assessPatchScope({ rawInput: RAW_MD, optimizedPrompt: '## 目标\n- 做 X(补:先确认入口)\n\n## 约束\n- 不改 Y' }).violated,
+    false,
+    '★ P3:已有分节内局部修改不得判越界',
+  )
+  // P6:合理的局部补强不得被判越界(guard 不得退化成 KEEP)
+  assert.equal(assessPatchScope({ rawInput: B, optimizedPrompt: LOCAL }).violated, false, '★ P6:局部补强必须放行')
+  // 校验层:triage=PATCH 时才检查
+  const strategy = defaultStrategyRegistry.get('general')
+  const mk = (out) => ({ optimized_prompt: out, prompt_type: 'general', explicit_requirements: [], context_requirements: [], suggested_requirements: [], unknowns: [] })
+  const asPatch = validateCompileResult(mk(TEMPLATE), { rawInput: B, contextTurns: [], strategy, rawOutput: '', triage: 'PATCH' })
+  assert.ok(
+    asPatch.problems.some((p) => p.rule === 'VALIDATION_PATCH_SCOPE_VIOLATION'),
+    '★ 校验层:PATCH 越界必须产出 VALIDATION_PATCH_SCOPE_VIOLATION',
+  )
+  const asRebuild = validateCompileResult(mk(TEMPLATE), { rawInput: B, contextTurns: [], strategy, rawOutput: '', triage: 'REBUILD' })
+  assert.equal(
+    asRebuild.problems.some((p) => p.rule === 'VALIDATION_PATCH_SCOPE_VIOLATION'),
+    false,
+    'REBUILD 不得触发 PATCH 不变量',
+  )
+  // P4/P5:回流映射存在(bounded retry 与 fail-closed 由既有 validation-flow 继承)
+  const { decideValidationAction } = await import('../../lib/core/validation-flow.js')
+  const outcome = decideValidationAction({
+    problems: [{ severity: 'error', rule: 'VALIDATION_PATCH_SCOPE_VIOLATION', message: 'x' }],
+    result: mk(TEMPLATE),
+    rawInput: B,
+    returns: [],
+  })
+  assert.equal(outcome.action, 'RETURN_TO_MISSING_RESOLUTION', '★ P4:必须进入可控回流')
+  assert.equal(outcome.reason_code, 'VF_PATCH_SCOPE_VIOLATION', '★ P4:reason code 正确')
+  console.log('✓ R15 PATCH 行为不变量:P1/P2 越界检出、P3/P6 放行、校验层与回流映射齐备')
+}
+
 console.log('release-blockers.test.mjs: ALL PASS')

@@ -39,6 +39,7 @@ export const VALIDATION_REASON = {
   /** 无证据的强断言 / 量化(静默假设)。 */
   silentAssumption: "VF_SILENT_ASSUMPTION",
   /** 建议被无痕升级为用户要求。 */
+  patchScopeViolation: "VF_PATCH_SCOPE_VIOLATION",
   suggestionUpgraded: "VF_SUGGESTION_UPGRADED",
   /** 目标 / 引擎假定与输入证据冲突。 */
   targetAssumption: "VF_TARGET_ASSUMPTION",
@@ -232,6 +233,13 @@ const PROBLEM_ROUTING: readonly {
     action: "RETURN_TO_MISSING_RESOLUTION",
     reason: VALIDATION_REASON.fabricatedUserExplicit,
     requires: "provenance_downgrade",
+  },
+  {
+    // PATCH 行为越界:回流让 Compiler 在**原有结构内**只修局部缺陷
+    match: /PATCH_SCOPE_VIOLATION/,
+    action: "RETURN_TO_MISSING_RESOLUTION",
+    reason: VALIDATION_REASON.patchScopeViolation,
+    requires: "disposition_fix",
   },
   {
     match: /SUGGESTED_IN_REQUIREMENTS|SUGGESTED_UPGRADED/,
