@@ -85,7 +85,11 @@ export const Config = Schema.object({
   model: Schema.string().volatile(),
   fallbackModel: Schema.string().volatile(),
   maxTokens: Schema.number().min(1024).max(32768).default(8192).volatile(),
-  timeoutSeconds: Schema.number().min(10).max(600).default(120).volatile(),
+  // v0.2.0-apo release blocker 修复:默认 120s 对**推理模型**不够 ——
+  // 真实证据:analysis 已成功返回(HTTP 200 / 2974 字正文 / reasoning 6071 字 /
+  // 1266 chunks / 3929 completion tokens),但整轮在 120s 超时 → error(无 compile 调用、
+  // 无日志行)。正常用户路径因此高概率失败。默认提到 300s(范围与 UI 提示不变)。
+  timeoutSeconds: Schema.number().min(10).max(600).default(300).volatile(),
   mode: Schema.string().default('full').volatile(),
   reasoningEffort: Schema.string().default('lowest').volatile(),
   temperature: Schema.number().min(0).max(2).default(0.2).volatile(),

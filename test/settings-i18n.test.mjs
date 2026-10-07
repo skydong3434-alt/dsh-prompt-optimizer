@@ -42,7 +42,9 @@ const plain = (value) => (value && typeof value.get === 'function' ? value.get()
   assert.equal(plain(defaults.model), undefined)
   assert.equal(plain(defaults.fallbackModel), undefined)
   assert.equal(plain(defaults.maxTokens), 8192)
-  assert.equal(plain(defaults.timeoutSeconds), 120)
+  // v0.2.0-apo:默认 120s 对推理模型不足(真实 analysis 已成功但整轮超时 → error),
+  // 提到 300s;范围(min 10 / max 600)与设置项语义不变。
+  assert.equal(plain(defaults.timeoutSeconds), 300)
   assert.equal(plain(defaults.mode), 'full')
   assert.equal(plain(defaults.reasoningEffort), 'lowest')
   assert.equal(plain(defaults.temperature), 0.2)
