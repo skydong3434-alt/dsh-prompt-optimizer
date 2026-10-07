@@ -578,9 +578,18 @@ export function validateInferenceAndSuggestion(
       rawInput: opts.rawInput ?? "",
       optimizedPrompt: String(result.optimized_prompt ?? ""),
     });
-    if (scope.violated) {
+    // 分级(发布收口裁决):
+    //   ① **原始用户要求丢失**(missingUnits) → error:这会改变用户的要求,属 release blocker。
+    //   ② 仅**结构骨架变化**(风格/长短差异) → warning:不丢用户要求,不影响可用性,
+    //      属非阻塞风格差异;硬拦会把「略微过度结构化」升级成「什么都不交付」,
+    //      对用户是净损失(真实 VF_PATCH_SCOPE_VIOLATION 4/5 轮均为此类)。
+    if (scope.missingUnits.length > 0) {
       problems.push(
         issue("error", VALIDATION_RULE.patchScopeViolation, describePatchScopeViolation(scope)),
+      );
+    } else if (scope.skeletonChanged) {
+      problems.push(
+        issue("warn", VALIDATION_RULE.patchScopeViolation, describePatchScopeViolation(scope)),
       );
     }
   }

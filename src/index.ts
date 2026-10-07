@@ -1086,6 +1086,10 @@ export function apply(ctx: Context, config: Config) {
               turns: context,
               workspace_metadata: {},
               ...(manualType ? { promptType: manualType } : { classifier: classifier! }),
+              // 受控回流的纠错反馈:重试时必须进入载荷(否则与首次同构,违规会重复到 fail-closed)
+              ...(session?.validationReturns?.length
+                ? { validationReturns: session.validationReturns }
+                : {}),
               analysis: analysis!,
               language,
               mode,
@@ -1153,6 +1157,16 @@ export function apply(ctx: Context, config: Config) {
                 })
                 const thinkTail = thinkFilter.flush()
                 if (thinkTail) send({ type: 'delta', text: thinkTail })
+                // v0.2.0-apo release blocker:空 final content(实测形态:HTTP 200 /
+                // finish_reason=stop / reasoning 有内容但最终正文 0 字 → REASONING_ONLY)
+                // 时做**一次** bounded retry(与 analysis 侧同口径);仍空则走既有
+                // 空产出路径 fail-closed(明确 error 终态)。不把 reasoning 当正文交付。
+                if (!raw.text.trim() && !raw.truncated && !abort.signal.aborted) {
+                  console.warn(`[${name}] compile returned empty final content; retrying once`)
+                  const retryRaw = await collectText(ctx.llm.stream(options))
+                  if (retryRaw.text.trim()) raw = retryRaw
+                  else console.warn(`[${name}] compile still empty after retry; failing closed`)
+                }
                 lastError = null
                 break
               } catch (error) {

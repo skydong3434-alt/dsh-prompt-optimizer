@@ -454,7 +454,7 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
 
   // P1:三条原始语义必须全部保留
   assert.deepEqual(extractSemanticUnits(B).length, 3, 'P1:输入应为 3 个语义单元')
-  // P2:原始无 headings → 不得创建完整任务模板骨架
+  // P2:原始无 headings → 骨架重建必须被检出(分级:仅骨架 → warning)
   const p2 = assessPatchScope({ rawInput: B, optimizedPrompt: TEMPLATE })
   assert.equal(p2.violated, true, '★ P2:大面积模板重构必须判越界')
   assert.equal(p2.skeletonChanged, true, '★ P2:骨架被重建')
@@ -475,6 +475,18 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
     asPatch.problems.some((p) => p.rule === 'VALIDATION_PATCH_SCOPE_VIOLATION'),
     '★ 校验层:PATCH 越界必须产出 VALIDATION_PATCH_SCOPE_VIOLATION',
   )
+  // 分级:只有骨架变化时必须是 warning(不阻塞交付);丢原始要求才是 error
+  const onlySkeleton = assessPatchScope({
+    rawInput: '1. 先跑一遍测试\n2. 再看失败日志',
+    optimizedPrompt: '# 测试流程\n## A\n- 先跑一遍测试(现有测试命令)\n## B\n- 再看失败日志\n## C\n- 记录结果',
+  })
+  assert.equal(onlySkeleton.missingUnits.length, 0, '骨架型产物不得误判为丢失原始要求')
+  assert.equal(onlySkeleton.skeletonChanged, true)
+  const sev = validateCompileResult(
+    mk('# 测试流程\n## A\n- 先跑一遍测试(现有测试命令)\n## B\n- 再看失败日志\n## C\n- 记录结果'),
+    { rawInput: '1. 先跑一遍测试\n2. 再看失败日志', contextTurns: [], strategy, rawOutput: '', triage: 'PATCH' },
+  ).problems.filter((p) => p.rule === 'VALIDATION_PATCH_SCOPE_VIOLATION')
+  assert.deepEqual(sev.map((p) => p.severity), ['warn'], '★ 仅骨架变化必须是 warning(不阻塞交付)')
   const asRebuild = validateCompileResult(mk(TEMPLATE), { rawInput: B, contextTurns: [], strategy, rawOutput: '', triage: 'REBUILD' })
   assert.equal(
     asRebuild.problems.some((p) => p.rule === 'VALIDATION_PATCH_SCOPE_VIOLATION'),
@@ -492,6 +504,40 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
   assert.equal(outcome.action, 'RETURN_TO_MISSING_RESOLUTION', '★ P4:必须进入可控回流')
   assert.equal(outcome.reason_code, 'VF_PATCH_SCOPE_VIOLATION', '★ P4:reason code 正确')
   console.log('✓ R15 PATCH 行为不变量:P1/P2 越界检出、P3/P6 放行、校验层与回流映射齐备')
+}
+
+// R17:受控回流的纠错反馈必须进入第二次编译载荷(否则重试与首次同构 → 永远 fail-closed)
+{
+  const { compilePrompt } = await import('../../lib/core/compiler.js')
+  const { decideTriage } = await import('../../lib/core/triage.js')
+  const B = '1. 先跑一遍测试\n2. 再看失败日志\n3. 输出格式:Markdown 表格'
+  const analysis = {
+    intent: { primary: 'execution', supporting: [], work_mode: 'one_shot', rationale: '' },
+    target: { target: 'general', modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: '' },
+    triage: decideTriage({ raw_input: B, llm_suggestion: 'PATCH' }),
+    missing_resolution: [],
+    gate: { blocked: false, blocking_items: [], discoverable_items: [], optional_items: [], reason: '' },
+    ledger: [], confidence_internal: 0.9, rationale: '', evidence_quotes: [], prompt_type: 'execution', missing_constraints: [],
+  }
+  const first = compilePrompt({ raw_input: B, analysis, language: 'zh' })
+  assert.doesNotMatch(first.user, /上一轮校验未通过/, '首次编译不得带纠错段')
+  const retry = compilePrompt({
+    raw_input: B, analysis, language: 'zh',
+    validationReturns: [{ reason_code: 'VF_PATCH_SCOPE_VIOLATION', action: 'RETURN_TO_MISSING_RESOLUTION', round: 1 }],
+  })
+  assert.match(retry.user, /上一轮校验未通过\(必须修正后才能交付\)/, '★ 重试载荷必须带纠错段')
+  assert.match(retry.user, /VF_PATCH_SCOPE_VIOLATION/, '★ 必须指出上次的 reason code')
+  assert.match(retry.user, /不得新增章节\/任务模板骨架/, '★ 必须给出机械纠错指令')
+  // 第二次重试仍带(累积),且不因同码重复堆叠
+  const retry2 = compilePrompt({
+    raw_input: B, analysis, language: 'zh',
+    validationReturns: [
+      { reason_code: 'VF_PATCH_SCOPE_VIOLATION', action: 'RETURN_TO_MISSING_RESOLUTION', round: 1 },
+      { reason_code: 'VF_PATCH_SCOPE_VIOLATION', action: 'RETURN_TO_MISSING_RESOLUTION', round: 2 },
+    ],
+  })
+  assert.equal((retry2.user.match(/VF_PATCH_SCOPE_VIOLATION/g) ?? []).length, 1, '同一 reason 不得重复堆叠')
+  console.log('✓ R17 回流纠错反馈进入重试载荷(首次无、重试有、同码不堆叠)')
 }
 
 console.log('release-blockers.test.mjs: ALL PASS')

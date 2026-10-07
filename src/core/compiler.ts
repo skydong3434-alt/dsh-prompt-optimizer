@@ -529,6 +529,11 @@ export interface CompilePromptInput {
    * 非法 / 缺省按 AUTO 处理(绝不因未知值绕过分类语义)。
    */
   promptType?: PromptType | string;
+  /**
+   * Validator 受控回流的累积记录(仅**重试**时传入)。
+   * 必须进入载荷,否则重试与首次完全同构 → 同样的违规会无限重复(bounded 后 fail-closed)。
+   */
+  validationReturns?: readonly { reason_code: string; action: string; round: number }[];
   /** AUTO 分类结果;缺省且无 override 时按 general 低置信兜底(不抛错)。 */
   classifier?: ClassifierResult | null;
   /** 策略注册表;缺省 = 七策略全量(未知类型 registry 内部回退 general)。 */
@@ -600,6 +605,40 @@ function classifierMissingConstraints(classifier: ClassifierResult): MissingCons
  * 第 10 步(Final Compilation = 解析 + provenance 校验 + 守卫汇总)由
  * {@link finalizeCompile} 在模型输出到达后完成。
  */
+/** reason code → 机械纠错指令(确定性映射,不含自由发挥)。 */
+const RETURN_CORRECTION: Record<string, string> = {
+  VF_PATCH_SCOPE_VIOLATION:
+    "这是 PATCH(最小局部编辑),不是重写:必须逐条保留原始要求(可改措辞/少量补强)," +
+    "并保持原有结构;**不得新增章节/任务模板骨架**(不得出现 Goal/Scope/Preconditions/Tools/Verification/Definition of Done 等成套分节)。",
+  VF_SILENT_ASSUMPTION:
+    "不得把未证实的事情写成结论:把「已确认/已排除/已解决」之类的断言改写成假设、待确认项或执行前须知(动作式)。",
+  VF_FABRICATED_USER_EXPLICIT:
+    "不得把无逐字用户证据的内容写进「明确要求」:证据不足的内容放到待补充/建议区,或按「优化器建议(可忽略)」标注。",
+  VF_PROTOCOL_LEAK: "交付稿里不得残留任何 <<<...>>> 内部协议标记。",
+  VF_CRITICAL_RESPONSIBILITY_MISSING: "补齐执行关键信息(缺什么补什么,不得凭空发明用户决定)。",
+};
+
+/** 上一轮校验未通过 → 生成必须修正的指令段(为空则不加)。 */
+function renderReturnCorrections(
+  returns: readonly { reason_code: string; action: string; round: number }[] | undefined,
+): string {
+  if (!returns || returns.length === 0) return "";
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const r of returns) {
+    const code = String(r.reason_code ?? "").trim();
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    lines.push(`- ${code}:${RETURN_CORRECTION[code] ?? "按上一轮校验反馈修正后重出。"}`);
+  }
+  if (lines.length === 0) return "";
+  return [
+    "## 上一轮校验未通过(必须修正后才能交付)",
+    ...lines,
+    "只修正上述问题,其余部分保持上一轮已正确的内容;不要顺手扩写。",
+  ].join("\n");
+}
+
 export function compilePrompt(input: CompilePromptInput): CompilePlan {
   const language = input.language ?? "zh";
   const mode = input.mode ?? "full";
@@ -677,13 +716,18 @@ export function compilePrompt(input: CompilePromptInput): CompilePlan {
     provenance_ok: false,
   };
 
+  // 受控回流的纠错段必须进入**用户载荷**(仅在重试时非空):
+  // 否则第二次编译与第一次同构,同样的违规会一直重复到 fail-closed。
+  const corrections = renderReturnCorrections(input.validationReturns);
+  const userPayload = corrections ? `${payload.user}\n\n${corrections}` : payload.user;
+
   return {
     classifier,
     strategy,
     normalized,
     vars,
     system: payload.system,
-    user: payload.user,
+    user: userPayload,
     result,
     overridden,
     route,

@@ -150,28 +150,53 @@ const answersFor = (qs) => (qs ?? []).map((q) => {
   return pick ? { key: q.key, option_id: pick.id, text: pick.label } : { key: q.key, text: '按你的判断继续', blind_trust: true }
 })
 
-async function runFullFlow(routes, text, maxSteps = 5) {
+/**
+ * 全流程闭环,**复刻真实客户端协议**:
+ *   - discovery_required → answer
+ *   - requirement_confirmation → confirm
+ *   - returned → **自动回流**(带 validationReturns 重发;同一 reason 最多一次,
+ *     与 controller.ts 的新行为同口径)
+ * 返回:最终 done、每次请求的终态序列、ledger、回流计数与首/次编译的纠错可见性。
+ */
+async function runFullFlow(routes, text, maxSteps = 6) {
   const steps = []
+  const flowback = []
   let events = await call(routes, { text, provider: 'opencode-go', model: MODEL })
   steps.push(events.filter((e) => e.type !== 'delta').map((e) => e.type).join(','))
   let ledger = [], analysis = null, asked = [], questions = [], triage = 'REBUILD'
+  let validationReturns = []
   for (let step = 1; step <= maxSteps; step += 1) {
     const done = events.find((e) => e.type === 'done')
-    if (done) return { done, events, steps, ledger }
+    if (done) return { done, events, steps, ledger, flowback, validationReturns }
     const d = events.find((e) => e.type === 'discovery_required')
     const c = events.find((e) => e.type === 'requirement_confirmation')
-    if (!d && !c) return { done: null, events, steps, ledger }
+    const r = events.find((e) => e.type === 'returned')
+    if (!d && !c && !r) return { done: null, events, steps, ledger, flowback, validationReturns }
     ledger = d?.ledger ?? c?.ledger ?? ledger
     analysis = d?.analysis ?? c?.analysis ?? analysis
     asked = d?.asked ?? c?.asked ?? asked
     questions = d?.questions ?? questions
     triage = d?.triage?.triage ?? c?.triage?.triage ?? triage
+    if (r) {
+      // 真实客户端:同一 reason_code 最多自动回流一次
+      const reason = String(r.reason_code ?? '')
+      const sameCount = validationReturns.filter((x) => x.reason_code === reason).length
+      flowback.push({ reason_code: reason, action: String(r.action ?? ''), attempt: sameCount + 1, detail: String(r.detail ?? '') })
+      if (sameCount >= 1) return { done: null, events, steps, ledger, flowback, validationReturns, failedClosed: true }
+      validationReturns = [...validationReturns, { reason_code: reason, action: String(r.action ?? ''), round: validationReturns.length + 1 }]
+      events = await call(routes, {
+        text, provider: 'opencode-go', model: MODEL,
+        discovery: { mode: 'reoptimize', round: step, triage, ledger, asked, answers: [], questions: [], analysis, validationReturns },
+      })
+      steps.push(events.filter((e) => e.type !== 'delta').map((e) => e.type).join(','))
+      continue
+    }
     events = d
       ? await call(routes, { text, provider: 'opencode-go', model: MODEL, discovery: { mode: 'answer', round: step, triage, ledger, asked, questions, answers: answersFor(d.questions), analysis } })
       : await call(routes, { text, provider: 'opencode-go', model: MODEL, discovery: { mode: 'confirm', round: step, triage, ledger, asked, answers: [], questions: [], analysis } })
     steps.push(events.filter((e) => e.type !== 'delta').map((e) => e.type).join(','))
   }
-  return { done: null, events, steps, ledger }
+  return { done: null, events, steps, ledger, flowback, validationReturns }
 }
 
 // ── 证据组装 ────────────────────────────────────────────────────────────────
@@ -244,6 +269,15 @@ function buildDiag({ caseId, run, rawInput, llmLog, flow, hostLogs }) {
     hostValidatorLines: hostLogs(/validation return|validation hard error/),
     hostRecoveryLines: hostLogs(/provenance 对账/),
     hostOtherLines: hostLogs(/truncated|fallback|KEEP|reconcile|再优化对账/),
+    flowback: {
+      count: (flow.flowback ?? []).length,
+      attempts: flow.flowback ?? [],
+      failedClosed: Boolean(flow.failedClosed),
+      validationReturns: flow.validationReturns ?? [],
+      // 第二次编译是否收到纠错信息(纠错由宿主在回流后注入载荷)
+      compileCalls: llmLog.filter((l) => l.kind === 'compile').length,
+      secondCompileSawFeedback: llmLog.filter((l) => l.kind === 'compile').slice(1).some((l) => /PATCH|保留|不得新增|局部/.test(l.text)),
+    },
     terminal: {
       steps: flow.steps,
       done: Boolean(flow.done),
