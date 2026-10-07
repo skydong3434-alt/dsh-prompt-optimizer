@@ -77,7 +77,7 @@ function makeLlm(log) {
   return {
     async *stream(options) {
       const kind = isMeta(options.system) ? 'analysis' : 'compile'
-      const entry = { kind, finish: 'stop', text: '' }
+      const entry = { kind, finish: 'stop', text: '', reasoningLen: 0, sawReasoning: false, httpStatus: 0, usage: null, finishReason: null, chunks: 0 }
       log.push(entry)
       const body = {
         model: MODEL,
@@ -95,6 +95,7 @@ function makeLlm(log) {
         headers: { 'content-type': 'application/json', authorization: `Bearer ${KEY}`, 'x-opencode-session': 'dsh-apo-diag' },
         body: JSON.stringify(body),
       })
+      entry.httpStatus = resp.status
       if (!resp.ok) { entry.finish = `http-${resp.status}`; yield { type: 'finish', reason: { kind: 'error', failure: { code: String(resp.status), message: (await resp.text()).slice(0, 160) } } }; return }
       const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = ''; let i = 0; let last = 'stop'
       for (;;) {
@@ -107,8 +108,12 @@ function makeLlm(log) {
           const p = line.slice(5).trim(); if (p === '[DONE]') continue
           try {
             const j = JSON.parse(p); const c = j.choices?.[0]
+            entry.chunks += 1
+            if (j.usage) entry.usage = j.usage
+            const rc = c?.delta?.reasoning_content ?? c?.delta?.reasoning ?? c?.message?.reasoning_content
+            if (rc) { entry.sawReasoning = true; entry.reasoningLen += String(rc).length }
             if (c?.delta?.content) { entry.text += c.delta.content; yield { type: 'text-delta', index: i++, text: c.delta.content } }
-            if (c?.finish_reason && c.finish_reason !== 'stop') last = c.finish_reason
+            if (c?.finish_reason) { entry.finishReason = c.finish_reason; if (c.finish_reason !== 'stop') last = c.finish_reason }
           } catch { /* ignore */ }
         }
       }
@@ -224,7 +229,7 @@ function buildDiag({ caseId, run, rawInput, llmLog, flow, hostLogs }) {
       decideTriageAgain: decided.triage,
       finalFromDone: flow.done?.triage?.triage ?? null,
     },
-    llm: llmLog.map((l) => ({ kind: l.kind, finish: l.finish, textLen: l.text.length })),
+    llm: llmLog.map((l) => ({ kind: l.kind, finish: l.finish, textLen: l.text.length, reasoningLen: l.reasoningLen ?? 0, sawReasoning: l.sawReasoning ?? false, httpStatus: l.httpStatus ?? 0, finishReason: l.finishReason ?? null, usage: l.usage ?? null, chunks: l.chunks ?? 0 })),
     analysisRaw: analysisText,
     compileRaw: compileText,
     parsedGroups: parsed ? {

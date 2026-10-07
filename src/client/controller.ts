@@ -721,10 +721,12 @@ export function createOptimizerController(
    *  - mode='confirm':用户点了「确认并优化」,宿主不再调用分析,直接编译。
    */
   interface DiscoveryPayload {
-    mode: 'answer' | 'confirm'
+    mode: 'answer' | 'confirm' | 'reoptimize'
     session: DiscoverySessionView
     edited?: { requirement_id: string; value: string; evidence: string }[]
     reopened?: string[]
+    /** Validator 受控回流的累积记录(由宿主 bounded 判定;客户端只负责带回去)。 */
+    validationReturns?: { reason_code: string; action: string; round: number }[]
   }
 
   async function runOptimize(text: string, sessionId: SessionId, discovery: DiscoveryPayload | undefined) {
@@ -867,6 +869,9 @@ export function createOptimizerController(
                     : {}),
                   ...(discovery.edited ? { edited: discovery.edited } : {}),
                   ...(discovery.reopened ? { reopened: discovery.reopened } : {}),
+                  ...(discovery.validationReturns
+                    ? { validationReturns: discovery.validationReturns }
+                    : {}),
                 },
               }
             : {}),
@@ -971,20 +976,55 @@ export function createOptimizerController(
             // 校验阶段:仍可能变成 returned / error,因此只切阶段,不落终态。
             set({ status: 'validating' })
           } else if (event.type === 'returned') {
-            // Phase 4:Validator 可控回流 —— 带着 reason code 回到上游步骤
+            // Phase 4 / v0.2.0-apo:Validator 可控回流必须**自动**完成闭环。
+            // 旧行为:直接把内部回流当用户可见错误(「这次没能安全生成,请重试」),
+            // 要求用户手动再点一次「优化」—— 把内部校验问题转嫁给了用户。
+            // 新行为:带着回流记录与校验反馈自动重发一次(次数由宿主 bounded 判定;
+            // 宿主判 HARD_ERROR 时下发 error,客户端如实显示终态)。
             terminal = true
             clearLiveTimer()
-            set({
-              status: 'error',
-              live: null,
-              error: String(event.detail ?? '这次没能安全生成,请重试'),
-              returned: {
-                action: String(event.action ?? ''),
-                reasonCode: String(event.reason_code ?? ''),
-                detail: String(event.detail ?? ''),
-                returns: Array.isArray(event.returns) ? event.returns.length : 0,
-              },
-            })
+            const rec = event as Record<string, unknown>
+            const prevReturns = Array.isArray(rec.returns) ? (rec.returns as { reason_code: string; action: string; round: number }[]) : []
+            const detail = String(rec.detail ?? '')
+            const reasonCode = String(rec.reason_code ?? '')
+            const alreadyRetried = prevReturns.filter((x) => x?.reason_code === reasonCode).length
+            // 同一原因最多自动回流一次(与宿主 VALIDATION_RETURN_LIMIT 同口径,避免循环)
+            const lastRef = state.last
+            if (alreadyRetried < 1 && lastRef?.text) {
+              set({
+                status: 'loading',
+                live: { analysis: '', optimized: '' },
+                error: null,
+                returned: { action: String(rec.action ?? ''), reasonCode, detail, returns: prevReturns.length },
+              })
+              void runOptimize(lastRef.text, lastRef.sessionId, {
+                mode: 'reoptimize',
+                session: {
+                  round: (state.discovery?.session.round ?? 1) + 1,
+                  triage: state.discovery?.session.triage ?? 'PATCH',
+                  ledger: state.discovery?.session.ledger ?? [],
+                  asked: state.discovery?.session.asked ?? [],
+                  answers: state.discovery?.session.answers ?? [],
+                  questions: [],
+                },
+                validationReturns: [
+                  ...prevReturns,
+                  { reason_code: reasonCode, action: String(rec.action ?? ''), round: prevReturns.length + 1 },
+                ],
+              })
+            } else {
+              set({
+                status: 'error',
+                live: null,
+                error: detail || '这次没能安全生成,请重试',
+                returned: {
+                  action: String(rec.action ?? ''),
+                  reasonCode,
+                  detail,
+                  returns: prevReturns.length,
+                },
+              })
+            }
           } else if (event.type === 'requirement_confirmation') {
             // v2 Phase 3:决策完备 → 等用户确认;确认后才进入编译。
             terminal = true
