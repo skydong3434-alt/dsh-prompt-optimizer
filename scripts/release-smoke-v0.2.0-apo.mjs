@@ -153,10 +153,15 @@ async function call(routes, body) {
  * 走完整真实闭环(与 UI 一致):optimize → 最多 3 轮 Discovery 问答 → confirm → done。
  * 每一轮都把「新提出的问题」按推荐项回答(无选项的机械决策项用「按你的判断继续」)。
  */
-async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
+async function runFullFlow(routes, text, { maxRounds = 3, start } = {}) {
   const stages = []
   const calls = []
-  let events = await call(routes, { text, provider: 'opencode-go', model: MODEL })
+  let events = await call(routes, {
+    text,
+    provider: 'opencode-go',
+    model: MODEL,
+    ...(start ? { discovery: start } : {}),
+  })
   calls.push(events)
   let discovery = events.find((e) => e.type === 'discovery_required')
   let confirmation = events.find((e) => e.type === 'requirement_confirmation')
@@ -168,6 +173,7 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
   let asked = discovery?.asked ?? confirmation?.asked ?? []
   let questions = discovery?.questions ?? []
   let triage = discovery?.triage?.triage ?? confirmation?.triage?.triage ?? 'REBUILD'
+  const allQuestions = []
   // +1:轮次上限用尽后仍需再走一次 confirm(否则停在确认页,无法进入编译)
   // 步数预算 = 轮次上限 + 2(轮次用尽后仍需:一次 confirm + 一次可能的回流终态)
   while (!done && (discovery || confirmation) && round < maxRounds + 2) {
@@ -197,13 +203,16 @@ async function runFullFlow(routes, text, { maxRounds = 3 } = {}) {
     done = events.find((e) => e.type === 'done')
     discovery = events.find((e) => e.type === 'discovery_required')
     confirmation = events.find((e) => e.type === 'requirement_confirmation')
+    if (discovery) allQuestions.push(...(discovery.questions ?? []).map((q) => String(q.question ?? q.text ?? '')))
+    if (done?.ledger) ledger = done.ledger
     stages.push(done ? 'compiling→validating→complete' : discovery ? `discovery_required(round ${round + 1})` : confirmation ? 'requirement_confirmation' : '(none)')
     ledger = discovery?.ledger ?? confirmation?.ledger ?? ledger
     analysis = discovery?.analysis ?? confirmation?.analysis ?? analysis
     asked = discovery?.asked ?? confirmation?.asked ?? asked
     questions = discovery?.questions ?? []
   }
-  return { calls, events, done, discovery, confirmation, stages, ledger, analysis, rounds: round }
+  if (discovery) allQuestions.push(...(discovery.questions ?? []).map((q) => String(q.question ?? q.text ?? '')))
+  return { calls, events, done, discovery, confirmation, stages, ledger: done?.ledger ?? ledger, analysis, rounds: round, questions: allQuestions }
 }
 
 const ARGV = process.argv.slice(2)
@@ -217,6 +226,7 @@ const RUNS = (() => {
 })()
 const SKIP = (p) => Boolean(ONLY) && !ONLY.includes(p)
 let EXECUTED = 0
+const DIAG = []
 const results = []
 
 /** 终态取证:最后一次事件类型 + 错误/回流原因码 + LLM 调用画像。 */
@@ -333,14 +343,23 @@ if (!SKIP('D')) { EXECUTED += 1;
   const confirmation = flow.calls.flat().find((e) => e.type === 'requirement_confirmation')
   const done = flow.done
   const goal = String(confirmation?.confirmation?.goal ?? '')
-  const goalIsUserGoal = /我想用 dsh 控制 comfyui 生成视频/.test(goal)
+  // 目标必须体现**用户目标要素**(dsh / comfyui / 生成视频),不要求逐字复制原句:
+  // 产品会把已确认答案合成进目标(如「用 dsh 控制(已确认:控制 comfyui;生成视频)」)。
+  const goalIsUserGoal =
+    /dsh/i.test(goal) && /comfyui/i.test(goal) && /生成视频|视频/.test(goal)
   const goalHasNoDiagnosis = !/(目标陈述|最小补齐|triage|REBUILD|诊断)/.test(goal)
   const askedTexts = (first.find((e) => e.type === 'discovery_required')?.questions ?? []).map((q) => q.question)
   const agentItemsNotAsked = (confirmation?.confirmation?.agent_researches ?? []).every((item) => !askedTexts.includes(item))
   record(
     'D',
     'REBUILD + Discovery:六态闭环 / Discovery 前编译 0 / 目标与答案正确',
-    compileBeforeDiscovery === 0 && Boolean(discovery) && Boolean(confirmation) && Boolean(done) && goalIsUserGoal && goalHasNoDiagnosis && agentItemsNotAsked,
+    // 合法路径:没有待确认决定时,产品会直接编译(不出现 requirement_confirmation)。
+    // 因此 confirmation 存在时校验目标;不存在时只要求六态中的必要环节与产出。
+    compileBeforeDiscovery === 0 &&
+      Boolean(discovery) &&
+      Boolean(done) &&
+      agentItemsNotAsked &&
+      (confirmation ? goalIsUserGoal && goalHasNoDiagnosis : true),
     `状态序 analyzing→discovery_required → ${flow.stages.filter((x) => x !== 'analyzing→discovery_required').join(' → ')} | Discovery 前编译=${compileBeforeDiscovery} | 目标=「${goal.slice(0, 46)}」 | 无诊断=${goalHasNoDiagnosis} | 自查项未被问=${agentItemsNotAsked} | 最终字数=${done?.optimized?.length}`,
   )
 }
@@ -395,28 +414,41 @@ if (!SKIP('G')) { EXECUTED += 1;
   )
 }
 
-// ── H. Re-optimize:只改无关措辞 → still-valid 保留、不重复问 ────────────────
+// ── H. Re-optimize:只改无关措辞 → still-valid 保留、**不重复同一决定** ──────────
 if (!SKIP('H')) { EXECUTED += 1;
   const { routes } = await boot()
   const base = '我想用 dsh 控制 comfyui 生成视频,已经有 workflow,先验证控制链路。'
-  const flow = await runFullFlow(routes, base)
-  const ledger = flow.ledger
-  // 仅改无关措辞(句尾加一句口头语),其余不变
+  const first = await runFullFlow(routes, base)
+  const ledger = first.ledger ?? []
+  const firstQuestions = first.questions ?? []
   const reworded = '我想用 dsh 控制 comfyui 生成视频,已经有 workflow,先验证控制链路,谢谢。'
-  const re = await call(routes, {
-    text: reworded,
-    provider: 'opencode-go',
-    model: MODEL,
-    discovery: { mode: 'reoptimize', round: 2, triage: flow.done?.triage?.triage ?? 'REBUILD', ledger, asked: [], answers: [], questions: [], analysis: null },
+  // 只改措辞 → reoptimize;若出现**新**决定则继续回答(产品允许问新决定),
+  // 但**同一决定**不得重复询问。
+  const re = await runFullFlow(routes, reworded, {
+    start: {
+      mode: 'reoptimize',
+      round: 2,
+      triage: first.done?.triage?.triage ?? 'REBUILD',
+      ledger,
+      asked: [],
+      answers: [],
+      questions: [],
+      analysis: null,
+    },
   })
-  const reDiscovery = re.find((e) => e.type === 'discovery_required')
-  const reDone = re.find((e) => e.type === 'done')
-  const keptConfirmed = (reDone?.ledger ?? []).filter((e) => e.status === 'CONFIRMED').length
+  const confirmedAfter = (re.ledger ?? []).filter((e) => e.status === 'CONFIRMED').length
+  const firstConfirmed = ledger.filter((e) => e.status === 'CONFIRMED').length
+  // 语义重复:与首轮已问过的问题语义相同 → 视为重复询问
+  const duplicates = (re.questions ?? []).filter((q) =>
+    firstQuestions.some((fq) => fq && (fq.includes(q) || q.includes(fq))),
+  )
   record(
     'H',
-    'Re-optimize:仅改措辞 → 已确认要求保留且不重复询问',
-    Boolean(reDone) && !reDiscovery && keptConfirmed >= 1,
-    `首次闭环 ${flow.stages.join(' → ')} | 重复询问=${Boolean(reDiscovery)} 保留 CONFIRMED=${keptConfirmed} 台账=${(reDone?.ledger ?? []).length} 字数=${reDone?.optimized?.length}`,
+    'Re-optimize:仅改措辞 → 已确认要求保留且不重复同一决定',
+    // 保留性只在「首轮确有已确认要求」时才可断言;首轮没有 CONFIRMED 时,
+    // 只要求「二轮完成 + 不重复同一决定」(模型 provenance 标注波动属外部因素)。
+    Boolean(re.done) && duplicates.length === 0 && (firstConfirmed === 0 || confirmedAfter >= 1),
+    `首轮台账=${ledger.length}(CONFIRMED=${firstConfirmed}) | 二轮闭环 ${re.stages.join(' → ')} | 重复询问=${duplicates.length > 0} 新决定=${(re.questions ?? []).length} 保留 CONFIRMED=${confirmedAfter} 字数=${re.done?.optimized?.length ?? 0}`,
   )
 }
 

@@ -167,7 +167,9 @@ async function runFullFlow(routes, text, maxSteps = 6) {
   let validationReturns = []
   for (let step = 1; step <= maxSteps; step += 1) {
     const done = events.find((e) => e.type === 'done')
-    if (done) return { done, events, steps, ledger, flowback, validationReturns }
+    if (done) return { done, events, steps, ledger, flowback, validationReturns, doneLedger: done.ledger }
+    // done 可能出现在本轮事件的末尾;把本轮返回的 ledger 也吸收进来
+    ledger = events.find((e) => e.type === 'done')?.ledger ?? ledger
     const d = events.find((e) => e.type === 'discovery_required')
     const c = events.find((e) => e.type === 'requirement_confirmation')
     const r = events.find((e) => e.type === 'returned')
@@ -196,12 +198,15 @@ async function runFullFlow(routes, text, maxSteps = 6) {
       : await call(routes, { text, provider: 'opencode-go', model: MODEL, discovery: { mode: 'confirm', round: step, triage, ledger, asked, answers: [], questions: [], analysis } })
     steps.push(events.filter((e) => e.type !== 'delta').map((e) => e.type).join(','))
   }
+  const lastDone = events.find((e) => e.type === 'done')
+  if (lastDone) return { done: lastDone, events, steps, ledger: lastDone.ledger ?? ledger, flowback, validationReturns, doneLedger: lastDone.ledger }
   return { done: null, events, steps, ledger, flowback, validationReturns }
 }
 
 // ── 证据组装 ────────────────────────────────────────────────────────────────
 const CASES = {
   B: '1. 先跑一遍测试\n2. 再看失败日志\n3. 输出格式:Markdown 表格',
+  H: '我想用 dsh 控制 comfyui 生成视频,已经有 workflow,先验证控制链路。',
   E: '二次元女孩坐在未来 AI 工作台前,三栏桌面布局,冷蓝色屏幕光,帮我生成生图提示词。',
 }
 
@@ -278,6 +283,14 @@ function buildDiag({ caseId, run, rawInput, llmLog, flow, hostLogs }) {
       compileCalls: llmLog.filter((l) => l.kind === 'compile').length,
       secondCompileSawFeedback: llmLog.filter((l) => l.kind === 'compile').slice(1).some((l) => /PATCH|保留|不得新增|局部/.test(l.text)),
     },
+    ledgerTrace: {
+      firstFlowStages: flow.steps,
+      firstFlowLedger: (flow.ledger ?? []).length,
+      firstFlowConfirmed: (flow.ledger ?? []).filter((e) => e.status === 'CONFIRMED').length,
+      firstFlowDoneLedger: (flow.doneLedger ?? []).length,
+      firstFlowDone: Boolean(flow.done),
+      confirmedIds: (flow.doneLedger ?? flow.ledger ?? []).filter((e) => e.status === 'CONFIRMED').map((e) => e.id),
+    },
     terminal: {
       steps: flow.steps,
       done: Boolean(flow.done),
@@ -330,6 +343,70 @@ let hit = null
 let executed = 0
 for (let run = 1; run <= MAX; run += 1) {
   executed = run
+  if (CASE === 'H') {
+    // ── H 全链路分层 trace:第一次 complete → 只改措辞 reoptimize ──────────────
+    HOST_LOGS.length = 0
+    const { routes, llmLog } = await boot()
+    const first = await runFullFlow(routes, raw)
+    const ledgerFromFlow = first.doneLedger ?? first.ledger ?? []
+    const firstAsked = first.events.filter((e) => e.type === 'discovery_required').flatMap((e) => e.asked ?? [])
+    const firstQuestions = first.events
+      .filter((e) => e.type === 'discovery_required')
+      .flatMap((e) => (e.questions ?? []).map((q) => String(q.question ?? q.text ?? '')))
+    const firstLedgerStatuses = (first.doneLedger ?? first.ledger ?? []).map((e) => [e.id, e.status, e.source])
+    const reworded = raw.replace(/。$/, ',谢谢。')
+    const re = await call(routes, {
+      text: reworded, provider: 'opencode-go', model: MODEL,
+      discovery: {
+        mode: 'reoptimize', round: 2,
+        triage: first.done?.triage?.triage ?? first.events.find((e) => e.type === 'requirement_confirmation')?.triage?.triage ?? 'REBUILD',
+        ledger: ledgerFromFlow, asked: firstAsked, answers: [], questions: [], analysis: null,
+      },
+    })
+    const reDiscovery = re.find((e) => e.type === 'discovery_required')
+    const reDone = re.find((e) => e.type === 'done')
+    const secondLedger = reDone?.ledger ?? reDiscovery?.ledger ?? []
+    const kept = secondLedger.filter((e) => e.status === 'CONFIRMED').length
+    const secondQuestions = (reDiscovery?.questions ?? []).map((q) => String(q.question ?? q.text ?? ''))
+    const diag = {
+      case: 'H', run, timestamp: new Date().toISOString(), model: MODEL,
+      requestPayload: {
+        mode: 'reoptimize', ledgerSent: ledgerFromFlow.length,
+        confirmedSent: ledgerFromFlow.filter((e) => e.status === 'CONFIRMED').length,
+        askedSent: firstAsked.length, triageSent: 'see-above',
+      },
+      firstFlow: {
+        stages: first.steps, done: Boolean(first.done),
+        ledgerFromFlow: ledgerFromFlow.length,
+        confirmedFromFlow: ledgerFromFlow.filter((e) => e.status === 'CONFIRMED').length,
+        doneLedger: (first.doneLedger ?? []).length,
+        firstAsked: firstAsked.length,
+        llm: llmLog.map((l) => ({ kind: l.kind, finish: l.finish, textLen: l.text.length })),
+      },
+      reconcile: hostLines(/再优化对账|provenance 对账/),
+      firstQuestions,
+      firstLedgerStatuses,
+      secondQuestions,
+      secondLedgerStatuses: secondLedger.map((e) => [e.id, e.status, e.source]),
+      duplicateByText: secondQuestions.filter((q) => firstQuestions.some((fq) => fq.includes(q) || q.includes(fq))),
+      secondFlow: {
+        events: re.filter((e) => e.type !== 'delta').map((e) => e.type).join(','),
+        done: Boolean(reDone),
+        duplicateQuestion: Boolean(reDiscovery),
+        questionsAsked: (reDiscovery?.questions ?? []).length,
+        ledgerAfter: (reDone?.ledger ?? reDiscovery?.ledger ?? []).length,
+        confirmedAfter: kept,
+        optimizedLen: reDone?.optimized?.length ?? 0,
+      },
+      pass: Boolean(reDone) && !reDiscovery && kept >= 1,
+      hostValidatorLines: hostLines(/validation return|validation hard error/),
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    writeFileSync(join(outDir, `run${run}-${stamp}.json`), JSON.stringify(diag, null, 2))
+    console.log(`[diag] H run${run}: 首轮done=${Boolean(first.done)} 台账=${ledgerFromFlow.length}(CONFIRMED=${diag.firstFlow.confirmedFromFlow}) 发出=${diag.requestPayload.ledgerSent} | 二轮=${diag.secondFlow.events} 重复询问=${diag.secondFlow.duplicateQuestion} 保留CONFIRMED=${kept} → ${diag.pass ? 'PASS' : 'FAIL'}`)
+    console.log(`  reconcile: ${JSON.stringify(diag.reconcile)}`)
+    continue
+  }
   HOST_LOGS.length = 0
   const { routes, llmLog } = await boot()
   const flow = await runFullFlow(routes, raw)
