@@ -40,10 +40,12 @@ import { computeAnalysisGate, findLedgerViolations, sanitizeLedger } from "./req
 import { planResponsibilities } from "./responsibilities.js";
 
 /** 每轮默认问题数 / 硬上限。 */
-export const DISCOVERY_DEFAULT_QUESTIONS = 2;
-export const DISCOVERY_MAX_QUESTIONS_PER_ROUND = 3;
+// ★ 产品定位纠偏:追问是**极少数语义澄清**,不是需求工程。
+//   每轮最多 1 个问题,默认最多 2 轮(DISCOVERY_MAX_ROUNDS)。
+export const DISCOVERY_DEFAULT_QUESTIONS = 1;
+export const DISCOVERY_MAX_QUESTIONS_PER_ROUND = 1;
 /** 最大轮次(安全保护,不是产品目标)。 */
-export const DISCOVERY_MAX_ROUNDS = 3;
+export const DISCOVERY_MAX_ROUNDS = 2;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Session(客户端持有;宿主做不可信输入净化)
@@ -440,7 +442,7 @@ const NEGATIVE_RE = /不(?:需要|要|用)|无需|不做|暂不|放弃|取消|�
  * 把用户回答解析成台账更新(机械,可审计)。
  *
  * 规则(铁律):
- *  1. **盲授权**("按你的判断继续")→ `PROVISIONAL`(或带条件时 `CONDITIONAL`),
+ *  1. **保持未确定**("保持未确定,直接优化")→ `PROVISIONAL`(或带条件时 `CONDITIONAL`),
  *     来源恒为 `OPTIMIZER_SUGGESTED`;**绝不**产生 `USER_EXPLICIT` / `CONFIRMED`;
  *  2. 用户选了具体选项 → `USER_EXPLICIT` + `CONFIRMED`,证据 = 用户提交的原话
  *     (逐字;选项文案由用户点击确认,原话即该选项 label 或用户自己输入的文字);
@@ -483,7 +485,7 @@ export function resolveAnswers(input: ResolveInput): {
           status,
           evidence: [],
           confidence: "low",
-          note: [existing.note, conditional ? "据你的条件式授权暂定(条件成立时生效)" : "据你的「按你的判断继续」暂定"]
+          note: [existing.note, conditional ? "据你的条件式授权暂定(条件成立时生效)" : "据你的「保持未确定」暂定"]
             .filter(Boolean)
             .join(";"),
         });
@@ -497,7 +499,7 @@ export function resolveAnswers(input: ResolveInput): {
           status,
           evidence: [],
           confidence: "low",
-          note: conditional ? "据你的条件式授权暂定" : "据你的「按你的判断继续」暂定",
+          note: conditional ? "据你的条件式授权暂定" : "据你的「保持未确定」暂定",
         });
         updates.push({ key: answer.key, action: "derived", requirementId: ledgerId, value, source: "OPTIMIZER_SUGGESTED", status });
       }

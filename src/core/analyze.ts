@@ -66,7 +66,9 @@ import {
   scanDecisionStatements,
   tradeoffStatements,
   vagueGoalDecision,
+  contentStableId,
 } from "./requirements.js";
+import { detectSemanticAmbiguity } from "./semantic-ambiguity.js";
 
 /**
  * 分析调用硬参数(比分类的 512 大:结构化字段更多)。
@@ -192,7 +194,12 @@ const TRIAGE_CATALOG_ZH = [
 ].join("\n");
 
 const ANALYSIS_RULES_ZH = [
-  "取舍识别(重点):「先验证还是直接做完」「先做 MVP 还是一步到位」「保持现有架构还是允许重构」这类**产品取舍 / 偏好**不是缺事实,而是只有用户能拍板、且不同答案会显著改变方案 → 必须写进 decisions,kind=PRODUCT_DECISION,impact=high,needs_user_decision=true,并给进 unknowns(classification=USER_REQUIRED, blocking=true)。",
+  "产品定位(最高优先级):你的职责是**忠实理解并清晰表达用户真正想说的意思**,不是替用户补成执行规格。优化后的 Prompt **允许保留未知**。",
+  "两类缺失必须严格区分:",
+  "  · **语义歧义(SEMANTIC_AMBIGUITY)**:不回答就不知道用户这句话到底是什么意思(指代不明:「把这个优化一下」「把它改成第二种」而不知「这个/它」指什么;对象缺失)。**只有这一类**才允许 blocking=true。",
+  "  · **执行信息不完整(EXECUTION_INCOMPLETENESS)**:已经知道用户想表达什么,只是将来执行时还需要项目路径 / API / 版本 / workflow / 测试命令 / 技术选型 / MVP 还是生产化 / 实现路线 / 参数 / 环境配置 / 具体生成内容。这类**一律不得 blocking**,不得要求用户现在回答;写入 unknowns(classification=AGENT_DISCOVERABLE 或 OPTIONAL,blocking=false),或在正文里明确「目前尚未确定,后续根据环境调研」。",
+  "拒绝这种默认逻辑:high impact + user exclusive = blocking USER_REQUIRED。**高影响不等于现在必须问**。MVP vs full / reuse vs create / lifecycle / 架构选择 / 交付深度 / 生产化 vs 原型 / workflow 策略 / 实现路线 都属未来执行阶段的选择 → 一律 blocking=false(可选建议或允许未决)。",
+  "想法型输入(「我想做一个 X」「我想用 A 控制 B」「我想让 Agent 自动处理…」)不是错误:它们可以 REBUILD,但 REBUILD 只重建**表达**,不得重建**需求**,更不得因为 vague_goal_scope 自动阻塞。",
   "反向保护(同样重要):ComfyUI 版本 / API 地址 / workflow 文件位置 / 当前依赖 / 项目结构 / 接口签名这类**环境事实**永远不是用户决定,必须写进 unknowns 的 AGENT_DISCOVERABLE,不得问用户。",
   "提问纪律:进入 questions 的问题必须用**用户能理解的业务语言**,禁止暴露内部枚举(不要问「这是 Planning 还是 Execution」「请选择 Prompt Target」);每个问题给 2–4 个具体选项 + 有合理推荐时给 recommended_option_id 与一句理由;推荐只是建议,不是用户决定。",
   "依赖分轮:如果 B 是否需要问取决于 A 的答案,用 depends_on 声明,不要在同一个问题组里自相矛盾地问。",
@@ -200,7 +207,8 @@ const ANALYSIS_RULES_ZH = [
   "1. 判断对象是「用户本轮输入」;历史讨论仅供参考,不得用历史话题覆盖当前请求。",
   "2. 助手 / Agent 的发言不是用户决定:evidence_quotes 与 requirements 的 quote 只能逐字引用用户自己的发言。",
   "3. UNKNOWN 不等于「要问用户」:每个 unknown 都要判断它属于 USER_REQUIRED(只有用户能定)、AGENT_DISCOVERABLE(执行方自己能查到,如代码结构 / 依赖版本 / 现有实现)还是 OPTIONAL(有没有都行)。",
-  "4. blocking 只在你确信「答案不同会明显改变产出」且「只有用户能决定」时给 true;拿不准就给 AGENT_DISCOVERABLE 且 blocking=false。",
+  "4. blocking **只允许**由语义歧义支撑(不回答就不知道用户到底指什么);其余一律 blocking=false。拿不准 → false。",
+  "4b. questions 只在存在语义歧义时才给;问题必须直指「你这句话指的是什么」,不得询问未来实施方案(生成什么内容 / 时长 / MVP / 生产化 / 选型 / 路线)。",
   "5. 不得发明用户没说过的要求:你的建议写进 suggestions,不要写进 requirements。",
   "6. 分诊宁轻不重:能 PATCH 就不要 RESTRUCTURE,能 RESTRUCTURE 就不要 REBUILD。",
 ].join("\n");
@@ -512,6 +520,7 @@ export function parseAnalysisResult(raw: string, ctx: AnalysisParseContext): Ana
   const safety = applyDecisionSafety({
     missingResolution,
     rawInput,
+    contextTurns,
     triage: triage.triage,
     target: target.target,
   });
@@ -812,31 +821,37 @@ function applyDecisionSafety(input: {
   rawInput: string;
   triage: EditTriage;
   target: PromptTarget;
-}): { items: MissingResolutionItem[]; added: string[] } {
+  contextTurns?: readonly ConversationTurn[];
+}): { items: MissingResolutionItem[]; added: string[]; blocked: string[] } {
   const { rawInput } = input;
   const items = input.missingResolution;
-  const covered = items.map((item) => item.text);
-  const modelSurfaced = (text: string): boolean =>
-    items.some(
-      (item) =>
-        item.classification === "USER_REQUIRED" &&
-        item.blocking &&
-        sameRequirement(item.text, text),
-    );
+  const added: string[] = [];
+  const blocked: string[] = [];
 
-  const decisions: { category: string; text: string }[] = scanDecisionStatements(rawInput).map((d) => ({ ...d }));
+  // ── 产品定位纠偏(核心规则)────────────────────────────────────────────────
+  //   高影响决策 **不再** 自动等于阻塞。执行期信息不完整(项目路径 / API / 版本 /
+  //   workflow / 测试命令 / MVP 还是生产化 / 实现路线 / 具体生成内容)与「未来取舍」
+  //   (scope / lifecycle / mvp_vs_full / reuse_vs_create / architecture_change /
+  //   delivery_depth / product_direction)一律**不阻塞**,记录为允许未决即可。
+  //   唯一允许阻塞的是**语义歧义**(不回答就不知道用户当前这句话是什么意思),
+  //   由 detectSemanticAmbiguity 机械判定(保守:指代无先行词 ∧ 无可用上下文)。
+  //
+  //   例外(保留 Decision Safety 的真实危险保护):mutation_permission /
+  //   irreversible_permission 这类**变更授权**仍可阻塞 —— 它们关乎会不会破坏用户数据。
+  const DANGEROUS_CATEGORIES = new Set(["mutation_permission", "irreversible_permission"]);
+  const decisions: { category: string; text: string }[] = [
+    ...scanDecisionStatements(rawInput).map((d) => ({ ...d })),
+  ];
   const vague = vagueGoalDecision(rawInput, mechanicalTriage(rawInput).triage, {
     visualTarget: input.target === "image_generation" || input.target === "video_generation",
   });
   if (vague) decisions.push(vague);
 
-  const added: string[] = [];
   const surfacedCategories = new Set(
     items
       .map((item) => decisionCategoryOfRequirement(item.text))
       .filter((category) => category !== null) as string[],
   );
-
   const findCovering = (decision: { category: string; text: string }): number =>
     items.findIndex((item) => {
       const itemCategory = decisionCategoryOfRequirement(item.text);
@@ -845,39 +860,78 @@ function applyDecisionSafety(input: {
     });
 
   for (const decision of decisions) {
+    const dangerous = DANGEROUS_CATEGORIES.has(String(decision.category));
     const coveringIndex = findCovering(decision);
+    const demoted: Pick<MissingResolutionItem, "classification" | "impact" | "blocking" | "user_exclusive" | "rationale"> = {
+      // 保留「用户以后可能要决定」的事实,但**现在不阻塞**语义优化
+      classification: dangerous ? "USER_REQUIRED" : "OPTIONAL",
+      impact: dangerous ? "high" : "medium",
+      blocking: false,
+      user_exclusive: dangerous,
+      rationale: dangerous
+        ? "涉及变更授权(可能影响你的文件/数据),需要你确认"
+        : `未来执行期的选择(${decision.category}),不影响当前语义;可在实施阶段再定,也可能由执行方按环境调查后提出方案`,
+    };
     if (coveringIndex >= 0) {
       const existing = items[coveringIndex]!;
-      if (existing.classification === "USER_REQUIRED" && existing.blocking) continue;
-      items[coveringIndex] = {
-        ...existing,
-        classification: "USER_REQUIRED",
-        impact: "high",
-        blocking: true,
-        user_exclusive: true,
-        // ★ 理由必须**替换**而不是拼接:原理由可能是「执行方可以直接查到」,
-        //   与「只有你能决定」自相矛盾(RC2 实测会直接展示给用户)。
-        rationale: `只有你能决定,且会明显改变方案(高影响用户决策:${decision.category};机械安全层判定,与模型采样无关)`,
-      };
-      added.push(existing.text);
-      surfacedCategories.add(String(decision.category));
+      if (existing.blocking && dangerous) continue;
+      // 已经由模型标成阻塞、但属于执行期取舍 → 降级为允许未决
+      if (existing.blocking && !dangerous) blocked.push(existing.text);
+      items[coveringIndex] = { ...existing, ...demoted };
       continue;
     }
-    if (surfacedCategories.has(String(decision.category)) || modelSurfaced(decision.text)) continue;
-    const item = classifyUnknown({ text: decision.text, blocking: true, impact: "high" });
-    items.push({
-      ...item,
-      classification: "USER_REQUIRED",
-      impact: "high",
-      blocking: true,
-      user_exclusive: true,
-      rationale: `只有你能决定,且会明显改变方案(高影响用户决策:${decision.category};机械安全层判定,与模型采样无关)`,
-    });
+    if (surfacedCategories.has(String(decision.category))) continue;
+    const base = classifyUnknown({ text: decision.text, blocking: dangerous, impact: demoted.impact });
+    base.id = contentStableId(decision.text);
+    items.push({ ...base, ...demoted });
     added.push(decision.text);
     surfacedCategories.add(String(decision.category));
-    covered.push(decision.text);
   }
-  return { items, added };
+
+  // ── 模型把执行期取舍标成阻塞时,一并降级(机械层兜底)──────────────────────
+  for (const [index, item] of items.entries()) {
+    if (!item.blocking) continue;
+    const category = decisionCategoryOfRequirement(item.text);
+    const dangerous = category !== null && DANGEROUS_CATEGORIES.has(category);
+    if (dangerous) continue;
+    blocked.push(item.text);
+    items[index] = {
+      ...item,
+      classification: "OPTIONAL",
+      blocking: false,
+      user_exclusive: false,
+      rationale:
+        "执行期信息不完整或未来取舍,不影响当前语义 → 保持未决(需要时可在实施阶段决定或由执行方调查)",
+    };
+  }
+
+  // ── 唯一允许的阻塞来源:语义歧义 ─────────────────────────────────────────
+  for (const ambiguity of detectSemanticAmbiguity(rawInput, input.contextTurns ?? [])) {
+    if (items.some((item) => sameRequirement(item.text, ambiguity.text))) continue;
+    const base = classifyUnknown({
+      text: ambiguity.text,
+      blocking: true,
+      impact: "high",
+      semanticAmbiguity: true,
+    });
+    // ★ id 必须**内容派生**(不能是下标):否则会与台账条目 id 撞车,
+    //   planner 会把歧义项误判为「已解决」而直接跳到确认页。
+    base.id = contentStableId(ambiguity.text);
+    // 面向用户的问法(不得暴露内部枚举;选项由 UI 追加「保持未确定,直接优化」)
+    base.question =
+      ambiguity.kind === "unresolved_old_new"
+        ? "要替换的具体对象是哪个?(请说明旧/新分别指什么,或选择「保持未确定,直接优化」)"
+        : "你提到的指代具体是指什么?(请补充对象,或选择「保持未确定,直接优化」)";
+    items.push({
+      ...base,
+      classification: "USER_REQUIRED",
+      blocking: true,
+      impact: "high",
+      user_exclusive: true,
+      rationale: "语义歧义:不澄清就无法确定你这句话的意思(唯一的阻塞来源)",
+    });
+  }
+  return { items, added, blocked };
 }
 
 export function fallbackAnalysisResult(
@@ -896,6 +950,7 @@ export function fallbackAnalysisResult(
   const safety = applyDecisionSafety({
     missingResolution: [],
     rawInput,
+    contextTurns,
     triage: triage.triage,
     target: target.target,
   });

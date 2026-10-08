@@ -1143,7 +1143,11 @@ export function createOptimizerController(
         },
       })
     },
-    /** 用户点了「按你的判断继续」:同一问题的盲授权(**不会**产生 USER_EXPLICIT)。 */
+    /**
+     * 用户点了「保持未确定,直接优化」:**只**把当前这一个问题标为未确定并继续优化,
+     * 不替其它问题作答,也不产生 USER_EXPLICIT。
+     * (旧文案「按你的判断继续」是黑盒授权 —— 用户不知道系统会怎么判断,已移除。)
+     */
     continueWithJudgement(question: DiscoveryQuestionView) {
       const current = state.discovery
       if (!current || !state.last) return
@@ -1154,7 +1158,7 @@ export function createOptimizerController(
           answers: [
             {
               key: question.key,
-              text: `${question.question}(按你的判断继续)`,
+              text: `${question.question}(保持未确定)`,
               blind_trust: true,
             },
           ],

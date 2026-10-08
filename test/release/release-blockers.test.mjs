@@ -89,13 +89,18 @@ async function runToTerminal(routes, text, { maxSteps = 6 } = {}) {
 // R1 + R2
 {
   const { routes, compileCalls } = await boot({ alwaysNewDecision: true })
-  const TEXT = '帮我做一个 AI 知识库,不知道是先做个能跑的最小版本,还是直接做成以后长期用的工具。'
+  // 新定义下只有**语义歧义**会进入确认/追问路径,因此用带无先行词指代的输入,
+  // 以继续覆盖「确认 → 编译」这段闭环(旧回归用的是模糊目标,现已直接编译)。
+  const TEXT = '帮我把这个优化一下,不知道是先做个能跑的最小版本,还是直接做成以后长期用的工具。'
   const { done, steps } = await runToTerminal(routes, TEXT)
   assert.ok(done, `★ R1/R2:必须到达 complete,实际步骤:${steps.join(' → ')}`)
   assert.ok(done.optimized.length > 0, 'R1/R2:必须产出优化稿')
   assert.equal(compileCalls(), 1, '★ R1/R2:Compiler 只在 confirm 之后调用一次')
-  assert.ok(steps.some((s) => s.includes('requirement_confirmation')) && steps.some((s) => s.includes('done')), 'R1/R2:必须出现 requirement_confirmation → done')
-  console.log('✓ R1/R2 confirm 两个死循环已修:到达 complete,编译仅 1 次')
+  assert.ok(
+    steps.some((s) => s.includes('requirement_confirmation')) && steps.some((s) => s.includes('done')),
+    'R1/R2:必须出现 requirement_confirmation → done',
+  )
+  console.log('✓ R1/R2 confirm 闭环:到达 complete,编译仅 1 次')
 }
 
 // R3

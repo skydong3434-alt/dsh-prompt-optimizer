@@ -194,7 +194,8 @@ const COMPLETE_PROMPT = [
   '- 现有 API 契约测试全部通过。',
 ].join('\n')
 
-// 1. 阻塞项存在 → 只发 discovery_required,绝不生成
+// 1. 非歧义的「阻塞」项 → 新定义下被降级为允许未决,正常编译交付
+//    (旧规则:高影响 + 用户专属 = blocking → Discovery;已废除)
 {
   const { handler, calls, compileCalls } = await setup({
     respond: (_options, index) => chunkText(index === 0 ? ANALYSIS_BLOCKED : COMPILE_OUTPUT),
@@ -203,30 +204,31 @@ const COMPLETE_PROMPT = [
   assert.equal(res.status, 200)
   const events = sseEvents(res)
   const kinds = events.map((e) => e.type)
+  assert.equal(kinds.includes('discovery_required'), false, '★ 执行期取舍(预算)不得进入 Discovery')
+  assert.equal(kinds.includes('done'), true, '★ 应正常编译交付')
+  assert.equal(calls.length, 2, '分析 1 次 + 编译 1 次')
+  assert.equal(compileCalls().length, 1, '★ 无阻塞 → 恰好编译一次')
+}
 
+// 1b. 真语义歧义(指代无先行词)→ 只发 discovery_required,绝不生成
+{
+  const { handler, calls, compileCalls } = await setup({
+    respond: (_options, index) => chunkText(index === 0 ? ANALYSIS_OK : COMPILE_OUTPUT),
+  })
+  const res = await call(handler, { text: '帮我把这个优化一下。', provider: 'p', model: 'm' })
+  const events = sseEvents(res)
+  const kinds = events.map((e) => e.type)
   assert.deepEqual(kinds, ['discovery_required'], '唯一事件必须是 discovery_required')
   assert.ok(!kinds.includes('delta'), '阻塞时不得推送任何模型产出')
   assert.ok(!kinds.includes('done'), '阻塞时不得下发 done')
-  assert.ok(!kinds.includes('meta'), '阻塞时不下发 meta(编译尚未开始)')
-
-  assert.equal(calls.length, 1, '阻塞时只应有 1 次分析调用')
-  assert.equal(compileCalls().length, 0, '阻塞时编译调用次数必须为 0(不消耗编译 token)')
-
+  assert.equal(compileCalls().length, 0, '★ 语义歧义:编译调用必须为 0')
   const gate = events[0]
   assert.equal(gate.gate.blocked, true)
-  assert.equal(gate.gate.blocking_items.length, 1)
-  assert.equal(gate.gate.blocking_items[0].text, '预算范围')
-  assert.equal(gate.gate.discoverable_items.length, 1, '可自查项不得阻塞')
-  // RC2:该 fixture 已补成「已明确」的研究请求(有约束/格式/验收)→ 机械判为
-  // RESTRUCTURE(信息齐但缺结构);关键是它**不再**因模糊目标进入 Discovery。
-  assert.equal(gate.triage.triage, 'RESTRUCTURE')
-  assert.equal(gate.intent.primary, 'planning')
-  assert.deepEqual(gate.intent.supporting, ['research'])
-  assert.equal(gate.target.target, 'agent_task')
-  assert.ok(Array.isArray(gate.ledger) && gate.ledger.length > 0, '阻塞时必须带出台账')
-  assert.ok(String(gate.rationale).length > 0, '必须给出用户可读的门禁理由')
-  assert.equal(gate.provenance_ok, true)
-  console.log('✓ p1g1 阻塞项 → 仅 discovery_required,零编译调用')
+  assert.ok(gate.gate.blocking_items.length >= 1, '★ 阻塞项来自语义歧义')
+  assert.match(gate.gate.blocking_items[0].text, /指代不明/)
+  assert.ok(Array.isArray(gate.ledger), '阻塞时必须带出台账字段')
+  assert.ok(String(gate.rationale ?? '').length > 0, '必须给出用户可读的门禁理由')
+  console.log('✓ p1g1b 语义歧义 → 仅 discovery_required,零编译调用')
 }
 
 // 2. 无阻塞项 → 正常 meta→delta→done,且 meta 携带完整分析结论

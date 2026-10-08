@@ -91,18 +91,20 @@ const FULL = JSON.stringify({
   assert.equal(meta.unknownTypeFallback, false)
   assert.equal(meta.multiIntent, true, '有辅意图 → multiIntent')
 
-  // 未决项:模型给的两条 + RC2 机械安全层的模糊目标决策(**无条件**,采样无关)
+  // 未决项:模型给的两条 + 机械层对「未来取舍」的记录(**允许未决,不再阻塞**)
+  // ★ 产品定义变更(v0.2.0-apo 简化):模糊目标/未来取舍不阻塞,只有**语义歧义**阻塞
   assert.equal(result.missing_resolution.length, 3)
   assert.equal(result.missing_resolution[0].classification, 'USER_REQUIRED')
   assert.equal(result.missing_resolution[0].blocking, false)
   assert.equal(result.missing_resolution[1].classification, 'AGENT_DISCOVERABLE')
-  assert.ok(
-    result.missing_resolution.some((item) => /机械安全层/.test(item.rationale) && item.blocking),
-    'RC2:模糊目标必须**无条件**补成阻塞决策(稳定性优先于去重)',
+  // ★ 新定义:机械层仍记录「未来取舍」,但**不再阻塞**(只有语义歧义阻塞)
+  assert.equal(
+    result.missing_resolution.some((item) => item.blocking),
+    false,
+    '★ 模糊目标 / 未来取舍一律不阻塞(执行信息不完整 ≠ 语义歧义)',
   )
-  // RC2:模糊目标 → 机械安全层无条件打开门禁(确定性)
-  assert.equal(result.gate.blocked, true, 'RC2:模糊目标必须进入 Requirement Discovery')
-  assert.equal(result.gate.blocking_items.length, 1, '阻塞项 = 机械补的范围决策')
+  assert.equal(result.gate.blocked, false, '★ 模糊目标不进入 Requirement Discovery(source: 直接优化)')
+  assert.equal(result.gate.blocking_items.length, 0, '阻塞项 = 0(仅语义歧义可阻塞)')
   assert.ok(result.missing_resolution[0].question, '应保留建议问法(Phase 3 用)')
 
   // 证据:`助手也没说过的假引用` 被丢弃
@@ -143,17 +145,18 @@ const FULL = JSON.stringify({
   assert.equal(result.intent.primary, 'planning')
   assert.deepEqual(result.intent.supporting, [])
   assert.equal(result.intent.work_mode, 'iterative', '旧契约缺 work_mode → 由主意图推导')
-  assert.equal(result.gate.blocked, true, '旧缺失项含「预算范围」→ 阻塞(只有用户能定)')
-  // RC2:输入「帮我规划一下」是模糊目标(机械 REBUILD)→ 机械安全层再补一条
-  // 「范围 / 交付深度」决策(采样无关),因此阻塞项 = 模型的预算范围 + 机械补的 1 条。
-  assert.equal(result.gate.blocking_items.length, 2)
+  // ★ 新定义:「预算范围」「范围 / 交付深度」这类**执行期取舍**不再阻塞。
+  //   该输入无指代歧义 → 不追问;机械层只把它们记录为允许未决。
+  assert.equal(result.gate.blocked, false, '★ 执行期取舍不阻塞(需语义歧义)')
+  assert.equal(result.gate.blocking_items.length, 0, '阻塞项 = 0')
   assert.ok(
-    result.gate.blocking_items.some((item) => /机械安全层/.test(item.rationale)),
-    '必须能看到机械安全层补的决策项',
+    result.missing_resolution.some((item) => /允许|未决|执行期|只有你/.test(item.rationale)),
+    '机械层仍应记录可审计的未决说明',
   )
-  assert.equal(result.missing_constraints.length, 3, '非 OPTIONAL 的缺口仍交给编译器(+RC2 机械补的决策项)')
+  // 新定义:机械层把「未来取舍」记为 OPTIONAL(允许未决)→ 不再作为编译器约束。
+  assert.equal(result.missing_constraints.length, 2, '只有非 OPTIONAL 的缺口交给编译器')
   assert.equal(meta.unknownTypeFallback, false)
-  console.log('✓ an3 旧分类器 JSON 兼容派生(含阻塞识别)')
+  console.log('✓ an3 旧分类器 JSON 兼容派生(执行期取舍不阻塞)')
 }
 
 // 4. 目标与引擎冲突 → 采纳引擎(机械证据)
@@ -203,19 +206,25 @@ const FULL = JSON.stringify({
 
 // 6. 兜底路径:机械决策安全层必须生效;手动路径不制造阻塞
 {
-  // RC2:兜底路径同样要跑安全层 —— 模糊目标必须阻塞(否则采样漂移会从这里漏回来)
-  const fallback = fallbackAnalysisResult('测试兜底', { rawInput: '帮我研究一下这个方案', contextTurns: [] })
+  // 兜底路径同样要跑安全层;但新定义下**只有语义歧义**才阻塞。
+  // 注:不能用「帮我研究一下**这个**方案」——「这个方案」无先行词,本身即语义歧义。
+  const fallback = fallbackAnalysisResult('测试兜底', { rawInput: '帮我研究一下 AI 知识库的可行性', contextTurns: [] })
   assert.equal(fallback.prompt_type, 'general')
-  assert.equal(fallback.gate.blocked, true, 'RC2:兜底路径也必须保留模糊目标的阻塞保证')
-  assert.ok(
-    fallback.missing_resolution.some((item) => item.classification === 'USER_REQUIRED' && item.blocking),
-    'RC2:兜底路径必须给出阻塞决策',
+  assert.equal(fallback.gate.blocked, false, '★ 兜底路径:想法型输入不得因模糊目标阻塞')
+  assert.equal(
+    fallback.missing_resolution.some((item) => item.blocking),
+    false,
+    '★ 兜底路径:阻塞项 = 0(需语义歧义)',
   )
+  // 真语义歧义(指代无先行词)在兜底路径同样必须阻塞
+  const ambiguous = fallbackAnalysisResult('测试兜底', { rawInput: '帮我把这个优化一下。', contextTurns: [] })
+  assert.equal(ambiguous.gate.blocked, true, '★ 兜底路径:语义歧义必须阻塞(机械层,采样无关)')
   assert.equal(fallback.triage.keep_safe, false)
 
   // 已明确的输入仍然不阻塞(兜底不等于「一律问」)
+  // 注:同样避开无先行词的「这个方案」(那本身是语义歧义)。
   const specified = fallbackAnalysisResult('测试兜底', {
-    rawInput: '帮我研究一下这个方案。约束:只看本地方案;输出格式:对比表。',
+    rawInput: '帮我研究一下本地部署方案。约束:只看本地方案;输出格式:对比表。',
     contextTurns: [],
   })
   assert.equal(specified.gate.blocked, false, '已明确输入不得被兜底误阻塞')
@@ -278,21 +287,18 @@ const FULL = JSON.stringify({
   const bad = await analyzeViaLlm(makeLlm(() => chunk('不是 JSON')), route, { raw_input: raw })
   assert.equal(bad.usedFallback, true)
   assert.equal(bad.failure, 'invalid-output')
-  // RC2:解析失败时机械安全层仍然生效 —— 该 fixture 的输入是模糊研究请求,
-  // 因此必须阻塞(这正是 Decision Stability 的根因修复);失败本身不阻断流程,但决策保证不丢。
-  assert.equal(bad.result.gate.blocked, true, 'RC2:解析失败也必须保留决策保证')
-  assert.ok(
-    bad.result.gate.blocking_items.some((item) => /机械安全层/.test(item.rationale)),
-    'RC2:兜底路径的阻塞项必须来自机械安全层',
-  )
+  // 解析失败时机械安全层仍然生效 —— 但新定义下**只有语义歧义**才阻塞;
+  // 该 fixture 输入无指代歧义 → 不阻塞,同时也不得丢失「允许未决」的审计记录。
+  assert.equal(bad.result.gate.blocked, false, '★ 新定义:解析失败不得因模糊目标阻塞')
+  assert.equal(bad.result.gate.blocking_items.length, 0, '阻塞项 = 0')
 
   const preAborted = new AbortController()
   preAborted.abort()
   const aborted = await analyzeViaLlm(makeLlm(() => chunk(FULL)), route, { raw_input: raw }, { signal: preAborted.signal })
   assert.equal(aborted.aborted, true)
   assert.equal(aborted.usedFallback, true)
-  // RC2:取消/失败同样不丢失决策保证(该 fixture 输入是模糊目标 → 阻塞)
-  assert.equal(aborted.result.gate.blocked, true)
+  // 取消/失败路径:模糊目标同样不阻塞(新定义:只有语义歧义阻塞)
+  assert.equal(aborted.result.gate.blocked, false, '★ 取消路径:不因模糊目标阻塞')
 
   const hung = await analyzeViaLlm(
     makeLlm(() => [{ type: 'finish', reason: { kind: 'error', failure: { code: 'X', message: 'boom' } } }]),
@@ -301,7 +307,7 @@ const FULL = JSON.stringify({
   )
   assert.equal(hung.usedFallback, true)
   assert.equal(hung.failure, 'stream-error')
-  assert.equal(hung.result.gate.blocked, true, 'RC2:提供方错误同样不丢失决策保证')
+  assert.equal(hung.result.gate.blocked, false, '★ 提供方错误路径:不因模糊目标阻塞')
 
   // 硬参数必须真实下发(temp0/1024),不能只在快照里好看
   const llm = makeLlm(() => chunk(FULL))

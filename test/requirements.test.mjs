@@ -49,13 +49,23 @@ import { makeProvenanceRecord } from '../lib/core/provenance.js'
   console.log('✓ rq2 影响面判定 high/medium/low')
 }
 
-// 3. blocking 只在「用户专属 + 高影响」成立;LLM 只能否决不能放大
+// 3. blocking **必须由语义歧义显式支撑**(产品定位纠偏):
+//    旧规则「用户专属 + 高影响 → 阻塞」已废除 —— 高影响不等于现在必须问。
 {
-  const blocking = classifyUnknown({ text: '预算范围', classification: 'USER_REQUIRED' })
-  assert.equal(blocking.classification, 'USER_REQUIRED')
-  assert.equal(blocking.blocking, true, '预算 = 用户专属 + 高影响 → 阻塞')
-  assert.equal(blocking.user_exclusive, true)
-  assert.ok(blocking.question === undefined || typeof blocking.question === 'string')
+  const notAmbiguous = classifyUnknown({ text: '预算范围', classification: 'USER_REQUIRED' })
+  assert.equal(notAmbiguous.classification, 'USER_REQUIRED')
+  assert.equal(notAmbiguous.blocking, false, '★ 新定义:高影响本身不得阻塞(需语义歧义)')
+
+  const ambiguous = classifyUnknown({
+    text: '「这个」指代不明',
+    classification: 'USER_REQUIRED',
+    semanticAmbiguity: true,
+  })
+  assert.equal(ambiguous.blocking, true, '★ 新定义:语义歧义才可阻塞')
+  assert.equal(ambiguous.user_exclusive, true)
+  assert.ok(ambiguous.question === undefined || typeof ambiguous.question === 'string')
+
+  const blocking = ambiguous
 
   const vetoed = classifyUnknown({ text: '预算范围', classification: 'USER_REQUIRED', blocking: false })
   assert.equal(vetoed.blocking, false, '模型显式 blocking=false 必须被尊重')
@@ -72,9 +82,9 @@ import { makeProvenanceRecord } from '../lib/core/provenance.js'
   // 机械判用户专属时,模型的降级不被采纳(有证据的特征保留)
   const kept = classifyUnknown({ text: '目标受众是谁', classification: 'AGENT_DISCOVERABLE' })
   assert.equal(kept.classification, 'USER_REQUIRED')
-  assert.equal(kept.blocking, true, '受众 = 高影响 → 阻塞')
+  assert.equal(kept.blocking, false, '★ 新定义:机械判用户专属也不再自动阻塞(需语义歧义)')
   assert.ok(kept.rationale.includes('保留'), '保留必须留痕')
-  console.log('✓ rq3 blocking 单向收紧:LLM 能否决 / 不能放大,降级有痕迹')
+  console.log('✓ rq3 blocking 单向收紧:仅语义歧义可阻塞;LLM 能否决 / 不能放大,降级有痕迹')
 }
 
 // 4. 批量分类:丢弃空文本、id 稳定
@@ -90,9 +100,13 @@ import { makeProvenanceRecord } from '../lib/core/provenance.js'
   console.log('✓ rq4 classifyUnknowns 稳定 id / 过滤空项')
 }
 
-// 5. 分析门:只有 blocking USER_REQUIRED 才阻断;KEEP 永不追问
+// 5. 分析门:只有**语义歧义**导致的 blocking USER_REQUIRED 才阻断;KEEP 永不追问
 {
-  const blockingItem = classifyUnknown({ text: '预算范围' })
+  const blockingItem = classifyUnknown({
+    text: '「这个」指代不明:无法从当前输入确定它指的是什么',
+    classification: 'USER_REQUIRED',
+    semanticAmbiguity: true,
+  })
   const discoverableItem = classifyUnknown({ text: '现有实现的路径' })
 
   const blocked = computeAnalysisGate([blockingItem, discoverableItem], 'PATCH')
@@ -100,6 +114,8 @@ import { makeProvenanceRecord } from '../lib/core/provenance.js'
   assert.equal(blocked.blocking_items.length, 1)
   assert.equal(blocked.discoverable_items.length, 1)
   assert.match(blocked.reason, /只有你本人能决定/)
+  // 非歧义的高影响项(预算/范围)不再进入阻塞集合
+  assert.equal(classifyUnknown({ text: '预算范围' }).blocking, false, '★ 新定义:预算不再自动阻塞')
 
   const notBlocked = computeAnalysisGate([discoverableItem], 'PATCH')
   assert.equal(notBlocked.blocked, false)
@@ -109,7 +125,7 @@ import { makeProvenanceRecord } from '../lib/core/provenance.js'
   assert.equal(keptGate.blocked, false, 'KEEP 不追问(追问与「原样保留」自相矛盾)')
   assert.deepEqual(keptGate.blocking_items, [])
   assert.match(keptGate.reason, /KEEP/)
-  console.log('✓ rq5 分析门:仅 blocking USER_REQUIRED 阻断 / KEEP 永不追问')
+  console.log('✓ rq5 分析门:仅**语义歧义**可阻断 / KEEP 永不追问')
 }
 
 // 6. 台账:来源与状态分离

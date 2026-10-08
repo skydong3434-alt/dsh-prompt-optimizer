@@ -550,7 +550,7 @@ export interface AnalysisGate {
  * 需求状态与来源**严格分离**:
  *  - source 回答「这条信息从哪来」;
  *  - status 回答「这条信息现在的确认程度」。
- * 「按你的判断继续」这类授权只可产生 PROVISIONAL / CONDITIONAL / DEFERRED,
+ * 「保持未确定,直接优化」这类授权只可产生 PROVISIONAL / CONDITIONAL / DEFERRED,
  * **永不**产生 CONFIRMED / USER_EXPLICIT。
  */
 export type RequirementStatus =
@@ -706,7 +706,7 @@ export interface DiscoveryQuestion {
   why: string;
   /** 该问题依赖的其他 requirement id:未解决前不得同轮提出(依赖分轮)。 */
   depends_on: string[];
-  /** 是否允许「按你的判断继续」(默认 true)。 */
+  /** 是否允许「保持未确定,直接优化」(默认 true)。 */
   allow_blind_trust?: boolean;
 }
 
@@ -718,7 +718,7 @@ export interface DiscoveryAnswer {
   text: string;
   /** 选中的选项 id(自由回答时为空)。 */
   option_id?: string;
-  /** 用户点了「按你的判断继续」时为 true(只可产生 PROVISIONAL/CONDITIONAL/DEFERRED)。 */
+  /** 用户点了「保持未确定,直接优化」时为 true(只可产生 PROVISIONAL/CONDITIONAL/DEFERRED)。 */
   blind_trust?: boolean;
   /** 用户在「修改理解」里重新决定的 requirement id(重开该项)。 */
   reopen?: boolean;

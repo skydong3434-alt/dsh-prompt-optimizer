@@ -51,9 +51,13 @@ const AGENT_NO_IRREVERSIBLE_WITHOUT_CONFIRM =
 
 function buildAgentSystem(language: StrategyLanguage): string {
   const zh = language !== "en";
+  // ★ 产品定位纠偏:信息责任**不再是无条件清单**。
+  //   用户表达的是「想法 / 意图」时,输出必须忠实表达该想法(主体 / 对象 / 核心目标 /
+  //   当前重点 / 已知与未知),**不得**套用执行任务模板(Goal/Scope/Tools/Verification…);
+  //   只有用户明确要求**执行/实施**时才逐项交代执行信息责任。
   const title = zh
-    ? "# 信息责任(逐项交代清楚;标题可自拟,不得遗漏)"
-    : "# Information responsibilities (cover each one; titles are yours to choose)";
+    ? "# 信息责任(仅当用户要求的是**执行/实施**任务时逐项交代;想法型输入不要套用本清单)"
+    : "# Information responsibilities (only when the user asks for execution; do NOT apply this list to idea/intent inputs)";
   const list = zh
     ? [
         "- Objective & Definition of Done: 要达成什么,以及「做完」的可核查定义",
@@ -73,6 +77,15 @@ function buildAgentSystem(language: StrategyLanguage): string {
       ];
   const discipline = zh
     ? `# 写法纪律
+- **先判断输入是「想法/意图」还是「执行/实施」**:
+  · 想法/意图(我想…/我有个想法…/我希望…/有没有办法…/我想用 A 控制 B):
+    忠实表达这个想法即可 —— 主体是什么、控制或作用对象是什么、核心目标是建立什么能力、
+    当前重点在哪一步、哪些已知、哪些**尚未确定**(明确写「目前尚未确定,后续调研」)。
+    **不得**由此生成 Goal / Scope / Preconditions / Tools / Phase / Task / Verification /
+    Acceptance / Definition of Done / Stop Conditions 这类完整项目规格骨架。
+  · 执行/实施(现在帮我实现…/修改这个项目…/按这个方案执行…/排查并修复…):
+    才按下面的信息责任交代;即便如此,执行方自己能查到的(路径/版本/依赖/接口/命令)
+    仍然**不得**要求用户提供。
 - 写成**给执行 Agent 的指令**:目标、边界、验收可机械核对
 - ${AGENT_BOUNDARY_RULE}
 - ${AGENT_NO_IRREVERSIBLE_WITHOUT_CONFIRM}

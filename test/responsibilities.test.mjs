@@ -249,11 +249,11 @@ const item = (text, classification, extra = {}) => ({
   console.log('✓ rc11 回退路径与 resolution 路径判据一致')
 }
 
-// 12. Phase 3 prerequisite:真正的用户取舍必须判 USER_REQUIRED + blocking
+// 12. 【v0.2.0-apo 产品定位纠偏】取舍识别保留,但**不再自动阻塞**
 //
-// Phase 2 留下的风险(取舍型被保守 fallback 吞掉)在本阶段正式解决:
-//   · 取舍 / 产品决策(无客观唯一答案、读项目也得不到、答案显著改变方案)
-//     → USER_REQUIRED + impact=high + blocking=true(由 Discovery 追问);
+// 旧规则:取舍 / 产品决策 → USER_REQUIRED + impact=high + **blocking=true**(Discovery 追问)。
+// 新规则:高影响 ≠ 现在必须问。取舍属**执行期选择**,一律 blocking=false(允许未决);
+//         唯一允许阻塞的是**语义歧义**(不回答就不知道用户这句话指什么)。
 //   · 反向保护:环境事实(版本 / 地址 / 路径 / 依赖 / 结构)永远是 AGENT_DISCOVERABLE,
 //     不得被误升格成 USER_REQUIRED;
 //   · 机械规则只是**安全网**,语义第一来源是分析契约里的 PRODUCT_DECISION。
@@ -272,8 +272,12 @@ const item = (text, classification, extra = {}) => ({
     assert.equal(isProductDecision(text), true, `「${text}」必须识别为产品决策`);
     const item = classifyUnknown({ text });
     assert.equal(item.classification, 'USER_REQUIRED', `「${text}」必须判 USER_REQUIRED`);
-    assert.equal(item.impact, 'high', '产品取舍的定义包含「显著改变方案」→ 高影响');
-    assert.equal(item.blocking, true, `「${text}」必须 blocking(由 Discovery 追问)`);
+    assert.equal(item.impact, 'high', '产品取舍仍识别为高影响(用于诊断/建议)');
+    assert.equal(
+      item.blocking,
+      false,
+      `★ 新定义:「${text}」是执行期取舍,不得阻塞(保持未决,后续研究/实施阶段再定)`,
+    );
   }
 
   // ② 反向保护:环境事实不得被误升格
@@ -291,7 +295,7 @@ const item = (text, classification, extra = {}) => ({
     classification: 'AGENT_DISCOVERABLE',
   });
   assert.equal(corrected.classification, 'USER_REQUIRED', '安全网:取舍不得被模型降级为可自查');
-  assert.equal(corrected.blocking, true);
+  assert.equal(corrected.blocking, false, '★ 新定义:取舍不阻塞');
 
   // ④ 明确偏好措辞仍然成立
   assert.equal(classifyUnknown({ text: '要不要保留旧接口' }).classification, 'USER_REQUIRED');

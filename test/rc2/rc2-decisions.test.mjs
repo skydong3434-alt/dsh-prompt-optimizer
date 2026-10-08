@@ -74,21 +74,28 @@ const STABILITY_PROMPTS = [
   console.log('✓ rc2-1 决策类别语义识别(scope/lifecycle/mvp/授权/架构/复用…)')
 }
 
-// 2. §3:模型把高影响决策写成普通 missing(或不写)时,机械层必须拉回阻塞
+// 2. 【v0.2.0-apo 产品定位纠偏】决策稳定性保证不变,但**方向反转**:
+//    旧规则:高影响取舍必须阻塞(采样无关)。
+//    新规则:高影响取舍**稳定地不阻塞**(采样无关);唯一允许阻塞的是语义歧义。
+//    稳定性属性本身(同输入多次解析结果一致)继续成立。
 {
   for (const prompt of STABILITY_PROMPTS) {
     // ① 模型**完全不提**任何未知项
     const bare = parse(prompt)
-    assert.equal(bare.gate.blocked, true, `§3 模型漏报 → 机械层必须阻塞:${prompt}`)
+    // ★ 新定义:任何阻塞项都**不得来自决策类别**(执行期取舍一律不阻塞);
+    //   若输入本身含无先行词的指代(如「这个工具」),由语义歧义导致的阻塞是允许的。
     assert.ok(
-      bare.gate.blocking_items.every((item) => item.classification === 'USER_REQUIRED' && item.impact === 'high'),
-      `§3 机械补的项必须是 USER_REQUIRED + high:${prompt}`,
+      bare.gate.blocking_items.every((item) => decisionCategoryOfRequirement(item.text) === null),
+      `★ 新定义:执行期取舍不得成为阻塞项(采样无关):${prompt}`,
     )
     // ② 模型把它降级成 AGENT_DISCOVERABLE(采样漂移的另一种表现)
     const downgraded = parse(prompt, [
       { text: prompt, classification: 'AGENT_DISCOVERABLE', blocking: false, rationale: '模型这轮判为可自查' },
     ])
-    assert.equal(downgraded.gate.blocked, true, `§3 模型降级也不得消除阻塞:${prompt}`)
+    assert.ok(
+      downgraded.gate.blocking_items.every((item) => decisionCategoryOfRequirement(item.text) === null),
+      `★ 新定义:模型降级与否,取舍都不阻塞:${prompt}`,
+    )
     // ③ 机械层稳定:同输入多次解析结果完全一致(采样无关)
     const again = parse(prompt)
     assert.deepEqual(
@@ -97,7 +104,7 @@ const STABILITY_PROMPTS = [
       `§3 机械层必须确定性:${prompt}`,
     )
   }
-  console.log('✓ rc2-2 §3 高影响决策不被降级,且机械层确定性(8/8 条稳定阻塞)')
+  console.log('✓ rc2-2 决策稳定性(新方向):执行期取舍稳定不阻塞;机械层确定性保持')
 }
 
 // 3. §4 反向保护:环境事实不得升级为 USER_REQUIRED(双向)
@@ -178,9 +185,13 @@ const STABILITY_PROMPTS = [
   const open = buildConfirmation({ analysis: model([]), ledger, raw_input: '我想用 dsh 控制 comfyui 生成视频。' })
   assert.equal(open.provisional.length, 1, '无阻塞时暂定项照常(合法机制)')
 
-  // 只有用户**主动**选择盲授权后,才允许转 PROVISIONAL
-  const withBlind = parse('我想用 dsh 控制 comfyui 生成视频。按你的判断继续')
-  assert.equal(withBlind.gate.blocked, true, '盲授权不改变「未回答」的阻塞事实(需显式答案)')
+  // 「保持未确定,直接优化」不改变「未回答」的事实:未回答就不算已确认。
+  // (新定义下该输入本就不阻塞;这里验证的是「保留未确定」语义,不是阻塞)
+  const withBlind = parse('帮我把这个优化一下。保持未确定')
+  assert.ok(
+    withBlind.missing_resolution.every((item) => item.classification !== 'CONFIRMED'),
+    '★ 「保持未确定」不得产生 CONFIRMED(需显式答案)',
+  )
   console.log('✓ rc2-5 §5 阻塞决策不得被 PROVISIONAL 绕过;无阻塞时暂定合法')
 }
 

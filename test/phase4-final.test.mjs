@@ -476,9 +476,9 @@ const VIDEO_BODY = [
     evidence_quotes: [],
     questions: [],
   })
-  // 本用例测的是「确认页四类互斥」,因此用**已明确**的输入(不触发 RC2 的模糊目标决策),
-  // 只让模型给的那条产品取舍驱动 Discovery。
-  const CONFIRM_INPUT = '帮我用 dsh 控制 comfyui 生成视频。约束:只做本地方案;输出格式:步骤清单;验收:跑通一次生成。'
+  // 本用例测的是「确认页四类互斥」。新定义下**只有语义歧义**能进入 Discovery,
+  // 因此输入带一个无先行词的指代(「这个」),由机械层驱动 Discovery。
+  const CONFIRM_INPUT = '帮我把这个优化一下。约束:只做本地方案;输出格式:步骤清单;验收:跑通一次生成。'
   const { handler } = await setup({ compileOutput: NEUTRAL, analysisRounds: [blockingAnalysis, cleared] })
   const first = await call(handler, { text: CONFIRM_INPUT, provider: 'p', model: 'm' })
   const round1 = sseEvents(first)[0]

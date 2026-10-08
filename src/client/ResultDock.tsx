@@ -504,7 +504,7 @@ export function createResultDock(controller: OptimizerController) {
       )
     }
 
-    /** 题干 + 2–4 个具体选项 + 推荐项 + 其他/自己说明 + 按你的判断继续。 */
+    /** 题干 + 2–4 个具体选项 + 推荐项 + 其他/自己说明 + 保持未确定(直接优化)。 */
     const renderQuestion = (question: DiscoveryQuestionView) => {
       const draft = answerDraft[question.key] ?? { text: '' }
       const pick = (optionId: string) =>

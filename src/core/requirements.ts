@@ -6,7 +6,7 @@
  *        USER_REQUIRED(只有用户能决定)/ AGENT_DISCOVERABLE(执行方自己查得到)
  *        / OPTIONAL(有更好,没有也行);只有 `USER_REQUIRED && 高影响` 才 blocking。
  *  2. **来源与状态分离**。「这条信息从哪来」(source)与「它现在确认到什么程度」
- *     (status)是两个独立维度;用户的「按你的判断继续」只提升到
+ *     (status)是两个独立维度;用户的「保持未确定」只提升到
  *     PROVISIONAL / CONDITIONAL / DEFERRED,**永不**产生 CONFIRMED / USER_EXPLICIT。
  *
  * 分类判据是**表驱动的保守规则**:拿不准 → AGENT_DISCOVERABLE + blocking=false
@@ -74,7 +74,7 @@ const HIGH_IMPACT_RE =
 /** 中影响:影响细节质量,但不改变任务骨架。 */
 const MEDIUM_IMPACT_RE = /命名|措辞|格式细节|排序|优先级|粒度|长度|篇[幅章]|语气|示例|顺序|维度/i;
 
-/** 「按你的判断继续」这类盲授权(只可产出 PROVISIONAL / CONDITIONAL / DEFERRED)。 */
+/** 「保持未确定,直接优化」(只可产出 PROVISIONAL / CONDITIONAL / DEFERRED;不作答、不冒充用户要求)。 */
 const BLIND_TRUST_RE =
   /按你的(?:判断|理解|想法|意思)|你(?:来|自己)?决定|随你|随便|都行|都可以|听你的|看着办|不用问|不用确认|你看着来|你定|自主决定|按需决定|你觉得(?:好|合适)就行/i;
 
@@ -103,6 +103,8 @@ export interface UnknownInput {
   impact?: unknown;
   user_exclusive?: unknown;
   question?: string;
+  /** 是否由**语义歧义**支撑(唯一允许 blocking 的来源)。 */
+  semanticAmbiguity?: boolean;
 }
 
 /** 机械影响面判定。 */
@@ -414,9 +416,22 @@ export function classifyUnknown(input: UnknownInput, index = 0): MissingResoluti
   }
 
   const impact = asImpact(input.impact) ?? mechanicalImpact(text);
+  // 语义歧义天然是**用户专属**的:只有用户知道「这个/它」指的是什么,
+  // 执行方无法调查出来 → 不允许被机械/模型降级为可自查。
+  if (input.semanticAmbiguity === true) classification = "USER_REQUIRED";
+  // 语义歧义必然**高影响**(不澄清就会误解用户的意思)。
+  const ambiguityForcedHigh = input.semanticAmbiguity === true;
   const userExclusive = classification === "USER_REQUIRED";
   const llmBlocking = input.blocking === true ? true : input.blocking === false ? false : undefined;
-  const blocking = classification === "USER_REQUIRED" && impact === "high" && llmBlocking !== false;
+  // ★ 产品定位纠偏:高影响 **不再** 自动等于阻塞。
+  //   blocking 必须由**语义歧义**显式支撑(input.semanticAmbiguity),
+  //   否则一律不阻塞(执行期信息不完整 / 未来取舍 → 保持未决,不打扰用户)。
+  const blocking =
+    classification === "USER_REQUIRED" &&
+    llmBlocking !== false &&
+    input.semanticAmbiguity === true;
+  // 语义歧义必然高影响(不澄清就会误解用户意思)→ 归一到 high,便于 UI 展示与统计
+  const finalImpact: "high" | "medium" | "low" = input.semanticAmbiguity === true ? "high" : impact;
 
   const baseRationale =
     input.rationale?.trim() ||
@@ -432,7 +447,7 @@ export function classifyUnknown(input: UnknownInput, index = 0): MissingResoluti
     classification,
     blocking,
     rationale: [baseRationale, ...notes].join(";"),
-    impact,
+    impact: finalImpact,
     user_exclusive: userExclusive,
     ...(input.question?.trim() ? { question: input.question.trim() } : {}),
   };
@@ -624,7 +639,7 @@ export function buildLedger(input: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 盲授权处理(「按你的判断继续」)
+// 「保持未确定」处理(仅作用于当前问题)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** 本轮输入里是否出现盲授权话术。 */
@@ -648,7 +663,7 @@ export function applyBlindTrust(
     return {
       ...entry,
       status,
-      note: [entry.note, conditional ? "据你的条件式授权暂定(条件成立时生效)" : "据你的「按你的判断继续」暂定"]
+      note: [entry.note, conditional ? "据你的条件式授权暂定(条件成立时生效)" : "据你的「保持未确定」暂定"]
         .filter(Boolean)
         .join(";"),
     };

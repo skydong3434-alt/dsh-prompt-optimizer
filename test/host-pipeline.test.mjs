@@ -128,7 +128,7 @@ const chunkText = (text) => [
 
 const RESEARCH = {
   type: 'research',
-  // RC2 起:模糊目标会先进入 Requirement Discovery(正确行为)。
+  // v0.2.0-apo 简化:模糊目标不再进入 Discovery(只有语义歧义才问)。
   // 需要测「直接编译流程」的用例改用**已明确**的研究请求:
   // 有目标、有约束、有输出格式、有验收 → 不构成高影响用户决策。
   raw: '帮我研究 Mac M1 Pro 32GB 怎么使用 ComfyUI 做 AI 视频,我看到黑鹤001低显流,还有 H3。约束:只看本地可跑的方案;输出格式:方案对比表 + 每项优缺点;验收:给出可执行步骤与显存占用实测数据。',
@@ -346,14 +346,22 @@ const LEGACY_OUTPUT = [
   const vagueRes = await call(vague.handler, { text: '我想用 dsh 控制 comfyui 生成视频。', provider: 'p', model: 'm' })
   const vagueEvents = sseEvents(vagueRes)
   const discovery = vagueEvents.find((e) => e.type === 'discovery_required')
-  assert.ok(discovery, '★ 分析失败也不得丢失「模糊目标必须问范围」的保证')
-  assert.equal(vagueEvents.some((e) => e.type === 'done'), false, '有阻塞决策时不得编译')
+  assert.equal(
+    Boolean(discovery),
+    false,
+    '★ 新定义:分析失败也不得因「模糊目标」追问;想法型输入直接优化',
+  )
+  assert.equal(
+    vagueEvents.some((e) => e.type === 'done'),
+    true,
+    '★ 新定义:无阻塞决策 → 正常编译交付(想法型输入不再被需求工程挡住)',
+  )
   assert.equal(
     vague.calls.filter((options) => !isMetaAnalysisCall(options.system)).length,
-    0,
-    '★ 兜底路径同样零编译',
+    1,
+    '★ 兜底路径:恰好编译一次',
   )
-  console.log('✓ h3b 分析失败 + 模糊目标 → 仍然阻塞(兜底路径也跑安全层)')
+  console.log('✓ h3b 分析失败 + 模糊目标 → 不阻塞(新定义:只有语义歧义才问)')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
