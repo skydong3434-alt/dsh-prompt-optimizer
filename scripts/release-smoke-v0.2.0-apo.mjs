@@ -176,7 +176,7 @@ async function runFullFlow(routes, text, { maxRounds = 3, start } = {}) {
   const allQuestions = []
   // +1:轮次上限用尽后仍需再走一次 confirm(否则停在确认页,无法进入编译)
   // 步数预算 = 轮次上限 + 2(轮次用尽后仍需:一次 confirm + 一次可能的回流终态)
-  while (!done && (discovery || confirmation) && round < maxRounds + 2) {
+  while (!done && (discovery || confirmation) && round < maxRounds + 4) {
     round += 1
     if (discovery) {
       const answers = (discovery.questions ?? []).map((q) => {
