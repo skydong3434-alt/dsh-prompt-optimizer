@@ -385,6 +385,54 @@ async function call(routes, body) {
   console.log('✓ v3-6b 提示词规则防线:专业化优化(三层原则/IMAGE/VIDEO+子类型/GENERAL/质量自检) + 不得改变任务方向 + AGENT 不靠关键词')
 }
 
+// ── 6c. 专业化完善 vs 擅自创作 的边界(m03556 一/二/三) ────────────────────
+{
+  const zhText = String(buildV3Messages({ rawInput: '测试', language: 'zh' }).find((m) => m.role === 'system').content)
+  const enText = String(buildV3Messages({ rawInput: 'test', language: 'en' }).find((m) => m.role === 'system').content)
+
+  // ① 边界段必须存在,并逐条列出禁止项(m03556 一)
+  assert.ok(zhText.includes('专业化完善与创作扩写的边界'), '★ 必须写明专业优化与创作扩写的边界')
+  for (const forbidden of [
+    '擅自指定新的摄影机角度',
+    '擅自决定固定镜头或运动镜头',
+    '擅自增加未指定的景别',
+    '擅自添加具体布光方案',
+    '擅自增加景深、虚化等摄影效果',
+    '擅自设计人物服装、发型和身份',
+    '擅自增加新人物、道具、动作或情节',
+    '在没有参考帧信息时确定可能冲突的运动路径',
+  ]) {
+    assert.ok(zhText.includes(forbidden), `★ 边界禁止项缺失:${forbidden}`)
+  }
+  // 允许项(属于专业优化)
+  for (const allowed of ['明确原文**已有**元素之间的关系', '完善**已有**动作的自然过程', '优化时间顺序与运动连续性', '完善**已有**镜头要求的表达']) {
+    assert.ok(zhText.includes(allowed), `★ 边界允许项缺失:${allowed}`)
+  }
+  assert.ok(zhText.includes('用户**明确要求**丰富细节 / 创意发挥 / 设计镜头时'), '★ 必须保留用户明确要求时的例外')
+  assert.ok(zhText.includes('必须保留并专业化完善它'), '★ 原文明确指定景别/机位/布光时必须保留')
+  assert.ok(enText.includes('Boundary: professional refinement vs. unauthorized creation'), '★ 英文必须保留同边界段')
+
+  // ② IMAGE:不得为补齐模板强行加入景别/机位/布光/构图(m03556 二)
+  assert.ok(zhText.includes('不要为了补齐模板,强行加入景别、机位、布光和构图方案'), '★ IMAGE 不得为补模板强加景别/机位/布光/构图')
+  for (const focus of ['主体描述', '主体与背景的空间关系', '已有风格表达', '环境的自然特征', '画面信息的组织与清晰度']) {
+    assert.ok(zhText.includes(focus), `★ IMAGE 重点提升项缺失:${focus}`)
+  }
+  assert.ok(!zhText.includes('暖色夕阳从侧后方打光'), '★ 旧示例不得再指定布光方向(擅自创作)')
+
+  // ③ VIDEO:不得理解为重新导演(m03556 三)
+  assert.ok(zhText.includes('不要把专业优化理解为重新导演一段视频'), '★ VIDEO 不得重新导演')
+  for (const focus of ['动作之间的时间关系', '角色与场景的连续性', '首尾帧的过渡关系']) {
+    assert.ok(zhText.includes(focus), `★ VIDEO 重点提升项缺失:${focus}`)
+  }
+  assert.ok(zhText.includes('没有实际参考帧时,不得假定具体的身体姿态和运动路径'), '★ 首尾帧无参考帧时不得假定姿态与路径')
+  assert.ok(enText.includes('do NOT assume a concrete body pose or motion path'), '★ 英文同规则')
+
+  // ④ 平台名不得写丢(案例C #1 真实失败:输出里丢了「可灵」)
+  assert.ok(zhText.includes('平台与生成模式必须逐字保留'), '★ 必须写明平台/模式名逐字保留')
+  assert.ok(zhText.includes('写丢平台名 = 不合格'), '★ 必须写明写丢平台名 = 不合格')
+  console.log('✓ v3-6c 创作边界防线:禁止项 8 条 + IMAGE/VIDEO 重点提升 + 用户明确指定时保留')
+}
+
 // ── 7. 迁移自旧版的关键用户行为(V3 保护) ──────────────────────────────────
 {
   // (a) 图片/视频/音频提示词内容保护:不得被写成执行任务模板
