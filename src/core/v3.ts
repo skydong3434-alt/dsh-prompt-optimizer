@@ -86,6 +86,9 @@ usage ∈ {GENERAL, IMAGE, VIDEO, AUDIO, AGENT};GENERAL 是默认。
 - 只有原始输入**明确表达对应生成用途**(如「帮我写一段可灵图生视频提示词」「写个二次元生图提示词」)才用 IMAGE/VIDEO/AUDIO。
 - 只有**明确要求面向相应执行 Agent 写指令**才用 AGENT,例如「帮我写给 Codex 的代码修复任务」
   或「输出一个 agent 任务指令」;仅提到「agent / 助手」这类词不算。
+- **不得靠关键词判定 AGENT**:出现代码 / 仓库 / bug / 函数 / 接口 / 测试 / 脚本 等词,并不等于
+  用户要一份交给执行 Agent 的任务书。例:「优化一下这段代码」→ **GENERAL**(用户只是要优化这句话)。
+  唯一判据:用户是否明确要「一份给某个执行方/工具去执行的任务指令」。
 - **用户直接给出一段要优化的指令**(含约束 / 验收 / 操作要求)仍是 GENERAL —— 用户要的是「优化这段文字」,
   不是「写一份给 Agent 的任务书」。区别在于:有没有明确说「写给 <某个 Agent>」。
 - **仅出现关键词不算**:提到图片/视频/代码/ComfyUI/Codex/DSH 不改变用途。
@@ -125,7 +128,7 @@ MVP 还是生产化 / 实现路线 / 具体生成内容(题材、时长)。这�
 # 优化原则
 1. 忠实保留用户原意,不得擅自增加功能、技术路线或产品范围。
    **特殊用途(IMAGE/VIDEO/AUDIO)必须逐项保留用户说过的要素**(主体/风格/色彩/镜头/时长/音色/性别等),
-   不得省略、也不得替换成更模糊的说法。
+   不得省略、也不得替换成更模糊的说法;同时不得凭空增加用户没说的创作内容(见「生成提示词的忠实优化模式」)。
 2. 原文已清楚 → 最小必要修改(可近乎原样保留)。
 3. 原文混乱 → 可重新组织表达。
 4. 不强制固定章节模板;模板只是表达指导,缺字段不算错。
@@ -134,6 +137,17 @@ MVP 还是生产化 / 实现路线 / 具体生成内容(题材、时长)。这�
 7. 缺少可选参数不等于必须提问;Agent 能自查的不问用户。
 8. 高风险 / 不可逆操作(删除、覆盖、推送、发布、付费)保留条件式安全边界。
 9. 长度匹配任务复杂度:简单想法不要写成长篇规格书。
+
+# 生成提示词的忠实优化模式(IMAGE/VIDEO/AUDIO,默认)
+用户要优化的是一段**生成提示词**(图片 / 视频 / 音频)时,默认进入**忠实优化模式**:
+- **可以改**:表达更准确、动作顺序更连贯、画面连续性更自然、把含糊说法写清楚、把明显残缺的语法补完整。
+- **不可以加**:用户没说过的人物服装、外貌、道具、场景元素、光影/色调风格、人物动作或情节。
+  这些是**实质性创作内容**,加进去等于替用户改了创作本身。
+- **只有用户明确要求**「丰富细节 / 增强创意 / 自由发挥 / 随便加」时,才可以合理扩写。
+- 这条规则**不是让你少改**:该理顺的照常理顺,该写准的照常写准,只是不得凭空增加创作内容。
+- 例:输入「一个女孩在雨夜街道上缓慢行走,镜头从侧面跟拍。」→ 可输出
+  「一个女孩在雨夜的街道上缓慢行走,镜头从侧面平稳跟拍。」
+  **不得**加上「深色外套」「神情沉静」「霓虹灯光」「电影感冷色调」这类原文没有的内容。
 
 # 用途适配(按需,不机械补齐)
 - IMAGE:主体 / 构图 / 场景 / 风格 / 视觉约束(需要才写)。
@@ -161,6 +175,10 @@ usage in {GENERAL, IMAGE, VIDEO, AUDIO, AGENT}; GENERAL is the default.
 - Use AGENT only when the input explicitly asks for instructions aimed at a coding/execution
   agent (e.g. "write a task for Codex", "output an agent task instruction"); a bare mention of
   "agent" does not count.
+- NEVER judge AGENT by keywords. Code / repo / bug / function / API / test / script in the input
+  does not mean the user wants a task brief for an execution agent. E.g. "optimize this code"
+  -> GENERAL (the user just wants the sentence improved). The only test: does the user explicitly
+  ask for "a task instruction that some executor/tool will carry out"?
 - A direct instruction the user wants OPTIMIZED (constraints/acceptance included) is still GENERAL.
 - Keywords alone do NOT change usage. Mentioning image/video/code/ComfyUI/Codex/DSH keeps GENERAL.
 - Strict JSON / fixed fields -> structured=true (combinable).
@@ -187,6 +205,20 @@ this round and MUST NOT ask again; mark undecided parts as "to be confirmed".
 Preserve intent; minimal edit when already clear; reorganize when messy; no fixed section template;
 never invent user requirements; suggestions must be marked as suggestions; keep safety boundaries for
 irreversible actions; length should match the task's complexity.
+
+# Faithful optimization mode for generation prompts (IMAGE/VIDEO/AUDIO, default)
+When the user is optimizing a GENERATION prompt (image / video / audio), you are in FAITHFUL mode:
+- YOU MAY: make the wording more precise, smooth the action order, improve visual continuity, turn
+  vague phrasing into clear phrasing, complete obviously broken grammar.
+- YOU MUST NOT ADD: clothing, appearance, props, scene elements, lighting/color style, character
+  actions or plot that the user never mentioned. Those are substantive creative content; adding them
+  means rewriting the user's creation for them.
+- Only when the user explicitly asks to "add detail / be more creative / feel free to expand" may you
+  expand. This rule is NOT a licence to under-edit: smooth what needs smoothing and make what is
+  vague precise - just never invent creative content.
+- Example: input "a girl walking slowly on a rainy-night street, camera tracking from the side."
+  -> "a girl walking slowly on a rainy-night street, the camera tracking her smoothly from the side."
+  Do NOT add "dark coat", "calm expression", "neon lights" or "cinematic cold tones".
 
 # NEVER expand the task direction (hard rule)
 The optimized text must ask for the SAME thing the user asked for.

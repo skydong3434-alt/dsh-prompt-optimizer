@@ -2,23 +2,53 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-09T14:05:00+08:00
-current_phase: V3_UI_ACCEPTANCE_FIX
-current_task: 修复 DSH Desktop 真实 UI 验收发现的三个问题(m02408)
+last_updated: 2026-10-09T14:12:00+08:00
+current_phase: V3_RULE_TUNING_AND_DOCS
+current_task: 落实用户 m03069 五项决定(忠实优化模式 / AGENT 判定 / 文档整理 / 模型路由核对 / 不加模块)
 status: IN_PROGRESS
 next_task: 用户重启 DSH Desktop 后做人工 UI 验收(G-8)
-machine_gate: PASS (npm test 104 断言 / build exit 0 / v3-real-check 真实模型复测进行中)
+machine_gate: PASS (npm test 104 断言 / build exit 0 / v3-real-check 真实模型 27 例硬失败 0)
 human_review: PENDING_USER_UI_ACCEPTANCE
 phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 102 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
 v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续。
 ui_acceptance_fix: **用户真实 UI 验收失败修复(m02408)DONE(待人工验收)**。①擅自扩展任务:根因是运行中宿主为旧构建(`lib/` 12:37 构建 vs 宿主 10:59 启动)+ 机械兜底短语不全 → 提示词硬规则 + 补齐 `实现方式/控制流程/实施限制/方案或指南/整体思路/覆盖以下要点/列出优劣`;真实模型复测 3/3 只输出原句理顺版(1 次调用,~6s)。②不必要澄清:根因是提示词未区分「妨碍优化这句话」与「执行时才知道」→ 新增「缺一个名字/标识不算歧义」+ 逐字反例;复测 3/3 直接整理为分析请求(1 次调用,~6s),真歧义仍会提问。③特殊用途:模型识别正确(VIDEO),机械纠正层补 `优化|润色|改进` 动词;UI 旧字段(任务类型/把握度/提示词目标/编辑分诊)造成误读 → 移除。④UI 精简:结果面板默认只有「优化后的提示词 + 替换/复制/重新优化/关闭」,判断依据收进默认折叠的「优化说明」,澄清页只留问题与继续操作。**⑤复测另发现两个真实缺陷(已修)**:推理模型 `minimax-m3` 把思考直接写进 `content`(reasoning_content 为空),思考里的 `{...}` 片段被旧解析当成协议信封 → 「严格 JSON 输出 agent 任务指令」稳定空产出(`VF_EMPTY_OUTPUT`);修法 = `stripThinking` + `extractProtocolEnvelope`(只认 `status` 为 optimized/needs_clarification 的平衡 JSON)。宿主原样转发模型增量 → 快速模式预览泄漏思考与内部协议;修法 = 只下发 `previewableText`(剥思考 + 协议处截断)。测试:`test/v3.test.mjs` 第 9 组 + `test/smoke.mjs` 1b。**⑥另两个真实缺陷**:中文提示词被改写成英文(IMAGE 连续 2 次输出 `anime style illustration…`;提示词缺「与输入同语言」规则 → 中英提示词新增「输出语言」段,复测 4/4 中文);协议 `output` 给成对象时交付 `[object Object]`(严格 JSON 用例;修法 = `asText` 序列化非字符串 output/question)。
-latest_commit: a078634 fix(v3): 特殊用途要素逐项保留写入规则;真实检查同义要素容忍
+latest_commit: cbb8af7 fix(v3): 真实 UI 验收三问题 + 复测发现的三个真实缺陷
 auto_continue: false
 stop_reason: awaiting user confirmation: V3 真实体验(G-8)
 ```
 
-> 注:`docs/PLAN-v1.md`、`docs/phase{1,2,3,4}-report.md`、`tasks/P0*` 描述的是**已删除的旧多阶段架构**,
-> 仅作历史记录保留,不再反映当前实现;当前实现见 `src/core/v3.ts` 与 `docs/v3-test-migration.md`。
+## 模型路由（真实 UI 用的是哪个模型）— m03069 ④ 已核对
+
+**结论:UI 里的优化请求用的是「当前会话的模型」,桌面端默认 = `opencode-go/deepseek-v4.1-flash`。**
+
+- 客户端在每次优化前读会话当前模型并随请求发出(`src/client/controller.ts` → `directories.directoryFor(sessionId).load().current`
+  → body 里的 `provider`/`model`);该服务(`@deepseek-ai/dsh-client-ui-model-selection`)在桌面端**确实加载**,
+  所以「跟随会话」这条路是通的。会话当前模型 = `profiles/desktop/cordis.patch.yml` 的 `agent-default-model`
+  = `opencode-go` / `deepseek-v4.1-flash`(会话内换模型则随之改变)。
+- Host 端优先级(`resolveRoute`):设置里固定的 `model` → 请求体 `provider/model` → 第一个可用路由。
+- **实测证据**(对运行中的宿主 `POST /dsh-prompt-optimizer/optimize`):
+  - 带 `{"provider":"opencode-go","model":"deepseek-v4.1-flash"}` → `done.provider/model = opencode-go / deepseek-v4.1-flash`
+  - 不带 provider/model(等价于没有会话信息) → `done.provider/model = opencode-go / minimax-m3`(**回退到该 provider 列表的第一个模型**)
+- ⚠️ **教训**:此前「UI 实际跑 minimax-m3」的结论来自**一次没有会话信息的 curl 探测**,量到的是回退路由,不是 UI 路由。
+  所以 `scripts/v3-real-check.mjs` 的默认模型已从 `deepseek-v4-flash` 改为 **`deepseek-v4.1-flash`**(可用
+  `APO_PROVIDER` / `APO_MODEL` 覆盖);换默认值前必须先核对 UI 实际路由,否则测的不是用户看到的行为。
+
+## 本轮规则调整（m03069 ①②,只改提示词与测试,未加模块）
+
+- **①IMAGE/VIDEO/AUDIO 忠实优化模式**:默认只做忠实优化 —— 可以改善表达 / 动作顺序 / 画面连续性 / 描述准确度;
+  **不得**凭空增加人物服装、外貌、道具、场景元素、光影色调风格、人物动作或情节;只有用户明确要求
+  「丰富细节 / 增强创意 / 自由发挥」时才可扩写;并写明「这条规则不是让你少改」以免降低优化能力。
+  真实失败反例(深色外套 / 神情沉静 / 霓虹灯光 / 电影感冷色调)已写进提示词与测试。
+- **②AGENT 不靠关键词判定**:出现代码 / 仓库 / bug / 函数 / 接口 / 测试等词不等于要一份执行任务书;
+  「优化一下这段代码」→ GENERAL。唯一判据是用户是否明确要「一份给某个执行方去执行的任务指令」。
+- **③文档整理**:新增 `docs/README.md`(当前有效 / 历史文档索引)与 `tasks/README.md`;
+  23 份旧架构文档加上「⚠️ 已过时(历史记录)」标记后保留。
+- **⑤不加新架构模块**:本轮只改 `src/core/v3.ts` 提示词规则、测试与文档,正常请求仍是 1 次模型调用。
+
+## 历史快照（以下内容描述已删除的旧多阶段架构,仅作记录）
+
+> 注:旧架构文档(`docs/PLAN-v1.md`、`docs/phase{1,2,3,4}-report.md`、`tasks/P0*` 等)描述的是**已删除的旧多阶段架构**,
+> 已统一加上「已过时」标记并集中索引在 `docs/README.md`;当前实现见 `src/core/v3.ts`,当前文档入口见 `docs/README.md`。
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
 > （blocking / merge conflict / schema breaking / contract breaking / architecture change /

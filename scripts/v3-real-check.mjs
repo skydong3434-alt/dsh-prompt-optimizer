@@ -5,7 +5,7 @@
  * 每例检查:① 用途判定 ② 原意保留 ③ 是否擅自增加需求 ④ 是否过度重写
  *          ⑤ 关键歧义是否正确提问并在回答后输出 ⑥ 是否仍只调用一次模型 ⑦ 无循环/超时
  *
- * 用法:node scripts/v3-real-check.mjs [--runs N] [--only LABEL]
+ * 用法:node scripts/v3-real-check.mjs [--runs N] [--only LABEL] [APO_PROVIDER=… APO_MODEL=…]
  * 退出码:非 0 表示存在硬失败。
  */
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -15,7 +15,12 @@ import { Context } from '@deepseek-ai/cordis'
 import * as plugin from '../lib/index.js'
 import { detectIntentExpansion, inferUsageMechanically, looksLikeProtocolEnvelope } from '../lib/core/v3.js'
 
-const MODEL = process.env.APO_MODEL ?? 'deepseek-v4-flash'
+// 默认必须与真实 UI 的模型路由一致:桌面端会话模型是 opencode-go/deepseek-v4.1-flash
+// (profiles/desktop/cordis.patch.yml → agent-default-model),客户端把会话当前模型随请求发出,
+// 所以 UI 里的优化请求用的就是它。改这里之前先核对 UI 实际路由(见 CURRENT_STATE.md
+// 「模型路由」一节),否则测出来的不是用户看到的行为。
+const PROVIDER = process.env.APO_PROVIDER ?? 'opencode-go'
+const MODEL = process.env.APO_MODEL ?? 'deepseek-v4.1-flash'
 const ENDPOINT = 'https://opencode.ai/zen/go/v1/chat/completions'
 const KEY = /OPENCODE_API_KEY:\s*(\S+)/.exec(
   readFileSync(join(process.env.HOME ?? '', '.dsh', '.credentials.yaml'), 'utf8'),
@@ -47,6 +52,9 @@ function makeLlm(log) {
         ],
         max_tokens: options.maxTokens ?? 4096,
         temperature: options.temperature ?? 0,
+        // 与宿主一致:宿主会取该模型的最低档 reasoning effort 并传下来(deepseek-v4.1-flash
+        // 是推理模型,不传会按提供方默认走高档,预算被思考吃光 → 假失败)。
+        ...(options.reasoningEffort ? { reasoning_effort: String(options.reasoningEffort) } : {}),
         stream: true,
       }
       entry.messages = body.messages
@@ -100,9 +108,9 @@ function makeLlm(log) {
       if (entry.text) yield { type: 'block-end', index: 0, block: { type: 'text', text: entry.text } }
       yield { type: 'finish', reason: { kind: last === 'length' ? 'max-tokens' : 'stop' } }
     },
-    listProviders: () => [{ id: 'opencode-go', name: 'OpenCode Go' }],
-    listModels: async () => [{ id: MODEL, provider: 'opencode-go', name: MODEL }],
-    resolveModelInfo: async () => ({ id: MODEL, provider: 'opencode-go', reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }),
+    listProviders: () => [{ id: PROVIDER, name: 'OpenCode Go' }],
+    listModels: async () => [{ id: MODEL, provider: PROVIDER, name: MODEL }],
+    resolveModelInfo: async () => ({ id: MODEL, provider: PROVIDER, reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } }),
   }
 }
 
@@ -142,7 +150,7 @@ async function call(routes, body) {
 async function runOne(routes, text, { answer = '它指的是首页配色方案;第二种是深色主题。', blindTrust = false } = {}) {
   const t0 = Date.now()
   const callsBefore = routes.__log.length
-  const events = await call(routes, { text, provider: 'opencode-go', model: MODEL })
+  const events = await call(routes, { text, provider: PROVIDER, model: MODEL })
   const types = events.filter((e) => e.type !== 'delta').map((e) => e.type)
   const d = events.find((e) => e.type === 'discovery_required')
   const err = events.find((e) => e.type === 'error')
@@ -153,7 +161,7 @@ async function runOne(routes, text, { answer = '它指的是首页配色方案;�
     // 客户端契约:mode:'answer' + 回传宿主给的 session + answers
     const events2 = await call(routes, {
       text,
-      provider: 'opencode-go',
+      provider: PROVIDER,
       model: MODEL,
       // 客户端真实契约:discovery 的字段是**平铺**的(parseDiscoveryInput 从 record 顶层读)
       discovery: {
@@ -230,6 +238,7 @@ const CASES = [
     text: '帮我写一个二次元女孩的生图提示词，海边黄昏。',
     expectUsage: 'IMAGE',
     mustContain: ['二次元'],
+    mustNotContain: ['裙', '外套'], // 忠实优化模式:不得凭空给人物加服装
     maxLen: 1400,
   },
   {
@@ -305,7 +314,7 @@ const CASES = [
     label: 'UI真实失败②-软件评估不得追问',
     text: '帮我看看这个软件哪里不好用还有什么地方可以改怎么弄比较好。',
     expectUsage: 'GENERAL',
-    mustContain: [['分析', '梳理', '整理', '评估'], ['改进', '优化', '建议']],
+    mustContain: [['分析', '梳理', '整理', '评估', '看看'], ['改进', '优化', '建议', '可以改', '怎么改']],
     maxLen: 400,
   },
   {
@@ -314,7 +323,16 @@ const CASES = [
     text: '帮我优化一段可灵图生视频提示词：一个女孩在雨夜街道上缓慢行走，镜头从侧面跟拍。',
     expectUsage: 'VIDEO',
     mustContain: ['女孩', '雨夜', ['侧面', '跟拍']],
+    // 忠实优化模式(m03069 ①):可以理顺表达,不得凭空增加服装 / 神情 / 场景元素 / 光影风格
+    mustNotContain: ['外套', '神情', '忧郁', '霓虹', '冷色调'],
     maxLen: 1400,
+  },
+  {
+    label: 'GENERAL-代码关键词不得判 AGENT',
+    text: '优化一下这段代码：def f(x): return x + 1',
+    expectUsage: 'GENERAL',
+    mustContain: ['def f'],
+    maxLen: 400,
   },
 ]
 

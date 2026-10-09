@@ -1,3 +1,7 @@
+> ⚠️ **已过时（历史记录）** — 本文描述的是 **V3 之前的旧多阶段架构**（意图分析 / 编辑分诊 / 需求发现 / 编译器 / 校验器 / 策略路由），
+> 相关代码已在提交 `435b643` 删除，文中的模块名、文件路径、测试名与 npm 命令**均已失效**。
+> 当前实现与文档入口见 [`CURRENT_STATE.md`](../CURRENT_STATE.md) 与 [`docs/README.md`](README.md)。本文仅作历史记录保留。
+
 # Phase 2 实施报告 —— 信息责任 + 目标契约 + 未决项处置（v2 升级第二段）
 
 > 对应 `docs/PLAN-v2-adaptive-editor.md` §2「Phase 2」与 **`docs/phase2-contract.md`**

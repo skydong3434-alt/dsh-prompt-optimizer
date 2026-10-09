@@ -300,7 +300,21 @@ async function call(routes, body) {
   assert.ok(zhText.includes('与用户输入保持同一语言'), '★ 提示词必须要求与输入同语言(中文进→英文出是真实缺陷)')
   assert.ok(enText.includes('SAME language as the user'), '★ 英文提示词同样必须要求同语言')
   assert.ok(zhText.includes('把它改成第二种'), '★ 必须保留真歧义反例')
-  console.log('✓ v3-6b 提示词规则防线:不得扩展任务方向 / 缺名字不算歧义(真实 UI 失败 ①②)')
+
+  // 忠实优化模式(m03069 ①):可改表达,不得凭空增加创作内容
+  assert.ok(zhText.includes('生成提示词的忠实优化模式'), '★ 提示词必须写明 IMAGE/VIDEO/AUDIO 默认忠实优化模式')
+  assert.ok(zhText.includes('不可以加'), '★ 必须写明不得增加的内容')
+  assert.ok(zhText.includes('深色外套'), '★ 必须保留真实失败反例(深色外套/霓虹灯光/冷色调)')
+  assert.ok(zhText.includes('丰富细节'), '★ 必须保留唯一例外:用户明确要求丰富细节时才可扩写')
+  assert.ok(zhText.includes('不是让你少改'), '★ 必须写明该规则不降低优化能力')
+  assert.ok(enText.includes('Faithful optimization mode'), '★ 英文提示词必须保留同规则')
+  assert.ok(enText.includes('dark coat'), '★ 英文反例同样保留')
+
+  // AGENT 不得靠关键词判定(m03069 ②)
+  assert.ok(zhText.includes('不得靠关键词判定 AGENT'), '★ 提示词必须写明 AGENT 不靠关键词判定')
+  assert.ok(zhText.includes('优化一下这段代码'), '★ 必须保留「优化一下这段代码 → GENERAL」反例')
+  assert.ok(enText.includes('NEVER judge AGENT by keywords'), '★ 英文提示词必须保留同规则')
+  console.log('✓ v3-6b 提示词规则防线:不得扩展任务方向 / 缺名字不算歧义(真实 UI 失败 ①②) / 忠实优化模式 / AGENT 不靠关键词')
 }
 
 // ── 7. 迁移自旧版的关键用户行为(V3 保护) ──────────────────────────────────
