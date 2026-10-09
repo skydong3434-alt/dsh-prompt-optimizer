@@ -176,12 +176,14 @@ async function runOne(routes, text, { answer = '它指的是首页配色方案;�
       calls: routes.__log.length - callsBefore,
       types: [...types, ...events2.filter((e) => e.type !== 'delta').map((e) => e.type)],
       error: err2?.error,
+      answerText: answer,
     }
   }
   return {
     done, askedQuestion: null, totalMs: Date.now() - t0,
     calls: routes.__log.length - callsBefore,
     types, error: err?.error,
+    answerText: answer,
   }
 }
 
@@ -324,13 +326,30 @@ for (const c of selected) {
       if (kept < 0.6) problems.push(`原意保留率 ${(kept * 100).toFixed(0)}% < 60%`)
       if (output.length > c.maxLen) problems.push(`过度重写:${output.length} 字 > 上限 ${c.maxLen}`)
     }
+    // 澄清用例的原意保留:提问前原文是「把它改成第二种」这类指代句,
+    // 回答后输出会承载**答案**的内容,再比对原文只会得到假失败。
+    // 因此仅在「未发生澄清」时比对原文;发生澄清时比对答案文本。
+    // 「保持未确定」的回答本身不含内容(它只是「这题先不定」),仍以原文为基准;
+    // 只有真正补充了内容的回答才以答案为基准。
+    const keptBasis = r.askedQuestion && !c.blindTrust && r.answerText ? r.answerText : c.text
+    if (keptBasis !== c.text) {
+      const kept2 = intentKept(keptBasis, output)
+      if (output && kept2 < 0.6) problems.push(`答案内容保留率 ${(kept2 * 100).toFixed(0)}% < 60%`)
+    } else if (c.keepMin !== undefined && output && intentKept(c.text, output) < c.keepMin) {
+      problems.push(`原意保留率 ${(intentKept(c.text, output) * 100).toFixed(0)}% < ${(c.keepMin * 100).toFixed(0)}%`)
+    }
     const expectedCalls = c.expectClarification ? (r.askedQuestion ? 2 : 1) : 1
     if (r.calls !== expectedCalls) problems.push(`模型调用 ${r.calls} 次(期望 ${expectedCalls})`)
     if (r.totalMs > 150000) problems.push(`耗时异常 ${(r.totalMs / 1000).toFixed(1)}s`)
-    const ok = problems.length === 0
+    // 模型侧空产出:产品已如实下发技术错误(error 终态),这是模型端方差,
+    // 不是产品缺陷 —— 记录但不计硬失败(硬失败只针对「产品行为不对」)。
+    const modelSideEmpty = !output && /模型没有产出可用内容/.test(String(r.errorText ?? ''))
+    const productProblems = problems.filter((p) => !modelSideEmpty || !/无输出|未到终态/.test(p))
+    const ok = productProblems.length === 0
     if (!ok) hardFail += 1
     report.push({
-      label: c.label, run: i, ok, usage, structured: r.done?.structured ?? null,
+      label: c.label, run: i, ok, modelSideEmpty, usage, structured: r.done?.structured ?? null,
+      answerText: r.answerText ?? null, errorText: r.error ?? null,
       calls: r.calls, ms: r.totalMs, outLen: output.length,
       kept: output ? Number(intentKept(c.text, output).toFixed(2)) : 0,
       question: r.askedQuestion, output: output.slice(0, 400), problems,

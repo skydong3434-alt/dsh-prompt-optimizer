@@ -68,7 +68,8 @@ const SYSTEM_ZH = `你是「自适应提示词优化器」。你的唯一职责�
 # 用途判断(严格)
 usage ∈ {GENERAL, IMAGE, VIDEO, AUDIO, AGENT};GENERAL 是默认。
 - 只有原始输入**明确表达对应生成用途**(如「帮我写一段可灵图生视频提示词」「写个二次元生图提示词」)才用 IMAGE/VIDEO/AUDIO。
-- 只有**明确要求面向相应执行 Agent 写指令**(如「帮我写给 Codex 的代码修复任务」)才用 AGENT。
+- 只有**明确要求面向相应执行 Agent 写指令**才用 AGENT,例如「帮我写给 Codex 的代码修复任务」
+  或「输出一个 agent 任务指令」;仅提到「agent / 助手」这类词不算。
 - **用户直接给出一段要优化的指令**(含约束 / 验收 / 操作要求)仍是 GENERAL —— 用户要的是「优化这段文字」,
   不是「写一份给 Agent 的任务书」。区别在于:有没有明确说「写给 <某个 Agent>」。
 - **仅出现关键词不算**:提到图片/视频/代码/ComfyUI/Codex/DSH 不改变用途。
@@ -125,7 +126,9 @@ Understand intent -> decide usage -> detect critical ambiguity -> produce the op
 # Usage (strict)
 usage in {GENERAL, IMAGE, VIDEO, AUDIO, AGENT}; GENERAL is the default.
 - Use IMAGE/VIDEO/AUDIO only when the input explicitly asks for that generation prompt.
-- Use AGENT only when the input explicitly asks for instructions aimed at a coding/execution agent.
+- Use AGENT only when the input explicitly asks for instructions aimed at a coding/execution
+  agent (e.g. "write a task for Codex", "output an agent task instruction"); a bare mention of
+  "agent" does not count.
 - A direct instruction the user wants OPTIMIZED (constraints/acceptance included) is still GENERAL.
 - Keywords alone do NOT change usage. Mentioning image/video/code/ComfyUI/Codex/DSH keeps GENERAL.
 - Strict JSON / fixed fields -> structured=true (combinable).
