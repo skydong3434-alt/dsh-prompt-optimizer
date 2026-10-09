@@ -22,6 +22,7 @@ import {
   conservativeOutput,
   stripThinking,
   previewableText,
+  assessV3Safety,
 } from '../lib/core/v3.js'
 
 // ── 1. 用途判定严格性(机械兜底 + 提示词约束) ────────────────────────────────
@@ -414,7 +415,7 @@ async function call(routes, body) {
 
   // ② IMAGE:不得为补齐模板强行加入景别/机位/布光/构图(m03556 二)
   assert.ok(zhText.includes('不要为了补齐模板,强行加入景别、机位、布光和构图方案'), '★ IMAGE 不得为补模板强加景别/机位/布光/构图')
-  for (const focus of ['主体描述', '主体与背景的空间关系', '已有风格表达', '环境的自然特征', '画面信息的组织与清晰度']) {
+  for (const focus of ['主体描述', '主体与背景的关系', '已有风格表达', '环境的自然特征', '画面信息的组织与清晰度']) {
     assert.ok(zhText.includes(focus), `★ IMAGE 重点提升项缺失:${focus}`)
   }
   assert.ok(!zhText.includes('暖色夕阳从侧后方打光'), '★ 旧示例不得再指定布光方向(擅自创作)')
@@ -431,6 +432,135 @@ async function call(routes, body) {
   assert.ok(zhText.includes('平台与生成模式必须逐字保留'), '★ 必须写明平台/模式名逐字保留')
   assert.ok(zhText.includes('写丢平台名 = 不合格'), '★ 必须写明写丢平台名 = 不合格')
   console.log('✓ v3-6c 创作边界防线:禁止项 8 条 + IMAGE/VIDEO 重点提升 + 用户明确指定时保留')
+}
+
+// ── 6d. m03813 最小修复:F1 自相矛盾示例 / F2 比例原则 / F3 边界补项 / F4 澄清优先级 / F6 格式作用域 ──
+{
+  const zhText = String(buildV3Messages({ rawInput: '测试', language: 'zh' }).find((m) => m.role === 'system').content)
+  const enText = String(buildV3Messages({ rawInput: 'test', language: 'en' }).find((m) => m.role === 'system').content)
+
+  // F1 真实失败 T08:IMAGE 逐字示例本身就写了景别/后景,而规则又禁止 —— 模型逐字复现示例。
+  // 修法是把**示例**换掉,并把旧写法明确写成反例(反例里当然会出现这些词,所以断言的是
+  // 「旧示例整句已不在」+「新示例已就位」+「反例说明已就位」)。
+  assert.ok(!zhText.includes('背景是黄昏的海面;女孩位于画面中景'), '★ IMAGE 旧示例整句必须被替换')
+  assert.ok(zhText.includes('背景是黄昏时分的海面;天空与海面呈现黄昏的暖橙色调'), '★ IMAGE 新示例必须就位(不含景别/机位)')
+  assert.ok(zhText.includes('这类构图设定属于景别 / 机位范畴'), '★ 必须把旧写法明确写成反例')
+  assert.ok(!enText.includes('with a dusk ocean behind her; the girl is'), '★ 英文旧示例整句必须被替换')
+  assert.ok(enText.includes('the sky and\nsea carry dusk'), '★ 英文新示例必须就位(不含景别/机位)')
+  assert.ok(enText.includes('decisions the input never made'), '★ 英文必须把旧写法写成反例')
+  assert.ok(!zhText.includes('(前景 / 中景 / 背景的位置关系)'), '★ IMAGE 重点提升项不得再用景别措辞')
+
+  // F2 比例原则(T04/T06/T07/T13/T26 过度扩写)
+  assert.ok(zhText.includes('比例原则(避免过度扩写)'), '★ 必须写明比例原则')
+  for (const rule of [
+    '不得再追加同层维度或交付要求',
+    '只补充**回答这个问题所必需**的少量维度',
+    '直接服务于用户问的那件事',
+    '以**回答问题**为中心',
+    '保持**同等量级**的输出',
+  ]) {
+    assert.ok(zhText.includes(rule), `★ 比例原则缺失:${rule}`)
+  }
+  assert.ok(enText.includes('PROPORTIONALITY (avoid over-expansion)'), '★ 英文必须写明同规则')
+
+  // F3 边界补项(T10 花瓣飘落 / T17 初始朝向 / T18 挥动数次 / T31 结构化字段用建议填充)
+  for (const rule of [
+    '为人物指定原文没有的初始朝向 / 起始姿态 / 起始位置',
+    '为动作指定原文没有的次数、时长或速度数值',
+    '增加原文没有的动态画面事件',
+    '在结构化字段(JSON 等)里用「建议」填充用户没有指定的具体创作决定',
+  ]) {
+    assert.ok(zhText.includes(rule), `★ 边界补项缺失:${rule}`)
+  }
+  assert.ok(zhText.includes('静态属性:色调、光线氛围、天气;不引入新的动态事件'), '★ 已有环境的自然特征必须限定为静态属性')
+  assert.ok(enText.includes('never a new moving event'), '★ 英文同限定')
+
+  // F4 澄清优先级(T32:识别到了最关键的缺失信息却没有问)
+  assert.ok(zhText.includes('要做什么东西 / 解决什么问题**都没说清'), '★ 必须写明对象未明时先问最关键信息')
+  assert.ok(zhText.includes('不要问方向菜单'), '★ 方向问题只在对象明确时才有意义')
+  assert.ok(enText.includes('ask THAT most critical information first'), '★ 英文同规则')
+
+  // F6 格式作用域(T31:JSON 作用在交付结果还是下游任务)
+  assert.ok(zhText.includes('格式作用域'), '★ 必须写明格式作用域')
+  assert.ok(zhText.includes('按「你的交付结果本身」处理'), '★ 默认按交付结果本身处理')
+  assert.ok(zhText.includes('把这条格式要求写进优化后的提示词正文'), '★ 明确下游时写进正文')
+  assert.ok(enText.includes('FORMAT SCOPE'), '★ 英文同规则')
+
+  console.log('✓ v3-6d m03813 修复防线:F1 示例反例化 + F2 比例原则 + F3 边界补项 + F4 澄清优先级 + F6 格式作用域')
+}
+
+// ── 6e. assessV3Safety:硬约束提取与保留判定(m03813 F5 真实误报回归) ──────────
+{
+  // ① 真实误报 T04:「区别」的「别」不是否定词。
+  const t04 = assessV3Safety({
+    rawInput: '帮我分析一下Codex和Claude Code有什么区别，哪个更适合我。',
+    optimizedPrompt: '请分析 Codex 与 Claude Code 的主要区别，并说明哪个更适合我的使用场景。',
+  })
+  assert.equal(t04.constraints.length, 0, '★ 「区别」不得被提取成硬约束')
+  assert.equal(t04.hardConstraintKept, true, '★ 无约束时必须视为保留')
+
+  // ② 真实误报 T29:语义等价但措辞不同,必须判为保留。
+  const t29 = assessV3Safety({
+    rawInput: '帮我审查这个项目的代码质量，只检查不修改任何文件，并输出问题清单。',
+    optimizedPrompt: '请审查该项目的代码质量：只读操作，不允许修改、创建、删除任何文件；输出问题清单。',
+  })
+  assert.equal(t29.hardConstraintKept, true, '★ 改写后的等价约束必须判为保留(T29)')
+  assert.ok(t29.constraints.some((c) => c.includes('修改')), '★ T29 必须提取到「修改」类约束')
+
+  // ③ 真实误报 T30:同上。
+  const t30 = assessV3Safety({
+    rawInput: '整理一份数据分析报告，不得编造数据，来源要标注清楚。',
+    optimizedPrompt: '整理一份数据分析报告：不得编造、补全或推测任何数据；所有数据必须标注来源。',
+  })
+  assert.equal(t30.hardConstraintKept, true, '★ 改写后的等价约束必须判为保留(T30)')
+
+  // ④ 真丢约束时仍必须报警(不得因为放宽比对而失去告警能力)。
+  const dropped = assessV3Safety({
+    rawInput: '帮我优化这段提示词，不要修改任何文件，并给出精简建议。',
+    optimizedPrompt: '请阅读该项目并给出精简建议，让结构更清晰。',
+  })
+  assert.equal(dropped.hardConstraintKept, false, '★ 约束真的丢失时必须报警')
+  assert.ok(dropped.constraints.length > 0, '★ 必须提取到约束')
+
+  // ⑤ 「不可避免」不是约束;「先不要卸载」是约束。
+  const idiom = assessV3Safety({ rawInput: '评估这次重构，不可避免会有风险。', optimizedPrompt: '评估这次重构的风险。' })
+  assert.equal(idiom.constraints.length, 0, '★ 「不可避免」不得被提取成约束')
+  const uninstall = assessV3Safety({ rawInput: '先不要卸载这个依赖。', optimizedPrompt: '暂时不要卸载这个依赖。' })
+  assert.equal(uninstall.hardConstraintKept, true, '★ 「先不要卸载」必须判为保留')
+
+  // ⑦ 真实误报 T30 的实际优化稿:宾语被概括掉(数据 → 内容),但「否定 + 同一动作词」还在。
+  const t30real = assessV3Safety({
+    rawInput: '帮我优化提示词：将用户输入的客户信息整理成JSON，包含公司名称、联系人、联系电话和所在城市四个字段，不允许编造数据。',
+    optimizedPrompt:
+      '请将用户输入的客户信息整理成 JSON 输出，包含以下四个字段：公司名称、联系人、联系电话、所在城市。\n要求：\n1. 仅使用输入文本中明确出现的信息，不得编造、推测或自行补全任何内容。',
+  })
+  assert.equal(t30real.hardConstraintKept, true, '★ 「编造数据」被概括成「任何内容」时仍必须判为保留(T30 真实优化稿)')
+
+  // ⑧ 反向防线:动作词还在、但否定已经不在(或被换成别的动作)时必须仍然报警。
+  const rewordedDrop = assessV3Safety({
+    rawInput: '帮我优化这段提示词，不要删除文件，先给出精简建议。',
+    optimizedPrompt: '请阅读该项目，保留所有文件，然后给出精简建议。',
+  })
+  assert.equal(rewordedDrop.hardConstraintKept, false, '★ 动作词还在但否定没了,必须仍然报警')
+  const swappedAction = assessV3Safety({
+    rawInput: '帮我优化这段提示词，不要删除文件，先给出精简建议。',
+    optimizedPrompt: '请阅读该项目，不要修改文件，然后给出精简建议。',
+  })
+  assert.equal(swappedAction.hardConstraintKept, false, '★ 否定换成了别的动作,必须仍然报警')
+
+  // ⑥ 条件式不可逆边界(既有行为不得回归)。
+  assert.equal(
+    assessV3Safety({ rawInput: '清理仓库', optimizedPrompt: '删除所有未跟踪文件前，请先经我确认。' }).irreversibleUnconditional,
+    false,
+    '★ 有确认条件的不可逆操作不算无条件',
+  )
+  assert.equal(
+    assessV3Safety({ rawInput: '清理仓库', optimizedPrompt: '删除所有未跟踪文件。' }).irreversibleUnconditional,
+    true,
+    '★ 无条件的不可逆操作必须报出',
+  )
+
+  console.log('✓ v3-6e assessV3Safety:区别不误提取 + T29/T30 等价改写放行(含宾语概括) + 真丢约束仍报警 + 成语/条件式边界')
 }
 
 // ── 7. 迁移自旧版的关键用户行为(V3 保护) ──────────────────────────────────

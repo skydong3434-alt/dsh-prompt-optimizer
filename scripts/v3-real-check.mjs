@@ -33,6 +33,9 @@ if (!KEY) {
 const argv = process.argv.slice(2)
 const RUNS = Number(argv[argv.indexOf('--runs') + 1]) || 2
 const ONLY = argv.includes('--only') ? argv[argv.indexOf('--only') + 1] : null
+// --file <cases.json>:跑一批**只观察不判定**的自定义输入(用于人工验收复现,
+// 例如 35 项 UI 人工测试的原文)。每项 {label, text, answer?, blindTrust?}。
+const FILE = argv.includes('--file') ? argv[argv.indexOf('--file') + 1] : null
 
 function makeLlm(log) {
   return {
@@ -253,8 +256,10 @@ const CASES = [
   },
   {
     // m03336 §八 案例 D:IMAGE 必须具备生图提示词的专业优化能力。
-    // 可以完善:主体与背景关系 / 空间层次 / 黄昏自然光影 / 构图视角 / 风格表达。
+    // 可以完善:主体与背景关系 / 黄昏自然光影 / 风格表达 / 画面信息组织。
     // 不得凭空增加:具体服装 / 未指定的发型 / 新人物 / 新动作 / 无关场景道具。
+    // m03813 F1:原文没写景别 / 机位 / 布光,输出里也不得出现 —— 因此 improveGroups 不再接受
+    // 「中景 / 前景 / 后景」(它们与下面的 mustNotMatch 自相矛盾,会造成假通过)。
     label: '案例D-IMAGE生图提示词',
     text: '帮我优化生图提示词：二次元女孩站在海边，背景是黄昏。',
     expectUsage: 'IMAGE',
@@ -263,7 +268,7 @@ const CASES = [
     // m03556 一/二:不得擅自指定景别、机位、布光、景深虚化。
     mustNotMatch: /(特写|近景|全景|远景|俯视|仰视|俯拍|仰拍|机位|固定镜头|运动镜头|景深|虚化|打光|布光|侧逆光|逆光|侧光|顶光)/,
     improveGroups: [
-      ['构图', '视角', '画面', '中景', '前景', '后景', '层次', '站位'],
+      ['构图', '视角', '画面', '层次', '站位', '背景'],
       ['光影', '光线', '夕阳', '色调', '暖色', '黄昏'],
       ['风格', '插画', '写实', '氛围', '质感'],
     ],
@@ -367,15 +372,18 @@ const CASES = [
     maxLen: 600,
   },
   {
-    // m03336 §八 案例 B:软件评估不是「把问句写正式」,而是整理出明确的评估维度与改进建议要求。
+    // m03336 §八 案例 B:软件评估不是「把问句写正式」,而是整理出明确的问题与改进要求。
+    // m03813 判据重新对齐:该输入只有 20 余字,按新的「比例原则」允许**最小必要修改**,
+    // 因此不再强制出现元词「维度 / 方面」——只要求「识别问题」与「给出改进」两类实质内容
+    // 至少命中 2 组;专业化的具体维度(功能 / 流程 / 交互 / 性能…)属加分项,单独成组。
     label: '案例B-软件评估(GENERAL 专业化)',
     text: '帮我看看这个软件哪里不好用，还有什么地方可以改。',
     expectUsage: 'GENERAL',
     mustContain: [['分析', '梳理', '整理', '评估', '看看'], ['改进', '优化', '建议', '可以改', '怎么改']],
     improveGroups: [
-      ['评估维度', '分析维度', '几个方面', '哪些方面', '维度', '方面'],
-      ['改进建议', '优化建议', '改进方向', '改进点', '可改进'],
-      ['优先级', '优先', '排序', '重要程度'],
+      ['问题', '不好用', '缺陷', '痛点', '不足', '哪里'],
+      ['改进', '优化', '建议', '修改方向', '怎么改', '改成'],
+      ['方面', '维度', '功能', '流程', '交互', '体验', '性能', '稳定性', '设计', '影响', '优先级', '易用性'],
     ],
     improveMin: 2,
     maxLen: 700,
@@ -406,7 +414,11 @@ const CASES = [
   },
 ]
 
-const selected = ONLY ? CASES.filter((c) => c.label.includes(ONLY)) : CASES
+const selected = FILE
+  ? JSON.parse(readFileSync(FILE, 'utf8')).map((c) => ({ ...c, adHoc: true }))
+  : ONLY
+    ? CASES.filter((c) => c.label.includes(ONLY))
+    : CASES
 if (!selected.length) {
   console.error(`没有匹配 --only ${ONLY} 的用例`)
   process.exit(2)
@@ -432,7 +444,10 @@ for (const c of selected) {
     const usage = r.done?.usage ?? '—'
     const problems = []
     if (!r.done) problems.push(`未到终态(${r.types.join('→')})${r.error ? ` ${r.error}` : ''}`)
-    if (c.expectClarification) {
+    if (c.adHoc) {
+      // --file 模式:只观察不判定(人工验收复现用)。保留两项通用事实检查。
+      if (output && looksLikeProtocolEnvelope(output)) problems.push('协议信封泄漏到正文')
+    } else if (c.expectClarification) {
       // 歧义用例:可以提问后继续,也可以直接交付(不问更好);但绝不能问完不交付。
       if (!output) problems.push(r.askedQuestion ? '回答后仍无输出' : '既未提问也无输出')
     } else if (c.optionalClarification) {
@@ -443,7 +458,7 @@ for (const c of selected) {
       if (r.askedQuestion) problems.push(`不该提问却问了:「${r.askedQuestion}」`)
       if (!output) problems.push('无输出')
     }
-    if (output) {
+    if (output && !c.adHoc) {
       const accepted = c.acceptUsage ?? [c.expectUsage]
       if (!accepted.includes(usage)) problems.push(`用途=${usage} 期望=${accepted.join('/')}`)
       // m03336 六:目标描述类输入允许先问**一个**任务方向问题。
@@ -492,11 +507,13 @@ for (const c of selected) {
     // 只有真正补充了内容的回答才以答案为基准。
     // 格式契约类用例(声明 mustContain)的真实保真是「字段是否齐」,不是原文字符覆盖率:
     // 输出是一个 JSON 对象,原样覆盖原文中文既不可能也不必要。此类跳过覆盖率检查。
-    const keptBasis = c.mustContain
+    const keptBasis = c.adHoc
       ? null
-      : r.askedQuestion && !c.blindTrust && r.answerText
-        ? r.answerText
-        : c.text
+      : c.mustContain
+        ? null
+        : r.askedQuestion && !c.blindTrust && r.answerText
+          ? r.answerText
+          : c.text
     if (keptBasis && keptBasis !== c.text) {
       const kept2 = intentKept(keptBasis, output)
       if (output && kept2 < 0.6) problems.push(`答案内容保留率 ${(kept2 * 100).toFixed(0)}% < 60%`)
@@ -504,20 +521,24 @@ for (const c of selected) {
       problems.push(`原意保留率 ${(intentKept(c.text, output) * 100).toFixed(0)}% < ${(c.keepMin * 100).toFixed(0)}%`)
     }
     const expectedCalls = c.expectClarification || c.optionalClarification ? (r.askedQuestion ? 2 : 1) : 1
-    if (r.calls !== expectedCalls) problems.push(`模型调用 ${r.calls} 次(期望 ${expectedCalls})`)
+    if (!c.adHoc && r.calls !== expectedCalls) problems.push(`模型调用 ${r.calls} 次(期望 ${expectedCalls})`)
     if (r.totalMs > 150000) problems.push(`耗时异常 ${(r.totalMs / 1000).toFixed(1)}s`)
     // 模型侧空产出:产品已如实下发技术错误(error 终态),这是模型端方差,
     // 不是产品缺陷 —— 记录但不计硬失败(硬失败只针对「产品行为不对」)。
     const modelSideEmpty = !output && /模型没有产出可用内容/.test(String(r.error ?? ''))
-    const productProblems = problems.filter((p) => !modelSideEmpty || !/无输出|未到终态/.test(p))
+    const productProblems = c.adHoc
+      ? []
+      : problems.filter((p) => !modelSideEmpty || !/无输出|未到终态/.test(p))
     const ok = productProblems.length === 0
     if (!ok) hardFail += 1
     report.push({
       label: c.label, run: i, ok, modelSideEmpty, usage, structured: r.done?.structured ?? null,
+      // 来源校验结果(宿主 assessV3Safety.hardConstraintKept → done.provenance_ok)
+      provenanceOk: r.done ? r.done.provenance_ok !== false : null,
       answerText: r.answerText ?? null, errorText: r.error ?? null,
       calls: r.calls, ms: r.totalMs, outLen: output.length,
       kept: output ? Number(intentKept(c.text, output).toFixed(2)) : 0,
-      question: r.askedQuestion, output: output.slice(0, 400), problems,
+      question: r.askedQuestion, output: output.slice(0, 2000), problems,
     })
   }
 }
