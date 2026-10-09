@@ -5,7 +5,7 @@
 > 这页是写给第一次接触 dsh 插件的朋友的,全程大白话,不讲技术细节。
 > 想看完整功能说明、兼容性、测试覆盖?请回[完整版 README](README.md)。
 
-> ⭐ 本仓库是增强版 **DSH Adaptive Prompt Optimizer**(v0.3.0-apo):装好后**不用选任务类型**,
+> ⭐ 本仓库是增强版 **DSH Adaptive Prompt Optimizer**(v0.3.1-apo):装好后**不用选任务类型**,
 > 直接输入、点「✨ 优化」就行 —— 它自己判断你要做什么、该写成什么形态、需要改多少。
 > **普通请求一次就完成**;只有原文出现指代不明(「那个旧的」「这个」,而且上下文里也找不到
 > 对象)时,它才问**一个**关键问题,你答完立刻继续。能自己查的(版本、路径、接口地址这类)
@@ -52,9 +52,20 @@
 
 ## 三步装好
 
+> **先看这里(本 fork)**:本 fork **没有发布到 npm,Release 里也没有 `.tgz` 资产**,所以下面「下载插件包」拿到的是**上游基线版本**(不含本 fork 的单次调用架构)。装本 fork 请直接用 GitHub 安装:
+>
+> ```sh
+> # 桌面端(DSH Desktop,用应用自带的 CLI,profile 名是 desktop)
+> dsh plugin --profile desktop add github:skydong3434-alt/dsh-prompt-optimizer
+> # 网页版
+> dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer
+> ```
+>
+> 装完要**完全退出并重启** DSH Desktop(桌面端)/ 重启 `dsh web`(网页版)。下面的三步是上游基线版本的装法,留作对照。
+
 ### 第 1 步:下载插件包
 
-打开 [Releases 页面](https://github.com/Y1X1n/dsh-prompt-optimizer/releases/latest),下载文件名形如 `y1x1n-dsh-prompt-optimizer-<版本号>.tgz` 的插件包。
+打开 [Releases 页面](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest),下载文件名形如 `y1x1n-dsh-prompt-optimizer-<版本号>.tgz` 的插件包。(本 fork 的 Release 目前只有版本说明,没有这个文件 —— 装本 fork 请看上面的 GitHub 安装。)
 
 ### 第 2 步:安装
 
@@ -101,7 +112,7 @@ dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
 <summary><b>点了 ✨ 没反应?</b></summary>
 
 多半是模型没配好。去 **设置 → 模型** 配好至少一个提供方,再试。
-还不行就按 F12 打开浏览器控制台,找 `[dsh-prompt-optimizer]` 开头的红色日志,拿去[提 issue](https://github.com/Y1X1n/dsh-prompt-optimizer/issues)。
+还不行就按 F12 打开浏览器控制台,找 `[dsh-prompt-optimizer]` 开头的红色日志,拿去[提 issue](https://github.com/skydong3434-alt/dsh-prompt-optimizer/issues)。
 </details>
 
 <details>
@@ -136,4 +147,4 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 
 ---
 
-觉得好用?给[仓库](https://github.com/Y1X1n/dsh-prompt-optimizer)点个 ⭐ 就是最大的支持。有问题欢迎[提 issue](https://github.com/Y1X1n/dsh-prompt-optimizer/issues)。
+觉得好用?给[仓库](https://github.com/skydong3434-alt/dsh-prompt-optimizer)点个 ⭐ 就是最大的支持。有问题欢迎[提 issue](https://github.com/skydong3434-alt/dsh-prompt-optimizer/issues)。

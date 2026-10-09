@@ -4,24 +4,24 @@
 > `@y1x1n/dsh-prompt-optimizer`, MIT). It upgrades the fork from a fixed-template prompt
 > *expander* into an **adaptive prompt editor**: it detects the task intent, prompt type,
 > target model and how much to change, asks only the few decisions that truly need you,
-> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.3.0-apo`
-> (previous: `v0.1.0-apo`; `v0.2.0-apo`'s v2 editor architecture was replaced by V3 and never released); design provenance & license boundaries in
+> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.3.1-apo`
+> (previous: `v0.3.0-apo`; `v0.1.0-apo` was the first publishable version; `v0.2.0-apo`'s v2 editor architecture was replaced by V3 and never released); design provenance & license boundaries in
 > [NOTICE.md](NOTICE.md); changelog in [CHANGELOG.md](CHANGELOG.md); release notes in
-> [docs/release-notes-v0.3.0-apo.md](docs/release-notes-v0.3.0-apo.md).
+> [docs/release-notes-v0.3.1-apo.md](docs/release-notes-v0.3.1-apo.md).
 
 [中文](README.md) | **English** | 🐣 [Beginner guide (中文)](README.simple.md)
 
-[![CI](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml)
+[![CI](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@y1x1n/dsh-prompt-optimizer?label=npm&color=cb3837)](https://www.npmjs.com/package/@y1x1n/dsh-prompt-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/Y1X1n/dsh-prompt-optimizer?label=release)](https://github.com/Y1X1n/dsh-prompt-optimizer/releases/latest)
-[![Stars](https://img.shields.io/github/stars/Y1X1n/dsh-prompt-optimizer?logo=github)](https://github.com/Y1X1n/dsh-prompt-optimizer/stargazers)
+[![Release](https://img.shields.io/github/v/release/skydong3434-alt/dsh-prompt-optimizer?label=release)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest)
+[![Stars](https://img.shields.io/github/stars/skydong3434-alt/dsh-prompt-optimizer?logo=github)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/stargazers)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the composer, one click analyzes and rewrites the prompt draft in your input box, with results **streamed section by section over SSE**. The optimization call reuses the current session's model route by default (read live on every click — switching models in the session takes effect immediately).
 
 - **Host side**: registers two routes, `POST /dsh-prompt-optimizer/optimize` (SSE streaming) and `POST /dsh-prompt-optimizer/test-model` (connectivity probe), and drives `ctx.llm` for the "analyze + rewrite" call.
-- **Client side**: injects the button into the `conversation.input.right` slot, the result panel into `conversation.input.dock` (a full-width row above the input card, same family as TodoDock — renders on the new-session screen too and never covers the input box), and a collapsible settings card into `settings.plugin.item`. UI copy follows the DSH interface language (中文 / English).
+- **Client side**: injects the button into the `conversation.input.right` slot, the result panel into `conversation.input.dock` (a full-width row above the input card, same family as TodoDock — renders on the new-session screen too and never covers the input box), and a collapsible settings card into the settings page (preferring `settings.plugins.tab` on 0.2.0+, with 0.1.x's `settings.plugin.item` kept as a fallback; a slot is registered **only when the host actually declares it**, so an undeclared slot can never throw). UI copy follows the DSH interface language (中文 / English).
 
 ## Contents
 
@@ -131,6 +131,11 @@ Image Generation · Video Generation (text-to-video / image-to-video / first-las
 
 Prerequisite: the `dsh` CLI (an environment where `npx @deepseek-ai/dsh web` works).
 
+> **How to install *this* fork**: this fork is **not published to npm and ships no tarball asset
+> in its Releases**, so the "From npm" and "From a Release" steps below install the **upstream
+> baseline** (without this fork's V3 single-call architecture and enhancements). To install this
+> fork, use [From GitHub](#from-github) with `github:skydong3434-alt/dsh-prompt-optimizer`.
+
 ### From npm (recommended, simplest)
 
 ```sh
@@ -139,7 +144,9 @@ dsh plugin --profile web add @y1x1n/dsh-prompt-optimizer
 
 ### From a Release (tarball, no build)
 
-Download `y1x1n-dsh-prompt-optimizer-<version>.tgz` from the [Releases page](https://github.com/Y1X1n/dsh-prompt-optimizer/releases/latest), then install the local file:
+Download `y1x1n-dsh-prompt-optimizer-<version>.tgz` from the [Releases page](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest), then install the local file:
+
+> **Note**: this fork's Releases currently contain **no tarball asset** (release notes only), so this step actually pulls the upstream artifact. To install this fork, use [From GitHub](#from-github) below.
 
 ```sh
 dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<version>.tgz
@@ -161,10 +168,10 @@ Then (re)start `dsh web` and open the Web UI — the button appears next to the 
 ### From GitHub
 
 ```sh
-dsh plugin --profile web add github:Y1X1n/dsh-prompt-optimizer
+dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer
 ```
 
-Git installs pull the source; this package self-builds at install time via its `prepare` script (only Node needed, no monorepo). pnpm ≥10 refuses to run build scripts on first install — add the package name to `allowBuilds` in that profile's `pnpm-workspace.yaml` as the terminal prompt suggests, then retry. Pinning a commit is recommended: `github:Y1X1n/dsh-prompt-optimizer#<sha>`.
+Git installs pull the source; this package self-builds at install time via its `prepare` script (only Node needed, no monorepo). pnpm ≥10 refuses to run build scripts on first install — add the package name to `allowBuilds` in that profile's `pnpm-workspace.yaml` as the terminal prompt suggests, then retry. Pinning a commit is recommended: `github:skydong3434-alt/dsh-prompt-optimizer#<sha>`.
 
 ### Uninstall
 

@@ -4,22 +4,22 @@
 > 从「固定模板式 Prompt 扩写器」升级为**自适应提示词编辑器**：自动判断任务意图、
 > Prompt 类型、目标模型与需要修改多少，只在真正需要你决定时问少量关键问题，
 > 且**不自动发送 / 不自动执行 / 不自动决策**。
-> 发布版本 `v0.3.0-apo`（上一版 `v0.1.0-apo`；`v0.2.0-apo` 的 v2 编辑器架构已由 V3 替换，未发布）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
-> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.3.0-apo.md](docs/release-notes-v0.3.0-apo.md)。
+> 发布版本 `v0.3.1-apo`（上一版 `v0.3.0-apo`；`v0.1.0-apo` 为首个可发布版本；`v0.2.0-apo` 的 v2 编辑器架构已由 V3 替换，未发布）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
+> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.3.1-apo.md](docs/release-notes-v0.3.1-apo.md)。
 
 **中文** | [English](README.en.md) | [🐣 小白版](README.simple.md)
 
-[![CI](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Y1X1n/dsh-prompt-optimizer/actions/workflows/ci.yml)
+[![CI](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@y1x1n/dsh-prompt-optimizer?label=npm&color=cb3837)](https://www.npmjs.com/package/@y1x1n/dsh-prompt-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/Y1X1n/dsh-prompt-optimizer?label=release)](https://github.com/Y1X1n/dsh-prompt-optimizer/releases/latest)
-[![Stars](https://img.shields.io/github/stars/Y1X1n/dsh-prompt-optimizer?logo=github)](https://github.com/Y1X1n/dsh-prompt-optimizer/stargazers)
+[![Release](https://img.shields.io/github/v/release/skydong3434-alt/dsh-prompt-optimizer?label=release)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest)
+[![Stars](https://img.shields.io/github/stars/skydong3434-alt/dsh-prompt-optimizer?logo=github)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/stargazers)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 DeepSeek Harness 插件:在会话输入框(发送栏)旁提供一个「优化」按钮(✨ 图标),一键分析并优化当前输入的提示词草稿,**结果经 SSE 流式逐段上屏**。优化调用默认复用当前会话的模型路由(每次点击实时读取,会话里切换模型立即生效)。
 
 - **Host 半侧**:注册 `POST /dsh-prompt-optimizer/optimize`(SSE 流式)与 `POST /dsh-prompt-optimizer/test-model`(连通性探活)两条路由,调用 `ctx.llm` 完成「分析 + 改写」。
-- **Client 半侧**:向 `conversation.input.right` 槽位注入按钮,向 `conversation.input.dock` 注入结果面板(输入卡上方整行、与 TodoDock 同族,新会话界面也渲染,且不遮挡输入框),向 `settings.plugin.item` 注入可折叠的设置卡片(设置页自动获得配置界面,无需单独开发页面)。界面文案跟随 DSH 界面语言(中文 / English)。
+- **Client 半侧**:向 `conversation.input.right` 槽位注入按钮,向 `conversation.input.dock` 注入结果面板(输入卡上方整行、与 TodoDock 同族,新会话界面也渲染,且不遮挡输入框),向设置页注入可折叠的设置卡片(优先 `settings.plugins.tab`(0.2.0+),并兼容 0.1.x 的 `settings.plugin.item`;**只在宿主确实声明了该槽位时才注册**,不会因未声明槽位抛错)。界面文案跟随 DSH 界面语言(中文 / English)。
 
 ## 目录
 
@@ -131,6 +131,11 @@ Image Generation（生图提示词）· Video Generation（文生 / 图生 / 首
 
 前提:已安装 `dsh` CLI(`npx @deepseek-ai/dsh web` 可用的环境)。
 
+> **本 fork 的安装方式**:本 fork **未发布到 npm、也未在 Release 中提供 tarball 资产**。
+> 因此下方「从 npm 安装」与「从 Release 安装」装到的是**上游基线代码**(不含本 fork 的
+> V3 单次调用架构与增强)。要安装本 fork,请用 [从 GitHub 安装](#从-github-安装) 并指向
+> `github:skydong3434-alt/dsh-prompt-optimizer`。
+
 ### 从 npm 安装(推荐,最简)
 
 ```sh
@@ -139,7 +144,9 @@ dsh plugin --profile web add @y1x1n/dsh-prompt-optimizer
 
 ### 从 Release 安装(tarball,免构建)
 
-到 [Releases 页面](https://github.com/Y1X1n/dsh-prompt-optimizer/releases/latest) 下载 `y1x1n-dsh-prompt-optimizer-<版本号>.tgz`,再安装本地文件:
+到 [Releases 页面](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest) 下载 `y1x1n-dsh-prompt-optimizer-<版本号>.tgz`,再安装本地文件:
+
+> **注意**:本 fork 的 Release 目前**不含 tarball 资产**(只有版本说明),所以这一步实际取到的是上游发布产物。安装本 fork 请用下方的 [从 GitHub 安装](#从-github-安装)。
 
 ```sh
 dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
@@ -161,10 +168,10 @@ dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<version>.tgz
 ### 从 GitHub 安装
 
 ```sh
-dsh plugin --profile web add github:Y1X1n/dsh-prompt-optimizer
+dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer
 ```
 
-Git 安装拉取的是源码,本包通过 `prepare` 脚本在安装时自包含构建(只需 Node,不依赖 monorepo 环境)。pnpm ≥10 首次会拒绝运行构建脚本,按终端提示把包名加入该 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 后重试即可。建议锁定 commit:`github:Y1X1n/dsh-prompt-optimizer#<sha>`。
+Git 安装拉取的是源码,本包通过 `prepare` 脚本在安装时自包含构建(只需 Node,不依赖 monorepo 环境)。pnpm ≥10 首次会拒绝运行构建脚本,按终端提示把包名加入该 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 后重试即可。建议锁定 commit:`github:skydong3434-alt/dsh-prompt-optimizer#<sha>`。
 
 ### 卸载
 
@@ -186,7 +193,7 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 >
 > 同一份构建覆盖 0.1.0-rc.7 至 0.2.0 全线;此标注自 v0.3.15 起在每个 Release 说明中固定维护,更早 Release 的说明已回溯补注。
 
-- **v0.4.0 适配 dsh 0.2.0-rc.2(2026-10-03,Windows,真实 profile 端到端)**:①设置迁移——0.2.0 移除 `settingsScope` 服务与 `settings.plugin.item` 槽位,设置改由宿主按插件 Config schema 自动生成表单;本插件 Config 全字段声明 `.volatile()`(volatile 字段经引用 cell 原位更新,**修改设置不重挂载插件**),客户端经 `configForms` 读写,设置卡同时注册 0.2.0 的 `settings.plugins.tab` 与 0.1.x 的 `settings.plugin.item` 双槽位,宿主各自渲染认识的那一个;②设置卡按 0.2.0 官方设计语言重做(平铺行布局、官方同款分段控件与开关、`configure({auto:false})` 关闭宿主原生表单避免重复);③消息源 `kind:'plugin'` 以结构断言跨过 0.2.0 收窄后的联合类型(运行时按 merge-extensible 容忍);④已在 **0.2.0-rc.2 Web**(按钮、SSE 面板、模型目录 RPC、设置卡读写与撤销、配置写入 profile 补丁且插件不重启)与**官方桌面端**(Electron `DeepSeek Harness 0.2.0-rc.2`,desktop profile 经应用自带 CLI 安装,发送栏按钮与设置卡 UIA 实测)通过验证。
+- **v0.4.0 适配 dsh 0.2.0-rc.2(2026-10-03,Windows,真实 profile 端到端)**:①设置迁移——0.2.0 移除 `settingsScope` 服务与 `settings.plugin.item` 槽位,设置改由宿主按插件 Config schema 自动生成表单;本插件 Config 全字段声明 `.volatile()`(volatile 字段经引用 cell 原位更新,**修改设置不重挂载插件**),客户端经 `configForms` 读写;设置卡对 0.2.0 的 `settings.plugins.tab` 与 0.1.x 的 `settings.plugin.item` **各自独立探测** —— 在各自的 inject 回调里注册(回调被触发即证明宿主已声明该槽位),**绝不注册未声明的槽位**(DSH 2.0.x 对未声明槽位的注册会直接抛错并中断该插件的客户端同步;见 CHANGELOG v0.3.1-apo);②设置卡按 0.2.0 官方设计语言重做(平铺行布局、官方同款分段控件与开关、`configure({auto:false})` 关闭宿主原生表单避免重复);③消息源 `kind:'plugin'` 以结构断言跨过 0.2.0 收窄后的联合类型(运行时按 merge-extensible 容忍);④已在 **0.2.0-rc.2 Web**(按钮、SSE 面板、模型目录 RPC、设置卡读写与撤销、配置写入 profile 补丁且插件不重启)与**官方桌面端**(Electron `DeepSeek Harness 0.2.0-rc.2`,desktop profile 经应用自带 CLI 安装,发送栏按钮与设置卡 UIA 实测)通过验证。
 - **官方桌面端安装**:桌面应用首次启动初始化 `desktop` profile 后,完全退出应用,用应用自带 CLI 安装并重启:`"E:\Deepseek-Harness\resources\runtime\cli\bin\dsh.cmd" plugin --profile desktop add @y1x1n/dsh-prompt-optimizer`(macOS/Linux 路径见应用安装目录);不要用 npm 版 CLI 管理桌面保留 profile。
 
 - 开发基线:`@deepseek-ai/*` **0.1.5-rc.1**(v0.3.17 起,`sync:types` 钉同一版本);已实测通过 **0.1.0-rc.8**(2026-08-20,Windows,真实 profile 安装 + Web 路由/客户端 bundle/会话历史 RPC/端到端 LLM 调用)、复测通过 **0.1.1-rc.2**(2026-08-27)、适配并通过 **0.1.2-rc.1 与 0.1.2-alpha.5**(2026-09-05/06)、**0.1.5-rc.1**(2026-09-10,真实 profile 端到端冒烟:组合层注入、路由 SSE、client bundle、发送栏按钮与结果面板、设置卡片)与 **0.1.5-rc.2**(2026-09-11,全链路复测:组合层注入、Host 加载、路由契约 405/400/200、SSE 端到端 155 帧 delta、四种策略路径、client bundle 槽位与设置卡 API 全部通过,69 项测试全绿)。
@@ -214,7 +221,7 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 
 ## 验证状态
 
-> 以下为**上游版本**的验证历史（保留原文，便于对照）；本 fork `v0.3.0-apo` 的行为差异
+> 以下为**上游版本**的验证历史（保留原文，便于对照）；本 fork `v0.3.1-apo` 的行为差异
 > 见上方「本 fork 增强」，本版本的发布前真实验收记录见
 > [docs/ui-acceptance-m03813.md](docs/ui-acceptance-m03813.md)（35 项真实 UI 人工测试台账，最终 5/5 PASS）。
 

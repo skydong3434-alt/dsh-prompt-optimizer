@@ -1,6 +1,6 @@
 # 文档索引
 
-> 当前有效版本:**v0.3.0-apo · V3 单次调用架构**(2026-10-10)。本文回答一个问题:**哪份文档还能照着做。**
+> 当前有效版本:**v0.3.1-apo · V3 单次调用架构**(2026-10-10)。本文回答一个问题:**哪份文档还能照着做。**
 > 判断依据只有一条:**文中描述的模块 / 命令 / 测试在当前代码里是否还存在。**
 
 ## 当前有效(可以照着做)
@@ -9,9 +9,10 @@
 | --- | --- |
 | [`../CURRENT_STATE.md`](../CURRENT_STATE.md) | **入口**:当前阶段、机器门禁、模型路由、已知问题 |
 | [`../README.md`](../README.md) / [`../README.en.md`](../README.en.md) / [`../README.simple.md`](../README.simple.md) | 面向用户:怎么用、会做什么、不会做什么 |
-| [`release-notes-v0.3.0-apo.md`](release-notes-v0.3.0-apo.md) | **当前版本**的发布说明(做了什么 / 怎么用 / 门禁 / 已知限制 / 升级) |
+| [`release-notes-v0.3.1-apo.md`](release-notes-v0.3.1-apo.md) | **当前版本**的发布说明(做了什么 / 怎么用 / 门禁 / 已知限制 / 升级) |
+| [`release-notes-v0.3.0-apo.md`](release-notes-v0.3.0-apo.md) | 上一版(v0.3.0-apo)的发布说明 —— V3 单次调用架构首发 |
 | [`ui-acceptance-m03813.md`](ui-acceptance-m03813.md) | 35 项真实 UI 人工测试台账 + 根因 + 逐字前后对比 + 最终人工门禁(5/5 PASS) |
-| [`../CHANGELOG.md`](../CHANGELOG.md) | 版本变更(`v0.3.0-apo` 段含 V3 精简重构与真实 UI 验收修复) |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | 版本变更(`v0.3.1-apo` 段含设置卡槽位注册修复与安装/溯源说明;`v0.3.0-apo` 段含 V3 精简重构与真实 UI 验收修复) |
 | [`../NOTICE.md`](../NOTICE.md) | 版本标识与来源说明 |
 | [`../AGENTS.md`](../AGENTS.md) | 仓库协作约束(给 Agent 看) |
 | [`dod.md`](dod.md) | DoD 机器子集终检清单(`node scripts/check-dod.mjs` 对应) |

@@ -1,6 +1,6 @@
-# DoD 终检清单 — dsh-adaptive-prompt-optimizer v0.3.0-apo
+# DoD 终检清单 — dsh-adaptive-prompt-optimizer v0.3.1-apo
 
-> **v0.3.0-apo（V3 单次调用架构）**：本节清单已随 V3 精简重构更新——旧多阶段链路
+> **v0.3.1-apo（V3 单次调用架构 + 设置卡槽位注册修复）**：本节清单已随 V3 精简重构更新——旧多阶段链路
 > （Analysis/Compiler/Discovery/Validator/Strategy）已删除，回归证据改为 V3 行为测试
 > 与真实模型记录；`scripts/check-dod.mjs` 同时断言「旧链路文件必须不存在」（单架构不变式）。
 
@@ -140,8 +140,8 @@
 
 | # | 交付物 | 证据 | 状态 |
 |---|---|---|---|
-| D1 | annotated tag `v0.3.0-apo` | `git tag -a v0.3.0-apo`（附注说明、指向内容提交） | ✅ 机器（存在性由 check-dod 核对） |
-| D2 | `CHANGELOG.md` | v0.3.0-apo 版本条目（新增/修复/已知记录/验证状态/安装回滚） | ✅ 存在 |
+| D1 | annotated tag `v0.3.1-apo` | `git tag -a v0.3.1-apo`（附注说明、指向内容提交） | ✅ 机器（存在性由 check-dod 核对） |
+| D2 | `CHANGELOG.md` | v0.3.1-apo 版本条目（新增/修复/已知记录/验证状态/安装回滚） | ✅ 存在 |
 | D3 | `NOTICE.md` | 设计来源 + License 边界 + AGPL 零复制声明 + 依赖一览 | ✅ 存在 |
 | D4 | `README{,.en,.simple}.md` 更新 | fork 说明章节 + License/NOTICE 引用 + 安装/致谢 | ✅ 存在 |
 

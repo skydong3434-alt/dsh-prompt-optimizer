@@ -4,6 +4,46 @@
 版本号采用 fork 发行线 `v0.x.y-apo`；`package.json` 名义版本沿用上游 `0.4.0`
 （派生包名不变，详见 NOTICE §3）。
 
+## [v0.3.1-apo] — 2026-10-10（设置卡槽位注册修复 + 安装与溯源说明）
+
+在 v0.3.0-apo（V3 单次调用架构）基础上的**最小范围发布**：修复 DSH 2.0.x 下
+「设置 → 插件列表」的同步失败，并把 README / NOTICE 的安装与溯源信息对齐到
+**本 fork 的发布仓库**（`skydong3434-alt/dsh-prompt-optimizer`）。未新增任何模块、
+未改变优化器的单次调用模型路由（V3 核心 `src/core/v3.ts` 未改动）。
+
+### 修复：设置卡槽位按宿主声明各自注册（真实 UI 人工验收）
+
+- **背景**：0.2.0 的 `settings.plugins.tab` 与 0.1.x 的 `settings.plugin.item` 两个候选
+  槽位此前在同一个 inject 回调里**并挂注册**。该写法在旧的 dsh 0.1.x / 0.2.0-rc.2 上成立
+  （未声明槽位的注册被静默忽略）；**DSH 2.0.x 改为对未声明槽位的注册直接抛错**
+  （`slot "X" is not declared (a parent entry's children table must declare it)`），
+  于是「插件」设置页（该页声明了 `settings.plugins.tab`）打开时，第二个注册必然抛错 →
+  本插件客户端同步失败（界面提示「本页面的插件未能完成同步」）。
+- **修法**：两个候选槽位改为**各自独立的 inject 回调内注册**——槽位的 inject 回调只在
+  宿主声明了该槽位时触发，回调被触发本身就是「该槽位已声明」的证明；任一代宿主上恰好
+  挂载一次，绝不注册未声明的槽位。`src/client/index.tsx` 的 `apply()` 重写为逐槽位注册。
+- **人工验收（用户本人执行，真实 UI）**：刷新页面后设置页不再出现 Slot 同步错误、
+  Prompt Optimizer 设置卡片显示正常、优化功能正常。`docs/p08-desktop.md` 与
+  README（中文/英文）已补「双槽位各自注册、绝不注册未声明槽位」说明。
+- 附带：`src/index.ts` 恢复 `DiscoveryInput` 最小结构声明（V3 仍读取客户端回传的
+  `answers` / `asked`；该类型与旧链路 `v3:false` 回退分支一并删除），并把 `PROMPT_TYPES`
+  includes 调用改为 `(PROMPT_TYPES as readonly string[])`（字面量数组的 includes 类型收窄）。
+
+### 安装与溯源说明（fork 仓库对齐）
+
+- **README{,.en,.simple}.md**：徽章、Releases / Stars / issue 链接、以及「从 GitHub 安装」
+  命令全部指向本 fork 的 `skydong3434-alt/dsh-prompt-optimizer`；明确标注 **本 fork
+  未发布到 npm、Release 不附带 tarball 资产**，因此「从 npm 安装」「从 Release 安装」
+  装到的是**上游基线**，要装本 fork 必须用 GitHub 安装
+  （`github:skydong3434-alt/dsh-prompt-optimizer`）。
+- **NOTICE.md**：V3 精简重构后的「落地位置」列加注（哪些模块已删除、这些思想仍保留在
+  现役实现何处），并明确 upstream（`Y1X1n`，只读署名来源）与 origin
+  （`skydong3434-alt`，发布目标）的区分。上游版权与 MIT 署名保留不变。
+
+**发布门禁（全部通过）**：`npm test` 107 组全绿 · `npm run build` exit 0 ·
+`npm run typecheck` exit 0 · DSH Desktop **真实 UI 人工验收**（设置页 Slot 同步修复，
+由用户本人执行）。发布说明见 [docs/release-notes-v0.3.1-apo.md](docs/release-notes-v0.3.1-apo.md)。
+
 ## [v0.3.0-apo] — 2026-10-10（V3 单次调用自适应优化器）
 
 把优化器从 v0.2.0-apo 的「多阶段自适应编辑器」收敛为**单次调用**的自适应优化器：
