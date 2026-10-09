@@ -16,6 +16,10 @@ import {
   inferUsageMechanically,
   looksStructured,
   parseV3Output,
+  detectIntentExpansion,
+  detectSpecialUsageTemplateDrift,
+  looksLikeProtocolEnvelope,
+  conservativeOutput,
 } from '../lib/core/v3.js'
 
 // ── 1. 用途判定严格性(机械兜底 + 提示词约束) ────────────────────────────────
@@ -211,6 +215,99 @@ async function call(routes, body) {
     assert.equal(inferUsageMechanically(text), expected, `★ ${label}:用途应为 ${expected}`)
   }
   console.log('✓ v3-5 §十一 输入清单:用途判定全部符合预期')
+}
+
+// ── 6. 不得擅自扩展任务方向(核心回归) ─────────────────────────────────────
+{
+  // 目标描述不得变成规划任务:真实失败样本
+  const raw = '我想用DSH控制ComfyUI生成视频。'
+  const bad = '我想用 DSH 控制 ComfyUI 来生成视频，请围绕这个目标给出可行方案。具体实现细节由执行方自行确认。'
+  const good = '我想用 DSH 控制 ComfyUI 来生成视频。'
+  assert.equal(detectIntentExpansion(raw, bad).expanded, true, '★ 「请围绕这个目标给出可行方案」必须判为扩展')
+  assert.ok(detectIntentExpansion(raw, bad).phrases.includes('可行方案'))
+  assert.equal(detectIntentExpansion(raw, good).expanded, false, '★ 只理顺措辞不算扩展')
+  assert.equal(conservativeOutput(raw), raw.trim(), '★ 保守回退 = 原文(不加任何内容)')
+
+  // 想法交流不得变成执行任务
+  assert.equal(detectIntentExpansion('我想做一个 AI 知识库', '我想做一个 AI 知识库。请帮我实现并部署上线。').expanded, true)
+  // 原文确实在要方案/计划/步骤 → 不算扩展
+  assert.equal(detectIntentExpansion('帮我制定一下上线计划', '帮我制定一下上线计划,先给出可行方案。').expanded, false)
+  assert.equal(detectIntentExpansion('帮我把这个流程梳理成步骤', '请给出可行方案与步骤。').expanded, false)
+  // 用户自己写了这个短语 → 不算扩展
+  assert.equal(detectIntentExpansion('请给出可行方案', '请给出可行方案。').expanded, false)
+  // 空输出不误判
+  assert.equal(detectIntentExpansion('随便聊聊', '').expanded, false)
+  console.log('✓ v3-6 意图扩展检测:目标描述/想法交流不得被改成规划或执行任务')
+}
+
+// ── 7. 迁移自旧版的关键用户行为(V3 保护) ──────────────────────────────────
+{
+  // (a) 图片/视频/音频提示词内容保护:不得被写成执行任务模板
+  const agentSkeleton = '## 目标\n生成一张图\n## 前置条件\n无\n## 验收\n图像清晰\n'
+  assert.equal(detectSpecialUsageTemplateDrift('IMAGE', agentSkeleton).drifted, true, '★ IMAGE 不得出现执行任务骨架')
+  assert.equal(detectSpecialUsageTemplateDrift('VIDEO', agentSkeleton).drifted, true, '★ VIDEO 同上')
+  assert.equal(detectSpecialUsageTemplateDrift('AUDIO', agentSkeleton).drifted, true, '★ AUDIO 同上')
+  assert.equal(detectSpecialUsageTemplateDrift('AGENT', agentSkeleton).drifted, false, '★ AGENT 本来就该有骨架')
+  assert.equal(
+    detectSpecialUsageTemplateDrift('IMAGE', '二次元女孩,海边黄昏,柔和光,暖色调').drifted,
+    false,
+    '★ 正常生图提示词不得误判',
+  )
+  assert.equal(
+    detectSpecialUsageTemplateDrift('IMAGE', '## 主体\n女孩\n## 场景\n海边').drifted,
+    false,
+    '★ 生图提示词自己的章节不算执行骨架',
+  )
+
+  // (b) 图片/视频提示词的系统规则必须写明用途适配且禁止执行骨架
+  const imgMsg = buildV3Messages({ rawInput: '帮我写一个二次元女孩的生图提示词,海边黄昏。' })
+  const sys = imgMsg.find((m) => m.role === 'system').content
+  const usr = imgMsg.find((m) => m.role === 'user').content
+  assert.match(sys, /IMAGE:主体/, '★ 系统规则须含图片用途适配')
+  assert.match(sys, /IMAGE \/ VIDEO \/ AUDIO 的输出不得出现执行任务章节/, '★ 系统规则须禁止特殊用途写成任务书')
+  assert.match(sys, /不得把 AI 推断写作用户的明确要求/, '★ 防止 AI 建议冒充用户要求')
+  assert.match(sys, /不得扩展任务方向/, '★ 防止擅自扩展任务方向')
+  assert.ok(usr.includes('二次元女孩'), '★ 原意必须在用户消息中原样传递')
+  const vidMsg = buildV3Messages({ rawInput: '帮我写一段可灵文生视频提示词:一只猫在窗台上打哈欠。' })
+  assert.match(vidMsg.find((m) => m.role === 'system').content, /VIDEO:动作/, '★ 系统规则须含视频用途适配')
+  assert.ok(vidMsg.find((m) => m.role === 'user').content.includes('猫'), '★ 视频原意原样传递')
+
+  // (c) 防止反复确认:V3 流程不存在确认状态(结构上不可能出现)
+  const routes = {}
+  const llmLog = []
+  const ctx = new Context()
+  ctx.provide('httpServer', { register(r) { routes[r.path] = r; return () => {} } })
+  ctx.provide('llm', {
+    stream: async function* () {
+      const t = JSON.stringify({ status: 'optimized', usage: 'GENERAL', structured: false, output: '优化后的提示词' })
+      yield { type: 'text-delta', index: 0, text: t }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: t } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    },
+    listProviders: () => [{ id: 'p', name: 'P' }],
+    listModels: async () => [{ id: 'm', provider: 'p', name: 'm' }],
+    resolveModelInfo: async () => ({ id: 'm', provider: 'p' }),
+  })
+  await ctx.plugin(plugin, {})
+  const evs = await call(routes, { text: '请审查并重构订单服务模块。约束:仅限修改 src/order。', provider: 'p', model: 'm' })
+  assert.equal(evs.filter((e) => e.type === 'requirement_confirmation').length, 0, '★ V3 不得出现确认页(防止反复确认)')
+  assert.equal(evs.filter((e) => e.type === 'discovery_required').length, 0, '★ 非必要问题不得强制提问')
+  assert.ok(evs.some((e) => e.type === 'done'), '★ 必须到达终态')
+  console.log('✓ v3-7 迁移保护:图片/视频内容保护、无反复确认、AI 建议不得冒充用户要求')
+}
+
+// ── 8. 协议信封不得泄漏给用户 ──────────────────────────────────────────────
+{
+  // 真实失败样本:模型输出被截断的协议 JSON
+  const truncated = '{"status":"needs_clarification","usage":"GENERAL","structured":false,"output":"","question":"「那个旧的」具体指什么？'
+  assert.equal(looksLikeProtocolEnvelope(truncated), true, '★ 截断的协议信封必须被识别')
+  const parsed = parseV3Output(truncated, '把那个旧的换掉。')
+  assert.equal(parsed.output, '', '★ 协议信封绝不能当正文交付(应为空 → 宿主报技术错误)')
+  assert.ok(!parsed.output.includes('needs_clarification'), '★ 不得泄漏内部协议')
+  // 正常正文不得误判
+  assert.equal(looksLikeProtocolEnvelope('请审查并重构订单服务模块。'), false)
+  assert.equal(looksLikeProtocolEnvelope('{"状态":"ok"}'), false)
+  console.log('✓ v3-8 协议信封泄漏防护:截断 JSON 不得作为优化结果交付')
 }
 
 console.log('v3.test.mjs: ALL PASS')

@@ -14,7 +14,9 @@ import {
   MANUAL_PROMPT_TYPES,
   TYPE_OPTIONS,
 } from '../lib/controller.js'
-import { PROMPT_TYPES } from '../lib/core/classify.js'
+// 原先从旧分类器导入 PROMPT_TYPES(类型闭集);旧链路删除后在此固化该契约,
+// 使「下拉手动项 = 闭集去掉 general」这条用户可见契约仍有回归保护。
+const PROMPT_TYPES = ['general', 'research', 'planning', 'execution', 'diagnostic', 'review', 'creative']
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const enc = new TextEncoder()

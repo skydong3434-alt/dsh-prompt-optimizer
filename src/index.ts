@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { buildV3Messages, parseV3Output, assessV3Safety } from './core/v3.js'
+import { buildV3Messages, parseV3Output, assessV3Safety, detectIntentExpansion, detectSpecialUsageTemplateDrift, conservativeOutput } from './core/v3.js'
 import { mechanicalTriage } from './core/triage.js'
 import Schema from '@deepseek-ai/schemastery'
 // 0.2.0 起设置改为宿主按插件 Config schema 自动生成表单(SettingsForms),
@@ -722,10 +722,25 @@ export function apply(ctx: Context, config: Config) {
               v3Failure = error instanceof Error ? error.message : String(error)
             }
             if (abort.signal.aborted) {
-              // 超时/断连:走下方既有统一处置(不在此处吞掉)
-              throw new Error(timedOut ? `V3 调用超时(${timeoutSec}s)` : 'V3 调用被中止')
+              // 超时:必须显式下发 error 终态。外层 catch 在 signal.aborted 时会静默返回
+              // (那是给「客户端断连」准备的),若在此处 throw,用户既拿不到产物也拿不到错误。
+              if (timedOut && !res.writableEnded) {
+                send({
+                  type: 'error',
+                  error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
+                  reason_code: 'VF_TIMEOUT',
+                })
+                res.end()
+              }
+              return
             }
-            const v3 = parseV3Output(v3Raw, text)
+            let v3 = parseV3Output(v3Raw, text)
+            // 机械保证:用户已经回答过(或选择「保持未确定」)→ 本轮必须继续输出,不得再问。
+            // 模型采样不稳定时,这一层防止「回答后仍反复追问」。
+            if (v3Answer && v3.status === 'needs_clarification') {
+              console.warn('[dsh-prompt-optimizer] V3 已收到用户回答,禁止再次提问 → 继续输出')
+              v3 = { status: 'optimized', usage: v3.usage, structured: v3.structured, output: conservativeOutput(text), question: '' }
+            }
             if (v3.status === 'needs_clarification' && v3.question) {
               // 关键歧义:只问 1 个问题;用户可「保持未确定,直接优化」
               send({
@@ -754,7 +769,24 @@ export function apply(ctx: Context, config: Config) {
               res.end()
               return
             }
-            const output = stripProtocolMarkers(v3.output)
+            let output = stripProtocolMarkers(v3.output)
+            // 机械纠偏(本地,无额外模型调用):优化稿不得擅自扩展任务方向
+            // (目标描述→规划任务 / 想法交流→执行任务)。命中则保守退回用户原文。
+            const v3Expansion = detectIntentExpansion(text, output)
+            if (v3Expansion.expanded) {
+              console.warn(
+                `[dsh-prompt-optimizer] V3 意图扩展已拦截:${v3Expansion.phrases.join(',')} → 保守回退原文`,
+              )
+              output = stripProtocolMarkers(conservativeOutput(text))
+            }
+            // 机械纠偏:图片/视频/音频提示词不得被写成执行任务模板(用户要求保护的内容)
+            const v3Drift = detectSpecialUsageTemplateDrift(v3.usage, output)
+            if (v3Drift.drifted) {
+              console.warn(
+                `[dsh-prompt-optimizer] V3 特殊用途模板漂移已拦截:${v3.usage} → 保守回退原文`,
+              )
+              output = stripProtocolMarkers(conservativeOutput(text))
+            }
             if (!output.trim()) {
               // 技术错误独立显示:绝不伪装成业务澄清状态
               send({
