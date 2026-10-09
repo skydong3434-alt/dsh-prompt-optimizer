@@ -4,8 +4,8 @@
 > 从「固定模板式 Prompt 扩写器」升级为**自适应提示词编辑器**：自动判断任务意图、
 > Prompt 类型、目标模型与需要修改多少，只在真正需要你决定时问少量关键问题，
 > 且**不自动发送 / 不自动执行 / 不自动决策**。
-> 发布版本 `v0.2.0-apo`（上一版 `v0.1.0-apo`）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
-> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.2.0-apo.md](docs/release-notes-v0.2.0-apo.md)。
+> 发布版本 `v0.3.0-apo`（上一版 `v0.1.0-apo`；`v0.2.0-apo` 的 v2 编辑器架构已由 V3 替换，未发布）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
+> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.3.0-apo.md](docs/release-notes-v0.3.0-apo.md)。
 
 **中文** | [English](README.en.md) | [🐣 小白版](README.simple.md)
 
@@ -214,9 +214,9 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 
 ## 验证状态
 
-> 以下为**上游版本**的验证历史（保留原文，便于对照）；本 fork `v0.2.0-apo` 的行为差异
-> 见上方「本 fork 增强」，发布前真实验收记录见
-> [docs/release-smoke-v0.2.0-apo.md](docs/release-smoke-v0.2.0-apo.md)。
+> 以下为**上游版本**的验证历史（保留原文，便于对照）；本 fork `v0.3.0-apo` 的行为差异
+> 见上方「本 fork 增强」，本版本的发布前真实验收记录见
+> [docs/ui-acceptance-m03813.md](docs/ui-acceptance-m03813.md)（35 项真实 UI 人工测试台账，最终 5/5 PASS）。
 
 已在真实环境验证(dsh 0.1.0-rc.8 实测 + 0.1.1-rc.2 复测,Windows,详见「兼容性」);macOS 端自动化实测通过(2026-09-02,macOS 26.5,62 项测试全绿,CI 亦常驻 macos-latest 跑全量测试);**v0.3.16 起 0.1.2 线(dsh 0.1.2-rc.1 / 0.1.2-alpha.5)完成端到端实测**(发送栏按钮、结果面板、设置卡片、优化路由与 SSE);**v0.3.17 起 0.1.5-rc.1 完成端到端实测**(2026-09-10,Windows,真实 profile + 浏览器驱动:发送栏「优化」按钮随输入启停、点击后面板打开并按 SSE 透传上游错误、设置卡片折叠摘要与展开配置齐全),**并在 0.1.5-rc.2 上完成全链路复测**(2026-09-11:组合层注入、Host 加载、路由契约、SSE 端到端、四种策略路径、client bundle 槽位与设置卡 API 全项通过);v0.3.9–0.3.11 另在**第三方免费模型**(openrouter 的 `minimax/minimax-m3:free`,不输出标记格式)上完成端到端实测:模板/意图双策略、保真逐要素保留、待补充标记、记忆链与取消保留等行为均按设计工作,并据此修复了快速模式的格式误报。
 

@@ -7,11 +7,11 @@
  *
  * 核对项：
  *   1. 发布交付物存在性：CHANGELOG.md / NOTICE.md / docs/dod.md / LICENSE / README 三件；
- *   2. annotated tag v0.2.0-apo 存在（git tag -a；轻量 tag 会告警 FAIL）；
+ *   2. annotated tag v0.3.0-apo 存在（git tag -a；轻量 tag 会告警 FAIL）；
  *   3. AGPL 污染检查脚本存在且可运行（校验依赖不发散）；
  *   4. V3 回归证据：test/v3.test.mjs、test/smoke.mjs、scripts/v3-real-check.mjs 存在；
  *   5. V3 单架构不变式：V3 契约文件存在，且旧链路文件必须不存在；
- *   6. NOTICE 声明与本项目元信息一致（v0.2.0-apo 出现于 NOTICE/CHANGELOG/README）。
+ *   6. NOTICE 声明与本项目元信息一致（v0.3.0-apo 出现于 NOTICE/CHANGELOG/README）。
  *
  * 退出码：0 = 全 PASS；1 = 存在 FAIL。
  */
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VERSION = 'v0.2.0-apo';
+const VERSION = 'v0.3.0-apo';
 
 const fails = [];
 const passes = [];
@@ -49,17 +49,17 @@ const mustExist = [
 ];
 for (const f of mustExist) check(`交付物存在: ${f}`, existsSync(rel(f)));
 
-// ---- 2. annotated tag v0.2.0-apo ----
+// ---- 2. annotated tag v0.3.0-apo ----
 try {
   const tags = execFileSync('git', ['tag', '-l', VERSION], { cwd: ROOT, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
   if (tags.length === 0) {
-    check('annotated tag v0.2.0-apo', false, 'tag 不存在');
+    check('annotated tag v0.3.0-apo', false, 'tag 不存在');
   } else {
     const type = execFileSync('git', ['cat-file', '-t', VERSION], { cwd: ROOT, encoding: 'utf8' }).trim();
-    check('annotated tag v0.2.0-apo', type === 'tag', `类型=${type}`);
+    check('annotated tag v0.3.0-apo', type === 'tag', `类型=${type}`);
   }
 } catch {
-  check('annotated tag v0.2.0-apo', false, 'git 查询失败');
+  check('annotated tag v0.3.0-apo', false, 'git 查询失败');
 }
 
 // ---- 3. AGPL 污染检查可运行 ----
@@ -132,7 +132,7 @@ checkVersionIn('README.en.md', 'README.en 版本');
 checkVersionIn('docs/dod.md', 'DoD 清单版本');
 
 // ---- 汇总 ----
-console.log(`[apo] check-dod  v0.2.0-apo  —  ${passes.length} PASS / ${fails.length} FAIL`);
+console.log(`[apo] check-dod  v0.3.0-apo  —  ${passes.length} PASS / ${fails.length} FAIL`);
 for (const p of passes) console.log(`  ✓ ${p}`);
 if (fails.length) {
   for (const f of fails) console.log(`  ✗ ${f}`);

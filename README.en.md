@@ -4,10 +4,10 @@
 > `@y1x1n/dsh-prompt-optimizer`, MIT). It upgrades the fork from a fixed-template prompt
 > *expander* into an **adaptive prompt editor**: it detects the task intent, prompt type,
 > target model and how much to change, asks only the few decisions that truly need you,
-> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.2.0-apo`
-> (previous: `v0.1.0-apo`); design provenance & license boundaries in
+> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.3.0-apo`
+> (previous: `v0.1.0-apo`; `v0.2.0-apo`'s v2 editor architecture was replaced by V3 and never released); design provenance & license boundaries in
 > [NOTICE.md](NOTICE.md); changelog in [CHANGELOG.md](CHANGELOG.md); release notes in
-> [docs/release-notes-v0.2.0-apo.md](docs/release-notes-v0.2.0-apo.md).
+> [docs/release-notes-v0.3.0-apo.md](docs/release-notes-v0.3.0-apo.md).
 
 [中文](README.md) | **English** | 🐣 [Beginner guide (中文)](README.simple.md)
 
