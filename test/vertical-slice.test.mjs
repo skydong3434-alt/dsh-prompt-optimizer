@@ -186,7 +186,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   })
   const llm = makeLlm(llmOverrides)
   ctx.provide('llm', llm)
-  await ctx.plugin(plugin, config)
+  await ctx.plugin(plugin, { ...config, v3: false })  // 旧多阶段路径测试:显式选择 legacy
   assert.ok(routes['/dsh-prompt-optimizer/optimize'], '插件应注册优化路由')
   return { ctx, llm, handler: routes['/dsh-prompt-optimizer/optimize'].handler }
 }

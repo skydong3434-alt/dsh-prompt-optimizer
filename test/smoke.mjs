@@ -129,7 +129,7 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
     listModels: async () => [{ provider: 'deepseek-official', id: 'deepseek-chat', name: 'DeepSeek Chat' }],
     ...llmOverrides,
   })
-  await ctx.plugin(plugin, config)
+  await ctx.plugin(plugin, { ...config, v3: false })  // 旧多阶段路径测试:显式选择 legacy
   assert.ok(routes['/dsh-prompt-optimizer/optimize'], '插件应注册优化路由')
   assert.ok(routes['/dsh-prompt-optimizer/test-model'], '插件应注册测试路由')
   return {

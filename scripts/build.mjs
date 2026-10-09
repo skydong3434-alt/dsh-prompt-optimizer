@@ -246,6 +246,7 @@ for (const [entry, outfile] of [
   ['src/core/provenance-recovery.ts', 'lib/core/provenance-recovery.js'],
   ['src/core/patch-scope.ts', 'lib/core/patch-scope.js'],
   ['src/core/semantic-ambiguity.ts', 'lib/core/semantic-ambiguity.js'],
+  ['src/core/v3.ts', 'lib/core/v3.js'],
   ['src/core/strategies/_visual-shared.ts', 'lib/core/strategies/_visual-shared.js'],
   ['src/core/strategies/agent.ts', 'lib/core/strategies/agent.js'],
   ['src/core/strategies/image.ts', 'lib/core/strategies/image.js'],

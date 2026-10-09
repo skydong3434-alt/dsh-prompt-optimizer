@@ -46,7 +46,7 @@ async function boot({ alwaysNewDecision = false, analysis = null } = {}) {
     listModels: async () => [{ id: 'm', provider: 'p', name: 'm' }],
     resolveModelInfo: async () => ({ id: 'm', provider: 'p', reasoning: { efforts: [{ id: 'low' }] } }),
   })
-  await ctx.plugin(plugin, {})
+  await ctx.plugin(plugin, { v3: false })  // 旧多阶段路径测试:显式选择 legacy
   return { routes, compileCalls: () => compileCalls }
 }
 

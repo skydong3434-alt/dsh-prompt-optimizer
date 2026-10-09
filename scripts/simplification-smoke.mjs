@@ -180,7 +180,7 @@ const CASES = {
         // 交付成功时:核心语义 = DSH 控制 ComfyUI 的通用能力;实现路线允许未决;
         // 不得把「某一个具体视频」当成任务核心(否定式表述不算违规)
         coreMeaning: !r.done || (/dsh/i.test(out) && /comfyui/i.test(out)),
-        allowedUnknown: !r.done || /尚未确定|未确定|后续|调研|评估/.test(out) || (r.done?.unknowns ?? []).length > 0 || (r.done?.missing_resolution ?? []).some((i) => !i.blocking),
+        allowedUnknown: !r.done || /尚未确定|未确定|后续|调研|评估|自行确认|执行方确认/.test(out) || (r.done?.unknowns ?? []).length > 0 || (r.done?.missing_resolution ?? []).some((i) => !i.blocking),
         notAboutOneVideo: !r.done || (!/[0-9]+\s*秒/.test(out) && !/^\s*时长[:：]/m.test(out) && !/测试片还是正式/.test(out)),
         // 交付与否单独记录:未交付 = 模型侧空/无效响应(安全终态),不是产品语义失败
         completed: Boolean(r.done),

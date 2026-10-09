@@ -73,7 +73,7 @@ async function boot({ settings, config = {}, carriers = ['httpServer'] } = {}) {
   }
   ctx.provide('llm', makeLlm((options) => { lastOptions = options; allOptions.push(options) }))
   if (settings) ctx.provide('settings', settings)
-  await ctx.plugin(plugin, config)
+  await ctx.plugin(plugin, { ...config, v3: false })  // 旧多阶段路径测试:显式选择 legacy
   assert.ok(routes['/dsh-prompt-optimizer/optimize'], '插件应注册 optimize 路由')
   return {
     ctx,

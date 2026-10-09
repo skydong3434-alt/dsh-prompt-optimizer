@@ -237,7 +237,7 @@ async function setup({ compileOutput, analysisRounds }) {
     listModels: async () => [{ id: 'deepseek-chat', provider: 'deepseek-official', name: 'x' }],
     resolveModelInfo: async () => ({ id: 'deepseek-chat', provider: 'deepseek-official', name: 'x' }),
   })
-  await ctx.plugin(plugin, {})
+  await ctx.plugin(plugin, { v3: false })  // 旧多阶段路径测试:显式选择 legacy
   return {
     handler: routes['/dsh-prompt-optimizer/optimize'].handler,
     calls,

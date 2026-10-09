@@ -1,4 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { buildV3Messages, parseV3Output, assessV3Safety } from './core/v3.js'
+import { mechanicalTriage } from './core/triage.js'
 import Schema from '@deepseek-ai/schemastery'
 // 0.2.0 起设置改为宿主按插件 Config schema 自动生成表单(SettingsForms),
 // 插件不再注册命名空间;0.1.x 线的两套 API 由下方运行时探测分派,类型只在本地声明。
@@ -22,7 +24,7 @@ import {
 import type { AnalysisResult, EditTriage } from './core/types.js'
 import { EDIT_TRIAGE_LEVELS } from './core/types.js'
 import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
-import { compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
+import { stripProtocolMarkers, compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
 import { computeAnalysisGate } from './core/requirements.js'
 import { assessCompleteness, decideValidationAction, type ValidationFlowOutcome } from './core/validation-flow.js'
 import { reconcileLedger } from './core/ledger-reconcile.js'
@@ -60,6 +62,8 @@ export interface Config {
   timeoutSeconds: number
   /** 优化模式('full'/'fast';其他值按 'full' 处理)。 */
   mode: string
+  /** V3 单次调用路径(默认开启;false 回退旧多阶段流程)。 */
+  v3?: boolean
   /** 推理强度('lowest'/'session';其他值按 'lowest' 处理)。默认钳最低档:优化是格式化元任务,高档推理只拉长首 token 前的空等。 */
   reasoningEffort: string
   /** 采样温度(0-2,默认 0.2);优化是格式化任务,低温输出更稳定。 */
@@ -90,6 +94,8 @@ export const Config = Schema.object({
   // 1266 chunks / 3929 completion tokens),但整轮在 120s 超时 → error(无 compile 调用、
   // 无日志行)。正常用户路径因此高概率失败。默认提到 300s(范围与 UI 提示不变)。
   timeoutSeconds: Schema.number().min(10).max(600).default(300).volatile(),
+  /** V3 单次调用路径(默认开启;关闭可回退旧多阶段流程)。 */
+  v3: Schema.boolean().default(true).volatile(),
   mode: Schema.string().default('full').volatile(),
   reasoningEffort: Schema.string().default('lowest').volatile(),
   temperature: Schema.number().min(0).max(2).default(0.2).volatile(),
@@ -124,6 +130,8 @@ function readConfig(raw: Config): Config {
     includeContext: unwrapCell(raw.includeContext),
     promptType: unwrapCell(raw.promptType) ?? 'auto',
     classifierModel: unwrapCell(raw.classifierModel),
+    // V3 单次调用:未显式关闭即开启(默认路径)
+    v3: unwrapCell(raw.v3) !== false,
   }
 }
 
@@ -579,6 +587,7 @@ export function apply(ctx: Context, config: Config) {
         warnUnknownEnumConfig(cfg)
         const language: OutputLanguage = cfg.language === 'en' ? 'en' : 'zh'
         const mode: OptimizerMode = cfg.mode === 'fast' ? 'fast' : 'full'
+        void mode
         const route = await resolveRoute(ctx.llm, cfg.model, asOptionalString(body.provider), asOptionalString(body.model))
         if (!route) {
           writeJson(res, 409, {
@@ -657,6 +666,160 @@ export function apply(ctx: Context, config: Config) {
           abort.abort()
         }, timeoutSec * 1000)
         try {
+          // ══════════════════════════════════════════════════════════════════
+          // V3 单次调用路径(自适应提示词优化器)
+          //   理解意图 / 判断用途 / 判断关键歧义 / 生成结果 **同一次模型处理**,
+          //   不再串行 analysis → discovery → confirmation → compile → validate。
+          //   本地只做**机械**安全检查(协议标记 / 空产出 / 硬约束),不再调用模型。
+          // ══════════════════════════════════════════════════════════════════
+          if (cfg.v3 !== false) {
+            const v3Route = routes[0]!
+            const effort = preferSessionEffort
+              ? sessionEffort
+              : ((await resolveLowestEffortCached(ctx.llm, v3Route.provider, v3Route.model)) ?? sessionEffort)
+            // 用户对上一轮提问的回答(客户端以 answers 回传)
+            const v3Answer = (() => {
+              const answers = discoveryReq && 'answers' in discoveryReq.session
+                ? (discoveryReq.session.answers ?? [])
+                : []
+              const first = answers.find((a) => String(a?.text ?? '').trim())
+              return first ? String(first.text).trim() : ''
+            })()
+            const v3Questions = (() => {
+              const asked = discoveryReq && 'asked' in discoveryReq.session ? (discoveryReq.session.asked ?? []) : []
+              const last = [...asked].reverse().find((a) => String(a?.question ?? '').trim())
+              return last ? String(last.question).trim() : ''
+            })()
+            const messages = buildV3Messages({
+              rawInput: text,
+              ...(context ? { contextTurns: context } : {}),
+              ...(v3Answer ? { clarification: { question: v3Questions, answer: v3Answer } } : {}),
+              language,
+            })
+            let v3Raw = ''
+            let v3Failure: string | null = null
+            try {
+              const v3Options = {
+                provider: v3Route.provider,
+                model: v3Route.model,
+                messages: messages.map((m: { role: string; content: string }) => ({
+                  id: `prompt-optimizer-${crypto.randomUUID()}`,
+                  role: m.role,
+                  content: [{ type: 'text', text: m.content }],
+                  source: { kind: 'plugin', plugin: name },
+                })) as unknown as Message[],
+                maxTokens: cfg.maxTokens,
+                temperature: cfg.temperature,
+                ...(effort ? { reasoningEffort: effort as NonNullable<GenerateOptions['reasoningEffort']> } : {}),
+                signal: abort.signal,
+              }
+              const collected = await collectText(ctx.llm.stream(v3Options), (delta) => {
+                send({ type: 'delta', text: delta })
+              })
+              v3Raw = collected.text
+              if (collected.truncated) v3Failure = 'truncated'
+            } catch (error) {
+              v3Failure = error instanceof Error ? error.message : String(error)
+            }
+            if (abort.signal.aborted) {
+              // 超时/断连:走下方既有统一处置(不在此处吞掉)
+              throw new Error(timedOut ? `V3 调用超时(${timeoutSec}s)` : 'V3 调用被中止')
+            }
+            const v3 = parseV3Output(v3Raw, text)
+            if (v3.status === 'needs_clarification' && v3.question) {
+              // 关键歧义:只问 1 个问题;用户可「保持未确定,直接优化」
+              send({
+                type: 'discovery_required',
+                status: 'needs_clarification',
+                v3: true,
+                usage: v3.usage,
+                questions: [
+                  {
+                    key: `v3-${Date.now()}`,
+                    question: v3.question,
+                    options: [],
+                    why: '这是理解你这句话所必需的信息',
+                    depends_on: [],
+                    allow_blind_trust: true,
+                  },
+                ],
+                asked: [],
+                ledger: [],
+                gate: { blocked: true, blocking_items: [{ text: v3.question }], discoverable_items: [], optional_items: [], reason: '关键歧义' },
+                triage: { triage: mechanicalTriage(text).triage, reasons: ['V3:按输入复杂度判定'], signals: [], keep_safe: false },
+                intent: { primary: 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+                target: { target: 'general', modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: 'V3 单次调用' },
+                analysis: null,
+              })
+              res.end()
+              return
+            }
+            const output = stripProtocolMarkers(v3.output)
+            if (!output.trim()) {
+              // 技术错误独立显示:绝不伪装成业务澄清状态
+              send({
+                type: 'error',
+                error: `模型没有产出可用内容${v3Failure ? `(${v3Failure})` : ''};可直接重试。`,
+                reason_code: 'VF_EMPTY_OUTPUT',
+              })
+              res.end()
+              return
+            }
+            // 机械安全(本地,无额外模型调用):硬约束是否保留
+            const v3Safety = assessV3Safety({ rawInput: text, optimizedPrompt: output })
+            const v3Triage = mechanicalTriage(text)
+            const usageToTarget: Record<string, string> = {
+              GENERAL: 'general',
+              IMAGE: 'image_generation',
+              VIDEO: 'video_generation',
+              AUDIO: 'audio_generation',
+              AGENT: 'agent_task',
+            }
+            const v3Target = usageToTarget[v3.usage] ?? 'general'
+            send({
+              type: 'meta',
+              v3: true,
+              intent: { primary: v3.usage === 'AGENT' ? 'execution' : 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+              target: { target: v3Target, modality: v3.usage === 'IMAGE' ? 'image' : v3.usage === 'VIDEO' ? 'video' : 'text', engine: null, confidence: 'high', evidence: [], rationale: `V3 用途:${v3.usage}` },
+              triage: { triage: v3Triage.triage, reasons: ['V3:按输入复杂度判定'], signals: v3Triage.signals, keep_safe: v3Triage.keep_safe, mechanical: v3Triage.triage },
+              gate: { blocked: false, blocking_items: [], discoverable_items: [], optional_items: [], reason: 'V3:无需阻塞' },
+              ledger: [],
+              usage: v3.usage,
+              structured: v3.structured,
+              prompt_type: v3.usage.toLowerCase(),
+            })
+            send({ type: 'validating' })
+            send({
+              type: 'done',
+              v3: true,
+              usage: v3.usage,
+              structured: v3.structured,
+              optimized: output,
+              analysis: `用途:${v3.usage}${v3.structured ? ' · 结构化' : ''}`,
+              wellFormed: true,
+              truncated: false,
+              provider: v3Route.provider,
+              model: v3Route.model,
+              fallbackUsed: false,
+              prompt_type: v3.usage.toLowerCase(),
+              confidence_level: 'High',
+              diagnosis: `V3 单次调用 · 用途 ${v3.usage}`,
+              explicit_requirements: [],
+              context_requirements: [],
+              suggested_requirements: [],
+              unknowns: [],
+              missing_constraints: [],
+              provenance_ok: v3Safety.hardConstraintKept,
+              triage: { triage: v3Triage.triage, reasons: ['V3:按输入复杂度判定'], signals: v3Triage.signals, keep_safe: v3Triage.keep_safe, mechanical: v3Triage.triage },
+              ledger: [],
+              missing_resolution: [],
+              target: { target: v3Target, modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: `V3 用途:${v3.usage}` },
+              intent: { primary: v3.usage === 'AGENT' ? 'execution' : 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+            })
+            res.end()
+            return
+          }
+
           // ── 阶段一:意图分类(AUTO)──────────────────────────────────────────
           // 分类是「元任务」的小调用:maxTokens 512 / temperature 0 / lowest reasoning,
           // JSON 契约;失败或超时按 general 兜底(绝不阻塞编译)。手动 override 完全跳过。
