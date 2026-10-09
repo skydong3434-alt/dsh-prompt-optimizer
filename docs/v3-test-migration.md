@@ -75,3 +75,44 @@
 2. 删除 B 类模块（`src/core/*` 旧链路 + `src/core/strategies/*`）与 `disposition-render.ts`。
 3. 删除 B/C 类测试文件与 `package.json` 注册项。
 4. 复跑全量测试、构建、cordis 加载 smoke、真实模型行为验证。
+
+
+---
+
+## 实际执行记录(方案 B,分两批)
+
+### 第 1 批:测试迁移(commit `c0f741c`)
+
+删除 B/C 类 38 个测试文件;`test/smoke.mjs` 由「旧多阶段标记协议」重写为
+**V3 宿主半冒烟 20 例**(路由与参数校验、来源围栏、模型选择与回退、连接测试、
+超时、技术错误呈现、V3 事件序、澄清问答、硬约束与用途映射);
+`test/compat-settings.test.mjs` 与 `test/controller.test.mjs` 去掉旧链路依赖。
+
+**该批发现并修复的真实缺陷(超时无终态)**:V3 分支在 `abort.signal.aborted` 时
+直接 `throw`,而外层 catch 首行对 aborted 静默返回(那是给「客户端断连」的),
+导致**模型超时既没有产物也没有错误**。已改为显式下发
+`{type:'error', reason_code:'VF_TIMEOUT'}`。回归:`test/smoke.mjs` 用例 9。
+
+### 第 2 批:源码删除(删除旧链路 + `v3:false` 回退)
+
+| 删除对象 | 规模 |
+|---|---|
+| `src/core/` 旧模块 18 个(analyze/classify/compiler/discovery/validate/validation-flow/ledger-reconcile/provenance-recovery/provenance/patch-scope/semantic-ambiguity/router/responsibilities/targets/registry/requirements/disposition-render/context) | ≈ 8.0k 行 |
+| `src/core/strategies/` 12 个文件 | ≈ 5.7k 行 |
+| `src/index.ts` 旧分支(`if (cfg.v3 !== false)` 起的整段)+ `v3` 配置项 | 1597 → 867 行 |
+| `src/core/types.ts` 旧契约类型(58/63 个导出未被 V3 使用) | 853 → 66 行 |
+| `test/regression/`(旧策略语料 fixtures + runner + 报告存档)、`scripts/{gvs-demo,phase3-trace,phase4-trace,rc-comfyui,rc-validate,rc2-stability,release-diag,release-smoke-cE-repeat,release-smoke-v0.2.0-apo,simplification-smoke}.mjs` | 只服务旧链路 |
+
+**保留的共享安全能力**:`src/core/v3.ts`(协议解析、用途推断、机械安全
+`assessV3Safety`、意图扩展拦截、特殊用途模板漂移拦截、协议信封泄漏防护、
+`stripProtocolMarkers`)、`src/core/triage.ts`(机械分诊)、`src/core/types.ts`
+(最小契约)、`src/prompt.ts`(上下文预算与元提示)。
+
+**分类修正**:`test/regression/schema.test.mjs` 原判 A,复核后实为 B
+(只校验旧 `defaultStrategyRegistry` 语料契约),随旧语料删除;
+`scripts/check-dod.mjs` 的回归证据与 core 契约核对项改写为 V3,
+并新增**单架构不变式**(旧链路文件必须不存在)。
+
+**第 2 批后**:`npm test` = 101 断言全绿;`npm run build` exit 0;
+`node scripts/check-dod.mjs` 仅剩「annotated tag v0.2.0-apo 不存在」
+(打标签由用户执行,本轮不 tag)。

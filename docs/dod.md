@@ -1,4 +1,8 @@
-# DoD 终检清单 — dsh-adaptive-prompt-optimizer v0.1.0-apo
+# DoD 终检清单 — dsh-adaptive-prompt-optimizer v0.2.0-apo
+
+> **v0.2.0-apo（V3 单次调用架构）**：本节清单已随 V3 精简重构更新——旧多阶段链路
+> （Analysis/Compiler/Discovery/Validator/Strategy）已删除，回归证据改为 V3 行为测试
+> 与真实模型记录；`scripts/check-dod.mjs` 同时断言「旧链路文件必须不存在」（单架构不变式）。
 
 > 本文件是 P09-T02 的 DoD（PLAN-v1 §18）终检清单：逐条列出**验收口径（原文引用）**、
 > **机器证据**（文件 / 命令 / 报告），并标出每项状态。机器可自动核对的部分由
@@ -136,8 +140,8 @@
 
 | # | 交付物 | 证据 | 状态 |
 |---|---|---|---|
-| D1 | annotated tag `v0.1.0-apo` | `git tag -a v0.1.0-apo`（附注说明、指向内容提交） | ✅ 机器（存在性由 check-dod 核对） |
-| D2 | `CHANGELOG.md` | v0.1.0-apo 版本条目（新增/修复/已知记录/验证状态/安装回滚） | ✅ 存在 |
+| D1 | annotated tag `v0.2.0-apo` | `git tag -a v0.2.0-apo`（附注说明、指向内容提交） | ✅ 机器（存在性由 check-dod 核对） |
+| D2 | `CHANGELOG.md` | v0.2.0-apo 版本条目（新增/修复/已知记录/验证状态/安装回滚） | ✅ 存在 |
 | D3 | `NOTICE.md` | 设计来源 + License 边界 + AGPL 零复制声明 + 依赖一览 | ✅ 存在 |
 | D4 | `README{,.en,.simple}.md` 更新 | fork 说明章节 + License/NOTICE 引用 + 安装/致谢 | ✅ 存在 |
 
@@ -145,7 +149,7 @@
 
 | 门禁 | 命令 | 期望 |
 |---|---|---|
-| 测试 | `npm test` | exit 0（26 个测试文件） |
+| 测试 | `npm test` | exit 0（V3 行为测试 8 个文件 + 构建） |
 | 状态一致性 | `python3 scripts/apo_state.py` | PASS（0 FAIL） |
 | 污染检查（新增） | `node scripts/check-license-contamination.mjs` | exit 0（PASS） |
 | DoD 机器子集（新增） | `node scripts/check-dod.mjs` | exit 0（全 PASS） |

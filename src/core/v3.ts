@@ -399,3 +399,22 @@ export function assessV3Safety(input: {
     irreversibleUnconditional,
   };
 }
+
+/**
+ * 机械剥离交付稿里残留的协议标记(模型偶发把 <<<OPTIMIZED>>> 之类的内部标记
+ * 写进正文;只处理整行会让行内标记泄漏到交付稿)。
+ * 原属旧 Compiler 链,旧链路删除后由 V3 继续使用。
+ */
+const PROTOCOL_MARKER_LINE_RE = /^\s*<<<[A-Z_]+>>>\s*$/
+
+export function stripProtocolMarkers(text: string): string {
+  const source = String(text ?? '')
+  const withoutLines = source
+    .split(/\r?\n/)
+    .filter((line) => !PROTOCOL_MARKER_LINE_RE.test(line))
+    .join('\n')
+  return withoutLines
+    .replace(/\s*<<<[A-Z_]+>>>\s*/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+}

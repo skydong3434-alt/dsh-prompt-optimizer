@@ -1,5 +1,13 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { buildV3Messages, parseV3Output, assessV3Safety, detectIntentExpansion, detectSpecialUsageTemplateDrift, conservativeOutput } from './core/v3.js'
+import {
+  buildV3Messages,
+  parseV3Output,
+  assessV3Safety,
+  detectIntentExpansion,
+  detectSpecialUsageTemplateDrift,
+  conservativeOutput,
+  stripProtocolMarkers,
+} from './core/v3.js'
 import { mechanicalTriage } from './core/triage.js'
 import Schema from '@deepseek-ai/schemastery'
 // 0.2.0 起设置改为宿主按插件 Config schema 自动生成表单(SettingsForms),
@@ -7,41 +15,8 @@ import Schema from '@deepseek-ai/schemastery'
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { capConversationContext, createThinkFilter, estimateTokens, type ConversationTurn, type OptimizerMode, type OutputLanguage } from './prompt.js'
-import type { ClassifierResult } from './core/types.js'
-import { toConfidenceLevel } from './core/types.js'
-import {
-  parsePromptTypeInput,
-  PROMPT_TYPES,
-  type ClassifierLlm,
-} from './core/classify.js'
-import {
-  ANALYSIS_MAX_TOKENS,
-  analyzeViaLlm,
-  analysisToClassifier,
-  manualAnalysisResult,
-  type AnalyzeViaLlmOutcome,
-} from './core/analyze.js'
-import type { AnalysisResult, EditTriage } from './core/types.js'
-import { EDIT_TRIAGE_LEVELS } from './core/types.js'
-import { defaultStrategyRegistry, isLegacyGeneral } from './core/registry.js'
-import { stripProtocolMarkers, compilePrompt, finalizeCompile, finalizeKeepResult, assertKeepFidelity } from './core/compiler.js'
-import { computeAnalysisGate } from './core/requirements.js'
-import { assessCompleteness, decideValidationAction, type ValidationFlowOutcome } from './core/validation-flow.js'
-import { reconcileLedger } from './core/ledger-reconcile.js'
-import { describeProvenanceRecovery, reconcileProvenance } from './core/provenance-recovery.js'
-import {
-  buildConfirmation,
-  evaluateSufficiency,
-  findSessionViolations,
-  planQuestions,
-  recordAsked,
-  reopenRequirements,
-  resolveAnswers,
-  reviseRequirement,
-  sanitizeSession,
-  type DiscoveryInput,
-} from './core/discovery.js'
-import { validateCompileResult } from './core/validate.js'
+/** 历史类型闭集:V3 不再据此路由,仅用于设置项校验提示(用户可见文案)。 */
+const PROMPT_TYPES = ['general', 'research', 'planning', 'execution', 'diagnostic', 'review', 'creative'] as const
 
 export const name = 'dsh-prompt-optimizer'
 // 硬依赖只有 llm。HTTP 载体服务名在发布版间漂移过(npm 0.0.1-rc.x 类型包叫
@@ -63,7 +38,6 @@ export interface Config {
   /** 优化模式('full'/'fast';其他值按 'full' 处理)。 */
   mode: string
   /** V3 单次调用路径(默认开启;false 回退旧多阶段流程)。 */
-  v3?: boolean
   /** 推理强度('lowest'/'session';其他值按 'lowest' 处理)。默认钳最低档:优化是格式化元任务,高档推理只拉长首 token 前的空等。 */
   reasoningEffort: string
   /** 采样温度(0-2,默认 0.2);优化是格式化任务,低温输出更稳定。 */
@@ -95,7 +69,6 @@ export const Config = Schema.object({
   // 无日志行)。正常用户路径因此高概率失败。默认提到 300s(范围与 UI 提示不变)。
   timeoutSeconds: Schema.number().min(10).max(600).default(300).volatile(),
   /** V3 单次调用路径(默认开启;关闭可回退旧多阶段流程)。 */
-  v3: Schema.boolean().default(true).volatile(),
   mode: Schema.string().default('full').volatile(),
   reasoningEffort: Schema.string().default('lowest').volatile(),
   temperature: Schema.number().min(0).max(2).default(0.2).volatile(),
@@ -131,7 +104,6 @@ function readConfig(raw: Config): Config {
     promptType: unwrapCell(raw.promptType) ?? 'auto',
     classifierModel: unwrapCell(raw.classifierModel),
     // V3 单次调用:未显式关闭即开启(默认路径)
-    v3: unwrapCell(raw.v3) !== false,
   }
 }
 
@@ -160,28 +132,10 @@ function warnUnknownEnumConfig(cfg: Config): void {
     warnUnknownEnum(cfg.reasoningEffort, ['lowest', 'session'], 'reasoningEffort')
   }
   // promptType:'auto'(默认)或七个策略类型;其余值在使用处按 AUTO 处理。
-  if (cfg.promptType !== 'auto' && !(PROMPT_TYPES as readonly string[]).includes(cfg.promptType)) {
+  // V3 由模型判定用途,该字段只作历史兼容(不再影响流程)。
+  if (cfg.promptType !== 'auto' && !PROMPT_TYPES.includes(cfg.promptType)) {
     warnUnknownEnum(cfg.promptType, ['auto', ...PROMPT_TYPES], 'promptType')
   }
-}
-
-/**
- * Phase 3:校验客户端回传的分析结论(不可信输入)。
- * 缺字段 / 结构不符 → null(调用方安全回退到重新分析,而不是信任它)。
- */
-function parseClientAnalysis(value: unknown): AnalysisResult | null {
-  if (!value || typeof value !== 'object') return null
-  const record = value as Record<string, unknown>
-  const intent = record.intent as Record<string, unknown> | undefined
-  const target = record.target as Record<string, unknown> | undefined
-  const triage = record.triage as Record<string, unknown> | undefined
-  if (!intent || typeof intent !== 'object') return null
-  if (!target || typeof target !== 'object') return null
-  if (!triage || typeof triage !== 'object') return null
-  if (!Array.isArray(record.missing_resolution)) return null
-  if (!Array.isArray(record.ledger)) return null
-  if (typeof record.prompt_type !== 'string') return null
-  return value as AnalysisResult
 }
 
 interface OptimizeRequestBody {
@@ -628,13 +582,6 @@ export function apply(ctx: Context, config: Config) {
         // 与 context 一样跟随「携带上下文」开关——关闭后不带任何会话衍生材料。
         const previousRaw = cfg.includeContext === false ? undefined : asOptionalString(body.previous)
         const previous = previousRaw ? (previousRaw.length > 1500 ? `${previousRaw.slice(0, 1500)}…` : previousRaw) : undefined
-        // 手动类型覆盖:请求体显式值优先(UI 永远最高优先级);缺省 / 非法值回落到
-        // 设置里的默认类型(默认 'auto' → 走 AUTO 分类;固定类型 → 跳过分类直达策略)。
-        const manualType = parsePromptTypeInput(body.promptType) ?? parsePromptTypeInput(cfg.promptType)
-        // 净化后的 Discovery 会话(必须在 context 之后构造:台账净化需要上下文用户消息)
-        const session = discoveryReq
-          ? sanitizeSession({ ...discoveryReq.session, raw_input: text }, context ?? [])
-          : null
         // 输出上限跟随输入长度:优化结果体量与草稿正相关(完整模式还多一段分析),
         // 长草稿撞固定上限会被截断。取配置值与「输入估算 × 模式系数」的较大者,32768 封顶。
         const maxTokens =
@@ -672,859 +619,183 @@ export function apply(ctx: Context, config: Config) {
           //   不再串行 analysis → discovery → confirmation → compile → validate。
           //   本地只做**机械**安全检查(协议标记 / 空产出 / 硬约束),不再调用模型。
           // ══════════════════════════════════════════════════════════════════
-          if (cfg.v3 !== false) {
-            const v3Route = routes[0]!
-            const effort = preferSessionEffort
-              ? sessionEffort
-              : ((await resolveLowestEffortCached(ctx.llm, v3Route.provider, v3Route.model)) ?? sessionEffort)
-            // 用户对上一轮提问的回答(客户端以 answers 回传)
-            const v3Answer = (() => {
-              const answers = discoveryReq && 'answers' in discoveryReq.session
-                ? (discoveryReq.session.answers ?? [])
-                : []
-              const first = answers.find((a) => String(a?.text ?? '').trim())
-              return first ? String(first.text).trim() : ''
-            })()
-            const v3Questions = (() => {
-              const asked = discoveryReq && 'asked' in discoveryReq.session ? (discoveryReq.session.asked ?? []) : []
-              const last = [...asked].reverse().find((a) => String(a?.question ?? '').trim())
-              return last ? String(last.question).trim() : ''
-            })()
-            const messages = buildV3Messages({
-              rawInput: text,
-              ...(context ? { contextTurns: context } : {}),
-              ...(v3Answer ? { clarification: { question: v3Questions, answer: v3Answer } } : {}),
-              language,
-            })
-            let v3Raw = ''
-            let v3Failure: string | null = null
-            try {
-              const v3Options = {
-                provider: v3Route.provider,
-                model: v3Route.model,
-                messages: messages.map((m: { role: string; content: string }) => ({
-                  id: `prompt-optimizer-${crypto.randomUUID()}`,
-                  role: m.role,
-                  content: [{ type: 'text', text: m.content }],
-                  source: { kind: 'plugin', plugin: name },
-                })) as unknown as Message[],
-                maxTokens: cfg.maxTokens,
-                temperature: cfg.temperature,
-                ...(effort ? { reasoningEffort: effort as NonNullable<GenerateOptions['reasoningEffort']> } : {}),
-                signal: abort.signal,
-              }
-              const collected = await collectText(ctx.llm.stream(v3Options), (delta) => {
-                send({ type: 'delta', text: delta })
-              })
-              v3Raw = collected.text
-              if (collected.truncated) v3Failure = 'truncated'
-            } catch (error) {
-              v3Failure = error instanceof Error ? error.message : String(error)
-            }
-            if (abort.signal.aborted) {
-              // 超时:必须显式下发 error 终态。外层 catch 在 signal.aborted 时会静默返回
-              // (那是给「客户端断连」准备的),若在此处 throw,用户既拿不到产物也拿不到错误。
-              if (timedOut && !res.writableEnded) {
-                send({
-                  type: 'error',
-                  error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
-                  reason_code: 'VF_TIMEOUT',
-                })
-                res.end()
-              }
-              return
-            }
-            let v3 = parseV3Output(v3Raw, text)
-            // 机械保证:用户已经回答过(或选择「保持未确定」)→ 本轮必须继续输出,不得再问。
-            // 模型采样不稳定时,这一层防止「回答后仍反复追问」。
-            if (v3Answer && v3.status === 'needs_clarification') {
-              console.warn('[dsh-prompt-optimizer] V3 已收到用户回答,禁止再次提问 → 继续输出')
-              v3 = { status: 'optimized', usage: v3.usage, structured: v3.structured, output: conservativeOutput(text), question: '' }
-            }
-            if (v3.status === 'needs_clarification' && v3.question) {
-              // 关键歧义:只问 1 个问题;用户可「保持未确定,直接优化」
-              send({
-                type: 'discovery_required',
-                status: 'needs_clarification',
-                v3: true,
-                usage: v3.usage,
-                questions: [
-                  {
-                    key: `v3-${Date.now()}`,
-                    question: v3.question,
-                    options: [],
-                    why: '这是理解你这句话所必需的信息',
-                    depends_on: [],
-                    allow_blind_trust: true,
-                  },
-                ],
-                asked: [],
-                ledger: [],
-                gate: { blocked: true, blocking_items: [{ text: v3.question }], discoverable_items: [], optional_items: [], reason: '关键歧义' },
-                triage: { triage: mechanicalTriage(text).triage, reasons: ['V3:按输入复杂度判定'], signals: [], keep_safe: false },
-                intent: { primary: 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
-                target: { target: 'general', modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: 'V3 单次调用' },
-                analysis: null,
-              })
-              res.end()
-              return
-            }
-            let output = stripProtocolMarkers(v3.output)
-            // 机械纠偏(本地,无额外模型调用):优化稿不得擅自扩展任务方向
-            // (目标描述→规划任务 / 想法交流→执行任务)。命中则保守退回用户原文。
-            const v3Expansion = detectIntentExpansion(text, output)
-            if (v3Expansion.expanded) {
-              console.warn(
-                `[dsh-prompt-optimizer] V3 意图扩展已拦截:${v3Expansion.phrases.join(',')} → 保守回退原文`,
-              )
-              output = stripProtocolMarkers(conservativeOutput(text))
-            }
-            // 机械纠偏:图片/视频/音频提示词不得被写成执行任务模板(用户要求保护的内容)
-            const v3Drift = detectSpecialUsageTemplateDrift(v3.usage, output)
-            if (v3Drift.drifted) {
-              console.warn(
-                `[dsh-prompt-optimizer] V3 特殊用途模板漂移已拦截:${v3.usage} → 保守回退原文`,
-              )
-              output = stripProtocolMarkers(conservativeOutput(text))
-            }
-            if (!output.trim()) {
-              // 技术错误独立显示:绝不伪装成业务澄清状态
-              send({
-                type: 'error',
-                error: `模型没有产出可用内容${v3Failure ? `(${v3Failure})` : ''};可直接重试。`,
-                reason_code: 'VF_EMPTY_OUTPUT',
-              })
-              res.end()
-              return
-            }
-            // 机械安全(本地,无额外模型调用):硬约束是否保留
-            const v3Safety = assessV3Safety({ rawInput: text, optimizedPrompt: output })
-            const v3Triage = mechanicalTriage(text)
-            const usageToTarget: Record<string, string> = {
-              GENERAL: 'general',
-              IMAGE: 'image_generation',
-              VIDEO: 'video_generation',
-              AUDIO: 'audio_generation',
-              AGENT: 'agent_task',
-            }
-            const v3Target = usageToTarget[v3.usage] ?? 'general'
-            send({
-              type: 'meta',
-              v3: true,
-              intent: { primary: v3.usage === 'AGENT' ? 'execution' : 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
-              target: { target: v3Target, modality: v3.usage === 'IMAGE' ? 'image' : v3.usage === 'VIDEO' ? 'video' : 'text', engine: null, confidence: 'high', evidence: [], rationale: `V3 用途:${v3.usage}` },
-              triage: { triage: v3Triage.triage, reasons: ['V3:按输入复杂度判定'], signals: v3Triage.signals, keep_safe: v3Triage.keep_safe, mechanical: v3Triage.triage },
-              gate: { blocked: false, blocking_items: [], discoverable_items: [], optional_items: [], reason: 'V3:无需阻塞' },
-              ledger: [],
-              usage: v3.usage,
-              structured: v3.structured,
-              prompt_type: v3.usage.toLowerCase(),
-            })
-            send({ type: 'validating' })
-            send({
-              type: 'done',
-              v3: true,
-              usage: v3.usage,
-              structured: v3.structured,
-              optimized: output,
-              analysis: `用途:${v3.usage}${v3.structured ? ' · 结构化' : ''}`,
-              wellFormed: true,
-              truncated: false,
+          const v3Route = routes[0]!
+          const effort = preferSessionEffort
+            ? sessionEffort
+            : ((await resolveLowestEffortCached(ctx.llm, v3Route.provider, v3Route.model)) ?? sessionEffort)
+          // 用户对上一轮提问的回答(客户端以 answers 回传)
+          const v3Answer = (() => {
+            const answers = discoveryReq && 'answers' in discoveryReq.session
+              ? (discoveryReq.session.answers ?? [])
+              : []
+            const first = answers.find((a) => String(a?.text ?? '').trim())
+            return first ? String(first.text).trim() : ''
+          })()
+          const v3Questions = (() => {
+            const asked = discoveryReq && 'asked' in discoveryReq.session ? (discoveryReq.session.asked ?? []) : []
+            const last = [...asked].reverse().find((a) => String(a?.question ?? '').trim())
+            return last ? String(last.question).trim() : ''
+          })()
+          const messages = buildV3Messages({
+            rawInput: text,
+            ...(context ? { contextTurns: context } : {}),
+            ...(v3Answer ? { clarification: { question: v3Questions, answer: v3Answer } } : {}),
+            language,
+          })
+          let v3Raw = ''
+          let v3Failure: string | null = null
+          try {
+            const v3Options = {
               provider: v3Route.provider,
               model: v3Route.model,
-              fallbackUsed: false,
-              prompt_type: v3.usage.toLowerCase(),
-              confidence_level: 'High',
-              diagnosis: `V3 单次调用 · 用途 ${v3.usage}`,
-              explicit_requirements: [],
-              context_requirements: [],
-              suggested_requirements: [],
-              unknowns: [],
-              missing_constraints: [],
-              provenance_ok: v3Safety.hardConstraintKept,
-              triage: { triage: v3Triage.triage, reasons: ['V3:按输入复杂度判定'], signals: v3Triage.signals, keep_safe: v3Triage.keep_safe, mechanical: v3Triage.triage },
+              messages: messages.map((m: { role: string; content: string }) => ({
+                id: `prompt-optimizer-${crypto.randomUUID()}`,
+                role: m.role,
+                content: [{ type: 'text', text: m.content }],
+                source: { kind: 'plugin', plugin: name },
+              })) as unknown as Message[],
+              maxTokens: cfg.maxTokens,
+              temperature: cfg.temperature,
+              ...(effort ? { reasoningEffort: effort as NonNullable<GenerateOptions['reasoningEffort']> } : {}),
+              signal: abort.signal,
+            }
+            const collected = await collectText(ctx.llm.stream(v3Options), (delta) => {
+              send({ type: 'delta', text: delta })
+            })
+            v3Raw = collected.text
+            if (collected.truncated) v3Failure = 'truncated'
+          } catch (error) {
+            v3Failure = error instanceof Error ? error.message : String(error)
+          }
+          if (abort.signal.aborted) {
+            // 超时:必须显式下发 error 终态。外层 catch 在 signal.aborted 时会静默返回
+            // (那是给「客户端断连」准备的),若在此处 throw,用户既拿不到产物也拿不到错误。
+            if (timedOut && !res.writableEnded) {
+              send({
+                type: 'error',
+                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
+                reason_code: 'VF_TIMEOUT',
+              })
+              res.end()
+            }
+            return
+          }
+          let v3 = parseV3Output(v3Raw, text)
+          // 机械保证:用户已经回答过(或选择「保持未确定」)→ 本轮必须继续输出,不得再问。
+          // 模型采样不稳定时,这一层防止「回答后仍反复追问」。
+          if (v3Answer && v3.status === 'needs_clarification') {
+            console.warn('[dsh-prompt-optimizer] V3 已收到用户回答,禁止再次提问 → 继续输出')
+            v3 = { status: 'optimized', usage: v3.usage, structured: v3.structured, output: conservativeOutput(text), question: '' }
+          }
+          if (v3.status === 'needs_clarification' && v3.question) {
+            // 关键歧义:只问 1 个问题;用户可「保持未确定,直接优化」
+            send({
+              type: 'discovery_required',
+              status: 'needs_clarification',
+              v3: true,
+              usage: v3.usage,
+              questions: [
+                {
+                  key: `v3-${Date.now()}`,
+                  question: v3.question,
+                  options: [],
+                  why: '这是理解你这句话所必需的信息',
+                  depends_on: [],
+                  allow_blind_trust: true,
+                },
+              ],
+              asked: [],
               ledger: [],
-              missing_resolution: [],
-              target: { target: v3Target, modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: `V3 用途:${v3.usage}` },
-              intent: { primary: v3.usage === 'AGENT' ? 'execution' : 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+              gate: { blocked: true, blocking_items: [{ text: v3.question }], discoverable_items: [], optional_items: [], reason: '关键歧义' },
+              triage: { triage: mechanicalTriage(text).triage, reasons: ['V3:按输入复杂度判定'], signals: [], keep_safe: false },
+              intent: { primary: 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+              target: { target: 'general', modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: 'V3 单次调用' },
+              analysis: null,
             })
             res.end()
             return
           }
-
-          // ── 阶段一:意图分类(AUTO)──────────────────────────────────────────
-          // 分类是「元任务」的小调用:maxTokens 512 / temperature 0 / lowest reasoning,
-          // JSON 契约;失败或超时按 general 兜底(绝不阻塞编译)。手动 override 完全跳过。
-          const buildOptimizeMessage = (payloadText: string): Message =>
-            ({
-              id: `prompt-optimizer-${crypto.randomUUID()}`,
-              role: 'user',
-              content: [{ type: 'text', text: payloadText }],
-              source: { kind: 'plugin', plugin: name },
-            }) as unknown as Message
-          // ── 阶段一:v2 分析(意图 / 目标 / 分诊 / 缺失解析)─────────────────
-          // AUTO 路径用**一次**结构化小调用取代旧分类调用(不新增调用次数);
-          // 手动覆盖路径跳过 LLM 分析(尊重用户选择),目标仍按确定性线索识别。
-          // 分析失败 / 超时一律走保守兜底(绝不阻塞生成)。
-          let analysis: AnalysisResult | null = null
-          let analysisAborted = false
-          // ── Phase 3:确认轮(mode='confirm')—— 复用客户端回传的分析,不再调用模型 ──
-          // 用户点了「确认并优化」:宿主只做 fail-closed 校验 + 编译;分析结论来自上一轮
-          // (客户端持有,结构无效时安全回退到重新分析,而不是信任客户端结构)。
-          const clientAnalysis = discoveryReq?.mode === 'confirm'
-            ? parseClientAnalysis(discoveryReq.analysis)
-            : null
-          // confirm 是**不可信输入**:先按净化后的台账重算是否仍有阻塞性用户决定。
-          // 只要还有,就绝不允许进入编译(§21 fail-closed),退回 Discovery。
-          let confirmBlocked = false
-          let forceDiscovery = false
-          if (discoveryReq?.mode === 'confirm' && clientAnalysis && session) {
-            const confirmSufficiency = evaluateSufficiency({
-              analysis: clientAnalysis,
-              ledger: session.ledger,
-              asked: session.asked,
-              round: session.round,
-            })
-            // ★ v0.2.0-apo release blocker 修复:达到 Discovery 轮次上限时,
-            //   evaluateSufficiency 会返回 ready:true(设计上「未决项按暂定处理,不再追问」),
-            //   但 liveBlocking 仍然非空。旧写法只看 liveBlocking.length → confirm 被**永久拒绝**:
-            //   界面显示 blocked=false(没有任何可回答的问题),用户却怎么点都进不了编译。
-            //   语义应为「ready 才代表可以放行」:未达上限仍阻塞(fail-closed 不变),
-            //   达上限则按暂定继续(与 sufficiency 的 ready/stopped_by 契约一致)。
-            confirmBlocked = confirmSufficiency.liveBlocking.length > 0 && !confirmSufficiency.ready
-            forceDiscovery = confirmBlocked
-            if (confirmBlocked) {
-              console.warn(
-                `[${name}] confirm rejected: ${confirmSufficiency.liveBlocking.length} blocking user decision(s) still open`,
-              )
-            }
-          }
-          if (discoveryReq?.mode === 'confirm' && clientAnalysis && !confirmBlocked) {
-            // ★ v0.2.0-apo release blocker 修复:confirm 时 `clientAnalysis` 是**用户确认前**
-            //   的分析快照,它的 `gate` 仍标着 blocked=true(当时确实还没问完)。
-            //   而此刻 `confirmBlocked=false` 已经由 evaluateSufficiency 按**当前台账**
-            //   重算过 —— 决策已完备(或已达轮次上限按暂定处理)。
-            //   旧写法原样沿用旧 gate → 流程又被送回确认页,用户怎么点都进不了编译。
-            //   正确语义:确认时刻以 sufficiency 为准,快照 gate 不再是阻塞依据。
-            analysis = {
-              ...clientAnalysis,
-              ...(session && session.ledger.length ? { ledger: session.ledger } : {}),
-              gate: {
-                ...clientAnalysis.gate,
-                blocked: false,
-                blocking_items: [],
-                reason: '用户已确认,且按当前台账重算的决策完备性判定为可继续',
-              },
-            }
-          } else if (manualType) {
-            analysis = manualAnalysisResult(manualType, {
-              rawInput: text,
-              contextTurns: context,
-            })
-          } else {
-            const analyzeOnce = (maxTokensOverride?: number): Promise<AnalyzeViaLlmOutcome> =>
-              analyzeViaLlm<Message>(
-              ctx.llm as unknown as ClassifierLlm<Message>,
-              classifierRoute,
-              { raw_input: text, context_turns: context },
-              {
-                language,
-                signal: abort.signal,
-                ...(maxTokensOverride ? { maxTokensOverride } : {}),
-                // 推理强度口径与既有 handler 一致:'session' 时原样透传;否则钳该
-                // 路由最低档,解析不到再回退会话值(不冒险构造无效 effort)。
-                resolveLowestEffort: preferSessionEffort
-                  ? async () => sessionEffort
-                  : async (provider, model) =>
-                      (await resolveLowestEffortCached(ctx.llm, provider, model)) ?? sessionEffort,
-                buildMessage: (payload) => buildOptimizeMessage(payload),
-              },
+          let output = stripProtocolMarkers(v3.output)
+          // 机械纠偏(本地,无额外模型调用):优化稿不得擅自扩展任务方向
+          // (目标描述→规划任务 / 想法交流→执行任务)。命中则保守退回用户原文。
+          const v3Expansion = detectIntentExpansion(text, output)
+          if (v3Expansion.expanded) {
+            console.warn(
+              `[dsh-prompt-optimizer] V3 意图扩展已拦截:${v3Expansion.phrases.join(',')} → 保守回退原文`,
             )
-            // RC:推理模型可能把分析预算吃光(finish_reason=length → 空内容/半截 JSON),
-            // 此时**一次性**把预算翻倍重试(只在下发过截断信号时发生)。
-            let analysisOutcome = await analyzeOnce()
-            // 实测:推理模型在固定预算下更常见的表现是「半截 JSON」(failure=invalid-output),
-            // 而不一定带 truncated 标记 —— 因此解析失败也重试一次。
-            // 但**提供方错误 / 中止**不重试(重试救不了,只会白白多花一次调用)。
-            const retryable =
-              analysisOutcome.failure === 'invalid-output' ||
-              /truncat/i.test(String(analysisOutcome.reason ?? ''));
-            if (analysisOutcome.usedFallback && !analysisOutcome.aborted && retryable) {
-              console.warn(`[${name}] analysis truncated at maxTokens; retrying once with doubled budget`)
-              analysisOutcome = await analyzeOnce(ANALYSIS_MAX_TOKENS * 2)
-            }
-            if (analysisOutcome.aborted) {
-              // 客户端断连 / 超时:交下方既有分支统一处置(不进入编译)。
-              analysisAborted = true
-            } else {
-              if (analysisOutcome.usedFallback) {
-                const reason = analysisOutcome.reason ?? analysisOutcome.failure
-                console.warn(`[${name}] analyze failed, fallback general: ${reason}`)
-              }
-              analysis = analysisOutcome.result
-            }
+            output = stripProtocolMarkers(conservativeOutput(text))
           }
-          // ── Phase 4:Discovery 不得改变 Edit Triage ──────────────────────────
-          // 首轮分析定下的分诊被客户端钉住并在每轮回传;回答轮**强制沿用**它,
-          // 避免「需求问清楚之后偷偷从 REBUILD 变成 PATCH」。triage 来自客户端,
-          // 因此只接受封闭枚举内的值(不可信输入)。
-          const pinnedTriage = session && EDIT_TRIAGE_LEVELS.includes(session.triage as EditTriage)
-            ? (session.triage as EditTriage)
-            : undefined
-          if (
-            analysis &&
-            pinnedTriage &&
-            discoveryReq?.mode === 'answer' &&
-            analysis.triage.triage !== pinnedTriage
-          ) {
-            analysis = {
-              ...analysis,
-              triage: { ...analysis.triage, triage: pinnedTriage, keep_safe: pinnedTriage === 'KEEP' },
-            }
-          }
-          // ── Phase 4:再优化对账(Requirement Ledger reconcile)────────────────
-          // 用户改一版 Prompt 再优化时:旧 requirement 分为 STILL_VALID / CONFLICTING /
-          // INVALIDATED —— 既不能一股脑继承(污染新任务),也不能一股脑丢弃(白问一轮)。
-          if (discoveryReq?.mode === 'reoptimize' && session && analysis) {
-            const reconciled = reconcileLedger({
-              previous: session.ledger,
-              analysis,
-              rawInput: text,
-              // 上一轮的目标来自会话里保存的分析(没有就用当前目标,退化为「同族」判定)
-              previousTarget: (session.analysis as AnalysisResult | undefined)?.target?.target,
-            })
-            console.log(`[${name}] ${reconciled.summary}`)
-            // 对账结果必须**贯穿**后续所有分支(编译 / 确认 / 门禁都读 analysis.ledger)
-            analysis = { ...analysis, ledger: reconciled.ledger }
-            // ★ v0.2.0-apo release blocker 修复:gate 也必须与**对账后的台账**对齐。
-            //   再优化时 fresh analysis 会重新报出同样的决策项,而它在台账里早已确认/暂定;
-            //   旧写法直接沿用 analysis.gate.blocked=true → 流程又被送回确认页
-            //   (用户只改了无关措辞,却被要求把已经确认过的决定再确认一遍)。
-            //   契约:对账后「仍然成立」的决策不再阻塞;只有**新出现**的 blocking 才进 Discovery。
-            const reSufficiency = evaluateSufficiency({
-              analysis,
-              ledger: reconciled.ledger,
-              round: session?.round ?? 1,
-            })
-            if (reSufficiency.ready && reSufficiency.liveBlocking.length === 0) {
-              analysis = {
-                ...analysis,
-                gate: {
-                  ...analysis.gate,
-                  blocked: false,
-                  blocking_items: [],
-                  reason: '再优化对账后决策仍然完备(已确认要求保留,不重复询问)',
-                },
-              }
-            }
-          }
-          const classifier: ClassifierResult | null = analysis ? analysisToClassifier(analysis) : null
-
-          if (analysisAborted) {
-            // 已超时或客户端断连:不进入编译;超时场景统一回 error 事件。
-            if (timedOut) {
-              send({
-                type: 'error',
-                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
-              })
-            }
-          } else if (timedOut || abort.signal.aborted) {
-            if (timedOut) {
-              send({
-                type: 'error',
-                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
-              })
-            }
-          } else if (analysis!.gate.blocked || forceDiscovery) {
-            // ── v2 Phase 3:Requirement Discovery 循环(唯一允许「不生成」的出口)──
-            // forceDiscovery:上一次 confirm 被 fail-closed 拒绝(仍阻塞)——即使重新分析
-            // 看起来没有阻塞项,也必须回到确认/追问流程,绝不静默编译。
-            // 存在「只有用户本人能决定」的阻塞项时:不进入编译、不消耗编译 token。
-            // 每轮**重新计算**:解析回答 → 更新台账 → 充足性 → 规划下一轮问题。
-            const round = session?.round ?? 1
-            const violations = session ? findSessionViolations(session) : []
-            if (violations.length > 0) {
-              // fail-closed:台账不变量被破坏 → 绝不放行编译
-              console.error(`[${name}] discovery session violated ledger invariants:`, violations)
-              send({
-                type: 'error',
-                error: `需求台账校验未通过(${violations.length} 项),已停止以免把非用户确认的内容当成你的决定。请重新优化。`,
-              })
-            } else {
-              // 回答轮:解析回答 → 更新台账(证据 = 用户原话)
-              const resolved = session && discoveryReq?.mode === 'answer'
-                ? resolveAnswers({
-                    raw_input: text,
-                    ledger: session.ledger,
-                    questions: session.questions,
-                    answers: session.answers,
-                  })
-                : { ledger: session?.ledger ?? analysis!.ledger, updates: [] }
-              let ledger = resolved.ledger
-              // 「修改理解」:直接编辑 / 重开某些已确认项(保持台账,不全部重来)
-              for (const edit of discoveryReq?.edited ?? []) {
-                ledger = reviseRequirement(ledger, edit.requirement_id, edit.value, edit.evidence)
-              }
-              if (discoveryReq?.reopened?.length) {
-                ledger = reopenRequirements(ledger, discoveryReq.reopened)
-              }
-              // 「修改理解」重开的项:清掉其 asked 记录(允许再次询问),其余记录保留
-              const reopenedIds = new Set(
-                (discoveryReq?.reopened ?? []).map((id) => (id.startsWith('ledger-') ? id.slice(7) : id)),
-              )
-              const askedForRound = (session?.asked ?? []).filter(
-                (record) => !reopenedIds.has(String(record.key).split('::')[0]),
-              )
-              const sufficiency = evaluateSufficiency({
-                analysis: analysis!,
-                ledger,
-                asked: askedForRound,
-                round,
-              })
-              // 门的分组必须保留**全部**未决项(可自查 / 可选也要展示);只有 blocked
-              // 与 blocking_items 用充足性重算后的 live 结论(结合台账当前状态)。
-              const fullGate = computeAnalysisGate(analysis!.missing_resolution, analysis!.triage.triage)
-              const gate = {
-                ...fullGate,
-                blocked: sufficiency.liveBlocking.length > 0,
-                blocking_items: sufficiency.liveBlocking,
-                reason: sufficiency.ready ? fullGate.reason : sufficiency.reason,
-              }
-              if (sufficiency.ready) {
-                // ── 决策完备 → Requirement Confirmation(仍不编译)──────────────
-                const confirmation = buildConfirmation({
-                  analysis: analysis!,
-                  ledger,
-                  raw_input: text,
-                })
-                send({
-                  type: 'requirement_confirmation',
-                  intent: analysis!.intent,
-                  target: analysis!.target,
-                  triage: analysis!.triage,
-                  ledger,
-                  gate,
-                  confirmation,
-                  rationale: confirmation.goal,
-                  provenance_ok: true,
-                  round,
-                  asked: session?.asked ?? [],
-                  analysis: analysis!,
-                })
-              } else {
-                // ── 继续追问:1–2(≤3)个高影响问题,依赖分轮、不重复问 ──────────
-                const planned = planQuestions({
-                  raw_input: text,
-                  triage: analysis!.triage.triage,
-                  ledger,
-                  blocking: sufficiency.liveBlocking,
-                  asked: askedForRound,
-                  answers: session?.answers ?? [],
-                  candidates: analysis!.questions ?? [],
-                  round,
-                })
-                if (planned.verdict === 'READY_TO_CONFIRM') {
-                  // 循环安全保护:问不出更有价值的新问题 → 停止追问,交用户确认。
-                  const confirmation = buildConfirmation({
-                    analysis: analysis!,
-                    ledger,
-                    raw_input: text,
-                    liveBlocking: sufficiency.liveBlocking,
-                  })
-                  send({
-                    type: 'requirement_confirmation',
-                    intent: analysis!.intent,
-                    target: analysis!.target,
-                    triage: analysis!.triage,
-                    ledger,
-                    gate,
-                    confirmation,
-                    rationale: planned.rationale,
-                    provenance_ok: true,
-                    round,
-                    asked: askedForRound,
-                    ...(planned.stopped_by ? { stopped_by: planned.stopped_by } : {}),
-                    analysis: analysis!,
-                  })
-                } else {
-                  const asked = recordAsked(planned, askedForRound)
-                  send({
-                    type: 'discovery_required',
-                    intent: analysis!.intent,
-                    target: analysis!.target,
-                    triage: analysis!.triage,
-                    ledger,
-                    gate,
-                    rationale: planned.rationale,
-                    provenance_ok: true,
-                    round,
-                    questions: planned.questions,
-                    asked,
-                    agent_researches: analysis!.missing_resolution
-                      .filter((item) => item.classification === 'AGENT_DISCOVERABLE')
-                      .map((item) => item.text),
-                    ...(planned.stopped_by ? { stopped_by: planned.stopped_by } : {}),
-                    // 客户端不解读,只在 confirm 时回传(宿主会重新校验)
-                    analysis: analysis!,
-                  })
-                }
-              }
-            }
-          } else if (discoveryReq?.mode === 'answer' && session) {
-            // ── 回答轮:重新分析后已无阻塞项 → 直接进入 Requirement Confirmation ──
-            // (决策完备即停;不为了 UNKNOWN 清零继续追问)
-            const ledger = resolveAnswers({
-              raw_input: text,
-              ledger: session.ledger,
-              questions: session.questions,
-              answers: session.answers,
-            }).ledger
-            const revised = (discoveryReq.edited ?? []).reduce(
-              (acc, edit) => reviseRequirement(acc, edit.requirement_id, edit.value, edit.evidence),
-              ledger,
+          // 机械纠偏:图片/视频/音频提示词不得被写成执行任务模板(用户要求保护的内容)
+          const v3Drift = detectSpecialUsageTemplateDrift(v3.usage, output)
+          if (v3Drift.drifted) {
+            console.warn(
+              `[dsh-prompt-optimizer] V3 特殊用途模板漂移已拦截:${v3.usage} → 保守回退原文`,
             )
-            const finalLedger = discoveryReq.reopened?.length
-              ? reopenRequirements(revised, discoveryReq.reopened)
-              : revised
-            const confirmation = buildConfirmation({ analysis: analysis!, ledger: finalLedger, raw_input: text })
-            send({
-              type: 'requirement_confirmation',
-              intent: analysis!.intent,
-              target: analysis!.target,
-              triage: analysis!.triage,
-              ledger: finalLedger,
-              gate: analysis!.gate,
-              confirmation,
-              rationale: confirmation.goal,
-              provenance_ok: true,
-              round: session.round,
-              asked: session.asked,
-              analysis: analysis!,
-            })
-          } else if (analysis!.triage.triage === 'KEEP') {
-            // ── v2 KEEP 分诊:原样保留,**不调用模型、不改写**────────────────
-            // v2 §C4:KEEP 一旦成立就是硬承诺。这里跳过编译载荷与流式调用,
-            // 直接把用户输入逐字作为交付稿返回,并用机械断言兜底。
-            const keepStrategy = defaultStrategyRegistry.get(analysis!.prompt_type)
-            send({
-              type: 'meta',
-              prompt_type: keepStrategy.type,
-              confidence_level: toConfidenceLevel(classifier!.confidence_internal),
-              missing_constraints: [],
-              rationale: classifier!.rationale,
-              provenance_ok: true,
-              intent: analysis!.intent,
-              target: analysis!.target,
-              triage: analysis!.triage,
-              ledger: analysis!.ledger,
-              missing_resolution: analysis!.missing_resolution,
-              gate: analysis!.gate,
-            })
-            const keepOutcome = finalizeKeepResult(keepStrategy, {
-              rawInput: text,
-              classifier: classifier!,
-              analysis: analysis!,
-              missing: [],
-            })
-            // Phase 4:KEEP 也走 Validator 硬校验(keepExpected=true)。
-            // 一旦被改写 → HARD_ERROR,绝不静默放行。
-            const keepFidelity = decideValidationAction({
-              problems: keepOutcome.problems,
-              result: keepOutcome.result,
-              rawInput: text,
-              returns: session?.validationReturns ?? [],
-              round: session?.round ?? 1,
-              keepExpected: true,
-            })
-            if (keepFidelity.action !== 'PASS') {
-              keepOutcome.result.provenance_ok = false
-              console.error(`[${name}] KEEP fidelity failed: ${keepFidelity.detail}`)
-              send({ type: 'error', error: `KEEP 校验未通过:${keepFidelity.detail}`, reason_code: keepFidelity.reason_code })
-            } else {
-            send({
-              type: 'done',
-              analysis: keepOutcome.result.diagnosis,
-              optimized: keepOutcome.result.optimized_prompt,
-              wellFormed: keepOutcome.wellFormed,
-              truncated: false,
-              provider: '',
-              model: '',
-              fallbackUsed: false,
-              keep: true,
-              prompt_type: keepOutcome.result.prompt_type,
-              ...(keepOutcome.result.contract ? { contract: keepOutcome.result.contract } : {}),
-              confidence_level: keepOutcome.result.confidence_level,
-              diagnosis: keepOutcome.result.diagnosis,
-              explicit_requirements: keepOutcome.result.explicit_requirements,
-              context_requirements: keepOutcome.result.context_requirements,
-              suggested_requirements: keepOutcome.result.suggested_requirements,
-              unknowns: keepOutcome.result.unknowns,
-              missing_constraints: keepOutcome.result.missing_constraints,
-              strategy_version: keepOutcome.result.strategy_version,
-              provenance_ok: keepOutcome.result.provenance_ok,
-              intent: analysis!.intent,
-              target: analysis!.target,
-              triage: analysis!.triage,
-              ledger: analysis!.ledger,
-              missing_resolution: analysis!.missing_resolution,
-              gate: analysis!.gate,
-            })
-            }
-          } else {
-            // ── 归一化 + 策略选择 + 编译载荷(compilePrompt 10 步编排)────────
-            // override 与 AUTO 共用同一入口:合法 promptType 由 compilePrompt 函数级
-            // 直达 registry(不存在任何分类调用);否则使用上面的分析结果。
-            // v2 Phase 2:把分析结果交给编译器,由 Target-aware Router 选编译契约
-            // (图像/视频走描述式契约,Agent 目标走任务指令契约,其余按意图)。
-            const plan = compilePrompt({
-              raw_input: text,
-              turns: context,
-              workspace_metadata: {},
-              ...(manualType ? { promptType: manualType } : { classifier: classifier! }),
-              // 受控回流的纠错反馈:重试时必须进入载荷(否则与首次同构,违规会重复到 fail-closed)
-              ...(session?.validationReturns?.length
-                ? { validationReturns: session.validationReturns }
-                : {}),
-              analysis: analysis!,
-              language,
-              mode,
-              previous,
-            })
-            const strategy = plan.strategy
-            const effectiveClassifier = plan.classifier
-            const reconciledLedgerForValidation = analysis!.ledger
-            const missing = plan.vars.missing_constraints
-            const message = buildOptimizeMessage(plan.user)
-            const system = plan.system
-
-            // meta 必须先于任何 delta 下发(客户端据此把阶段切到「正在优化」);
-            // 编译结果尚未产出,provenance_ok 在 meta 里是乐观值——done 携带真实值。
-            send({
-              type: 'meta',
-              prompt_type: analysis!.prompt_type,
-              ...(strategy.type !== analysis!.prompt_type ? { contract: strategy.type } : {}),
-              confidence_level: toConfidenceLevel(effectiveClassifier.confidence_internal),
-              missing_constraints: missing,
-              rationale: effectiveClassifier.rationale,
-              provenance_ok: true,
-              // v2:分析结论先于任何 delta 下发(客户端据此渲染目标 / 分诊 / 台账)。
-              intent: analysis!.intent,
-              target: analysis!.target,
-              triage: analysis!.triage,
-              ledger: analysis!.ledger,
-              missing_resolution: analysis!.missing_resolution,
-              gate: analysis!.gate,
-            })
-
-            // ── 阶段二:编译流式输出 ─────────────────────────────────────────
-            let sentAny = false
-            let used = routes[0]
-            let raw: { text: string; truncated: boolean } | null = null
-            let lastError: unknown = null
-            // O12:主路由零产出失败而启用回退时,把失败原因带给客户端(徽章 tooltip 展示)。
-            let fallbackReason: string | undefined
-            for (const attempt of routes) {
-              used = attempt
-              try {
-                const options: GenerateOptions = {
-                  provider: attempt.provider,
-                  model: attempt.model,
-                  system,
-                  messages: [message],
-                  maxTokens,
-                  temperature: cfg.temperature ?? 0.2,
-                  signal: abort.signal,
-                }
-                let effort = sessionEffort
-                if (!preferSessionEffort) {
-                  effort = (await resolveLowestEffortCached(ctx.llm, attempt.provider, attempt.model)) ?? sessionEffort
-                }
-                if (effort) {
-                  options.reasoningEffort = effort as GenerateOptions['reasoningEffort']
-                }
-                // 思考块过滤:推理模型把 <think>…</think> 当正文输出(内含复述的
-                // 标记字样),剥掉后客户端的实时预览与最终解析都只见到真实内容。
-                const thinkFilter = createThinkFilter()
-                raw = await collectText(ctx.llm.stream(options), (delta) => {
-                  sentAny = true
-                  const clean = thinkFilter.push(delta)
-                  if (clean) send({ type: 'delta', text: clean })
-                })
-                const thinkTail = thinkFilter.flush()
-                if (thinkTail) send({ type: 'delta', text: thinkTail })
-                // v0.2.0-apo release blocker:空 final content(实测形态:HTTP 200 /
-                // finish_reason=stop / reasoning 有内容但最终正文 0 字 → REASONING_ONLY)
-                // 时做**一次** bounded retry(与 analysis 侧同口径);仍空则走既有
-                // 空产出路径 fail-closed(明确 error 终态)。不把 reasoning 当正文交付。
-                if (!raw.text.trim() && !raw.truncated && !abort.signal.aborted) {
-                  console.warn(`[${name}] compile returned empty final content; retrying once`)
-                  const retryRaw = await collectText(ctx.llm.stream(options))
-                  if (retryRaw.text.trim()) raw = retryRaw
-                  else console.warn(`[${name}] compile still empty after retry; failing closed`)
-                }
-                lastError = null
-                break
-              } catch (error) {
-                lastError = error
-                if (timedOut || abort.signal.aborted || sentAny) break
-                if (attempt !== routes[routes.length - 1]) {
-                  fallbackReason = error instanceof Error ? error.message : String(error)
-                  console.error(`[${name}] 主路由 ${attempt.provider}/${attempt.model} 失败,尝试回退路由:`, error)
-                }
-              }
-            }
-            if (raw) {
-              const outcome = finalizeCompile(strategy, raw.text, {
-                rawInput: text,
-                contextTurns: context ?? [],
-                classifier: effectiveClassifier,
-                missing,
-                mode,
-                legacy: plan.legacy,
-                language,
-                analysis: analysis!,
-              })
-              // 非 legacy 策略再跑三层输出守卫(保真 / 推断建议 / 未知项)。
-              // Phase 4:Validator 从「只 fail-closed」升级为**可控回流控制器** ——
-              // 机械判定 PASS / RETURN_TO_* / HARD_ERROR,回流有 reason code、有次数上限、
-              // 同一失败不重复循环(见 core/validation-flow.ts)。
-              // ★ v0.2.0-apo release blocker 修复:可恢复的 provenance 错误**自动修复**
-              //   模型偶尔把自己的建议/对不上证据的内容写进 USER_EXPLICIT 组 → 守卫会拒交付。
-              //   provider 已成功返回、用户输入无错,不该把内部分组错误转嫁给用户:
-              //   先机械对账(降级到 CONTEXT_EXPLICIT / OPTIMIZER_SUGGESTED / UNKNOWN),
-              //   再校验;降级为 UNKNOWN 的条目交缺失解析机械分类,只有新出现的 blocking
-              //   USER_REQUIRED 才进 Discovery。不放松 provenance 红线。
-              const provenanceRecovery = reconcileProvenance(outcome.result, {
-                rawInput: text,
-                contextTurns: context ?? [],
-                suggestions: [
-                  ...analysis!.ledger
-                    .filter((entry) => entry.source === 'OPTIMIZER_SUGGESTED')
-                    .map((entry) => entry.text),
-                  ...(outcome.result.suggested_requirements ?? []).map((record) => record.text),
-                ],
-              })
-              if (provenanceRecovery.recovered > 0) {
-                console.log(`[${name}] ${describeProvenanceRecovery(provenanceRecovery.corrections)}`)
-                outcome.result = provenanceRecovery.result
-              }
-              let validationOutcome: ValidationFlowOutcome | null = null
-              if (!plan.legacy) {
-                // 六态 UI:校验阶段是真实阶段,先告知客户端(不是假动画)
-                send({ type: 'validating' })
-                const validation = validateCompileResult(outcome.result, {
-                  triage: analysis!.triage?.triage,
-                  rawInput: text,
-                  contextTurns: context ?? [],
-                  strategy,
-                  rawOutput: raw.text,
-                })
-                outcome.result.provenance_ok = validation.provenance_ok
-                // Phase RC:完整性评估(执行关键 vs 非关键)—— 关键缺失必须回流,不能只警示。
-                // 例外:max-tokens 截断是**显式可见**的状态(truncated=true + UI 警示),
-                // 不做回流(重跑也只会再次截断),仍按既有语义交付。
-                // 另一个例外:fast 模式的产品契约就是「单段落、无标记」——
-                // 用责任名去卡它自相矛盾,因此 fast 模式不做关键完整性回流。
-                const completeness = raw.truncated || mode === 'fast'
-                  ? { criticalMissing: [], nonCriticalMissing: [], droppedUserRequirements: [] }
-                  : assessCompleteness({
-                      optimizedPrompt: outcome.result.optimized_prompt,
-                      responsibilities: strategy.informationResponsibilities,
-                      ledger: reconciledLedgerForValidation,
-                      visualContract: strategy.type === 'image' || strategy.type === 'video',
-                    })
-                validationOutcome = decideValidationAction({
-                  problems: validation.problems,
-                  result: outcome.result,
-                  rawInput: text,
-                  criticalMissing: completeness.criticalMissing,
-                  returns: session?.validationReturns ?? [],
-                  round: session?.round ?? 1,
-                  liveBlockingCount: 0,
-                  // KEEP 路径在本分支之前已经分流(见上面的 KEEP 分支),此处恒 false
-                  keepExpected: false,
-                  visualContract: strategy.type === 'image' || strategy.type === 'video',
-                  // 「目标引擎是优化器擅自假定的」= 有引擎但输入里找不到逐字证据,
-                  // 且该假定真的改变了编译契约(走了目标派生契约)。
-                  // 只是低置信度的文本目标不算(否则每次编译都会被退回重判)。
-                  targetAssumed:
-                    analysis!.target.engine !== null &&
-                    analysis!.target.evidence.length === 0 &&
-                    strategy.type !== analysis!.prompt_type,
-                })
-              }
-              if (validationOutcome && validationOutcome.action !== 'PASS') {
-                // ── 受控回流:不交付结果,带着 reason code 回到上游步骤 ────────────
-                if (validationOutcome.action === 'HARD_ERROR') {
-                  console.error(
-                    `[${name}] validation hard error (${validationOutcome.reason_code}): ${validationOutcome.detail}`,
-                  )
-                  send({
-                    type: 'error',
-                    error: `这次没能安全地生成提示词(${validationOutcome.reason_code}):${validationOutcome.detail}`,
-                    reason_code: validationOutcome.reason_code,
-                  })
-                } else {
-                  // RETURN_TO_MISSING_RESOLUTION / DISCOVERY / ANALYSIS:
-                  // 把回流记录交回客户端,由它带着更新后的状态重跑(有限次数)。
-                  console.warn(
-                    `[${name}] validation return (${validationOutcome.action}/${validationOutcome.reason_code}): ${validationOutcome.detail}`,
-                  )
-                  send({
-                    type: 'returned',
-                    action: validationOutcome.action,
-                    reason_code: validationOutcome.reason_code,
-                    detail: validationOutcome.detail,
-                    requires: validationOutcome.requires ?? null,
-                    returns: validationOutcome.returns,
-                    // 交付前先把 provenance 结论如实告知(不假装成功)
-                    provenance_ok: outcome.result.provenance_ok,
-                  })
-                }
-              } else {
-              send({
-                type: 'done',
-                // 向后兼容字段:analysis / optimized / wellFormed 语义不变。
-                analysis: outcome.result.diagnosis,
-                optimized: outcome.result.optimized_prompt,
-                wellFormed: outcome.wellFormed,
-                truncated: raw.truncated,
-                provider: used.provider,
-                model: used.model,
-                fallbackUsed: used !== routes[0],
-                ...(fallbackReason ? { fallbackReason } : {}),
-                // 新增字段(可选):类型 / 置信度 / 四组 provenance / 缺口 / 校验。
-                prompt_type: outcome.result.prompt_type,
-                ...(outcome.result.contract ? { contract: outcome.result.contract } : {}),
-                confidence_level: outcome.result.confidence_level,
-                diagnosis: outcome.result.diagnosis,
-                explicit_requirements: outcome.result.explicit_requirements,
-                context_requirements: outcome.result.context_requirements,
-                suggested_requirements: outcome.result.suggested_requirements,
-                unknowns: outcome.result.unknowns,
-                missing_constraints: outcome.result.missing_constraints,
-                strategy_version: outcome.result.strategy_version,
-                provenance_ok: outcome.result.provenance_ok,
-                // v2 分析结论(供 UI 渲染目标 / 分诊 / 台账 / 缺失解析)。
-                intent: analysis!.intent,
-                target: analysis!.target,
-                triage: analysis!.triage,
-                ledger: analysis!.ledger,
-                missing_resolution: analysis!.missing_resolution,
-                gate: analysis!.gate,
-              })
-              }
-            } else if (timedOut) {
-              send({
-                type: 'error',
-                error: `优化超时:${timeoutSec} 秒内未生成完毕。可在 设置的插件页「提示词优化」 中调高「超时时间」。`,
-              })
-            } else if (!abort.signal.aborted && lastError) {
-              const message2 = lastError instanceof Error ? lastError.message : String(lastError)
-              console.error(`[${name}] optimize failed:`, lastError)
-              send({ type: 'error', error: message2 })
-            }
+            output = stripProtocolMarkers(conservativeOutput(text))
           }
+          if (!output.trim()) {
+            // 技术错误独立显示:绝不伪装成业务澄清状态
+            send({
+              type: 'error',
+              error: `模型没有产出可用内容${v3Failure ? `(${v3Failure})` : ''};可直接重试。`,
+              reason_code: 'VF_EMPTY_OUTPUT',
+            })
+            res.end()
+            return
+          }
+          // 机械安全(本地,无额外模型调用):硬约束是否保留
+          const v3Safety = assessV3Safety({ rawInput: text, optimizedPrompt: output })
+          const v3Triage = mechanicalTriage(text)
+          const usageToTarget: Record<string, string> = {
+            GENERAL: 'general',
+            IMAGE: 'image_generation',
+            VIDEO: 'video_generation',
+            AUDIO: 'audio_generation',
+            AGENT: 'agent_task',
+          }
+          const v3Target = usageToTarget[v3.usage] ?? 'general'
+          send({
+            type: 'meta',
+            v3: true,
+            intent: { primary: v3.usage === 'AGENT' ? 'execution' : 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+            target: { target: v3Target, modality: v3.usage === 'IMAGE' ? 'image' : v3.usage === 'VIDEO' ? 'video' : 'text', engine: null, confidence: 'high', evidence: [], rationale: `V3 用途:${v3.usage}` },
+            triage: { triage: v3Triage.triage, reasons: ['V3:按输入复杂度判定'], signals: v3Triage.signals, keep_safe: v3Triage.keep_safe, mechanical: v3Triage.triage },
+            gate: { blocked: false, blocking_items: [], discoverable_items: [], optional_items: [], reason: 'V3:无需阻塞' },
+            ledger: [],
+            usage: v3.usage,
+            structured: v3.structured,
+            prompt_type: v3.usage.toLowerCase(),
+          })
+          send({ type: 'validating' })
+          send({
+            type: 'done',
+            v3: true,
+            usage: v3.usage,
+            structured: v3.structured,
+            optimized: output,
+            analysis: `用途:${v3.usage}${v3.structured ? ' · 结构化' : ''}`,
+            wellFormed: true,
+            truncated: false,
+            provider: v3Route.provider,
+            model: v3Route.model,
+            fallbackUsed: false,
+            prompt_type: v3.usage.toLowerCase(),
+            confidence_level: 'High',
+            diagnosis: `V3 单次调用 · 用途 ${v3.usage}`,
+            explicit_requirements: [],
+            context_requirements: [],
+            suggested_requirements: [],
+            unknowns: [],
+            missing_constraints: [],
+            provenance_ok: v3Safety.hardConstraintKept,
+            triage: { triage: v3Triage.triage, reasons: ['V3:按输入复杂度判定'], signals: v3Triage.signals, keep_safe: v3Triage.keep_safe, mechanical: v3Triage.triage },
+            ledger: [],
+            missing_resolution: [],
+            target: { target: v3Target, modality: 'text', engine: null, confidence: 'high', evidence: [], rationale: `V3 用途:${v3.usage}` },
+            intent: { primary: v3.usage === 'AGENT' ? 'execution' : 'general', supporting: [], work_mode: 'one_shot', rationale: 'V3 单次调用' },
+          })
+          res.end()
+          return
         } finally {
           clearTimeout(timer)
         }

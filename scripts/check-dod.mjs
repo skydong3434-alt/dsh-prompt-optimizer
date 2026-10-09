@@ -9,8 +9,8 @@
  *   1. 发布交付物存在性：CHANGELOG.md / NOTICE.md / docs/dod.md / LICENSE / README 三件；
  *   2. annotated tag v0.2.0-apo 存在（git tag -a；轻量 tag 会告警 FAIL）；
  *   3. AGPL 污染检查脚本存在且可运行（校验依赖不发散）；
- *   4. 回归证据：schema/runner/报告存档（round7 官方主报告）与 14 例 fixtures 存在；
- *   5. core 契约文件与策略注册表存在（DoD-2/3/4 的代码对象）；
+ *   4. V3 回归证据：test/v3.test.mjs、test/smoke.mjs、scripts/v3-real-check.mjs 存在；
+ *   5. V3 单架构不变式：V3 契约文件存在，且旧链路文件必须不存在；
  *   6. NOTICE 声明与本项目元信息一致（v0.2.0-apo 出现于 NOTICE/CHANGELOG/README）。
  *
  * 退出码：0 = 全 PASS；1 = 存在 FAIL。
@@ -70,37 +70,54 @@ try {
   check('污染检查可运行且 PASS', false, '脚本执行失败或命中特征串');
 }
 
-// ---- 4. 回归证据 ----
-const fixtureDir = rel('test/regression/fixtures');
-const fixtures = existsSync(fixtureDir) ? readdirSync(fixtureDir).filter((f) => f.endsWith('.json')) : [];
-check('语料 fixtures 存在（14 例）', fixtures.length >= 14, `${fixtures.length} 例`);
+// ---- 4. V3 回归证据 ----
 for (const f of [
-  'test/regression/schema.test.mjs',
-  'test/regression/run.mjs',
-  'test/regression/run.test.mjs',
-  'test/regression/report-2026-10-04-round7.json',
-  'test/provenance.test.mjs',
-  'test/validate.test.mjs',
+  'test/v3.test.mjs',
+  'test/smoke.mjs',
+  'test/triage.test.mjs',
+  'test/prompt.test.mjs',
+  'test/controller.test.mjs',
+  'scripts/v3-real-check.mjs',
+  'docs/v3-test-migration.md',
 ]) {
-  check(`回归/校验证据存在: ${f}`, existsSync(rel(f)));
+  check(`V3 回归证据存在: ${f}`, existsSync(rel(f)));
 }
+const realLogDir = rel('logs/v3');
+const realLogs = existsSync(realLogDir) ? readdirSync(realLogDir).filter((f) => f.endsWith('.json')) : [];
+check('V3 真实模型记录存在', realLogs.length > 0, `${realLogs.length} 份`);
 
-// ---- 5. core 契约 / 策略对象 ----
+// ---- 5. V3 单架构不变式 ----
 for (const f of [
+  'src/core/v3.ts',
+  'src/core/triage.ts',
   'src/core/types.ts',
-  'src/core/provenance.ts',
-  'src/core/registry.ts',
-  'src/core/compiler.ts',
-  'src/core/validate.ts',
-  'src/core/classify.ts',
+  'src/index.ts',
 ]) {
-  check(`core 契约存在: ${f}`, existsSync(rel(f)));
+  check(`V3 契约存在: ${f}`, existsSync(rel(f)));
 }
-const strategies = ['research', 'planning', 'execution', 'diagnostic', 'review', 'creative', 'general'];
-for (const s of strategies) {
-  check(`策略文件存在: ${s}.ts`, existsSync(rel(`src/core/strategies/${s}.ts`)));
-  check(`策略测试存在: strategies-${s}.test.mjs`, existsSync(rel(`test/strategies-${s}.test.mjs`)));
-}
+// 旧链路文件必须已删除(只保留一套流程)
+const legacyMustBeGone = [
+  'src/core/analyze.ts',
+  'src/core/classify.ts',
+  'src/core/compiler.ts',
+  'src/core/discovery.ts',
+  'src/core/validate.ts',
+  'src/core/validation-flow.ts',
+  'src/core/ledger-reconcile.ts',
+  'src/core/provenance-recovery.ts',
+  'src/core/provenance.ts',
+  'src/core/patch-scope.ts',
+  'src/core/semantic-ambiguity.ts',
+  'src/core/router.ts',
+  'src/core/responsibilities.ts',
+  'src/core/targets.ts',
+  'src/core/registry.ts',
+  'src/core/requirements.ts',
+  'src/core/disposition-render.ts',
+  'src/core/context.ts',
+  'src/core/strategies',
+];
+for (const f of legacyMustBeGone) check(`旧链路已删除: ${f}`, !existsSync(rel(f)));
 
 // ---- 6. 版本一致性（文艺档自洽）----
 const checkVersionIn = (f, label) => {
