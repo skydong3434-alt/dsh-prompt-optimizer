@@ -243,7 +243,7 @@ const CASES = [
     label: 'AUDIO-配音提示词',
     text: '帮我写一段配音音频提示词:温柔女声读一段产品介绍。',
     expectUsage: 'AUDIO',
-    mustContain: ['女声'],
+    mustContain: [['女声', '女性声音', '女性', '女声线']],
     maxLen: 1400,
   },
   {
@@ -320,7 +320,9 @@ for (const c of selected) {
       if (exp.expanded) problems.push(`意图扩展:${exp.phrases.join('/')}`)
       if (looksLikeProtocolEnvelope(output)) problems.push('协议信封泄漏到正文')
       for (const must of c.mustContain ?? []) {
-        if (!output.includes(must)) problems.push(`丢失原意要素:「${must}」`)
+        // 数组 = 同义替代(如「女声 / 女性声音」),语义保真即可,不要求逐字相同。
+        const alts = Array.isArray(must) ? must : [must]
+        if (!alts.some((m) => output.includes(m))) problems.push(`丢失原意要素:「${alts[0]}」`)
       }
       if (output.length > c.maxLen) problems.push(`过度重写:${output.length} 字 > 上限 ${c.maxLen}`)
     }
