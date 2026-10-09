@@ -7,11 +7,11 @@ current_phase: V3_SINGLE_CALL_REFACTOR
 current_task:
 status: IN_PROGRESS
 next_task: V3 真实模型复跑与最终验收(用户 DSH UI 实测)
-machine_gate: PASS (npm test 101 断言 / build exit 0 / smoke all passed)
+machine_gate: PASS (npm test 101 断言 / build exit 0 / smoke all passed / v3-real-check 20/20)
 human_review: PENDING_USER_UI_ACCEPTANCE
 phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 101 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
-v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底,真实输出不再追加「给出可行方案」);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs,20 例 19/20);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续;⑥最终验收 待用户 DSH UI 实测;⑦最终报告 待出。
-latest_commit: 435b643 refactor(v3): 删除旧多阶段链路,只保留单次调用流程
+v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底,真实输出不再追加「给出可行方案」);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs,最终 20/20);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续;⑥最终验收 待用户 DSH UI 实测;⑦最终报告 待出。
+latest_commit: a078634 fix(v3): 特殊用途要素逐项保留写入规则;真实检查同义要素容忍
 auto_continue: false
 stop_reason: awaiting user confirmation: V3 真实体验(G-8)
 ```
