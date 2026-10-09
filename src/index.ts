@@ -7,6 +7,7 @@ import {
   detectSpecialUsageTemplateDrift,
   conservativeOutput,
   stripProtocolMarkers,
+  reconcileUsage,
 } from './core/v3.js'
 import { mechanicalTriage } from './core/triage.js'
 import Schema from '@deepseek-ai/schemastery'
@@ -714,6 +715,13 @@ export function apply(ctx: Context, config: Config) {
             })
             res.end()
             return
+          }
+          // 用途对账:机械层的明确证据(明确要求生成提示词 / 明确要求写 agent 指令)
+          // 优先于模型给出的 GENERAL —— 特殊用途必须由明确证据触发对应形态。
+          const v3UsageFix = reconcileUsage(text, v3.usage)
+          if (v3UsageFix.corrected) {
+            console.warn(`[dsh-prompt-optimizer] V3 用途按明确证据纠正:${v3.usage} → ${v3UsageFix.usage}`)
+            v3 = { ...v3, usage: v3UsageFix.usage }
           }
           let output = stripProtocolMarkers(v3.output)
           // 机械纠偏(本地,无额外模型调用):优化稿不得擅自扩展任务方向

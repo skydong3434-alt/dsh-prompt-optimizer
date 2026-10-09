@@ -55,6 +55,20 @@ export function inferUsageMechanically(rawInput: string): V3Usage {
   return "GENERAL";
 }
 
+/**
+ * 用途对账:机械层的**明确证据**优先于模型给出的 GENERAL。
+ *
+ * 依据用户规则「特殊用途:明确证据触发对应模板」。机械层的特殊用途只在
+ * 「明确要求写某个生成模型的提示词」或「明确要求面向某个执行 Agent 写指令」时成立
+ * (仅出现关键词不算),因此当模型给了 GENERAL 而机械层有明确证据时,采用机械结论;
+ * 模型给出其他特殊用途时一律尊重模型(机械层不做二次猜测)。
+ */
+export function reconcileUsage(rawInput: string, modelUsage: V3Usage): { usage: V3Usage; corrected: boolean } {
+  const mech = inferUsageMechanically(rawInput);
+  if (mech === "GENERAL" || modelUsage !== "GENERAL") return { usage: modelUsage, corrected: false };
+  return { usage: mech, corrected: true };
+}
+
 /** 是否含严格结构化要求(可与其他用途叠加)。 */
 export function looksStructured(rawInput: string): boolean {
   return /(严格\s*JSON|JSON\s*格式|schema|固定字段|字段要求|严格按.*格式|输出格式[:：])/i.test(String(rawInput ?? ""));
@@ -92,6 +106,8 @@ usage ∈ {GENERAL, IMAGE, VIDEO, AUDIO, AGENT};GENERAL 是默认。
 **不要**问执行期信息:项目路径 / API / 版本 / workflow / 测试命令 / 技术选型 /
 MVP 还是生产化 / 实现路线 / 具体生成内容(题材、时长)。这些**保持未确定**,
 在正文里写明「由执行方自行确认」或「目前尚未确定,后续调研」即可。
+- **只给了格式/字段、没给内容**的输入也**不问**(例:「严格 JSON 格式输出一个 agent 任务指令,
+  字段固定为 title/steps/verify」):按用户给的字段直接产出,内容未指定的部分写「待确认」。
 每轮最多 1 个问题;能不问就不问。
 **若本次消息里带有 <clarification>(说明你已经问过一轮)**,这一轮**必须**输出 status="optimized" 的结果,
 **不得再次提问**:用户已经回答或明确表示「保持未确定」。用户没确定的部分写成「待确认」,不要替用户假设。
