@@ -147,6 +147,8 @@ fallbackReason="模型调用失败(NO_ADAPTER): no adapter registered for provid
 | 撤销/替换交互 | controller.test c7（撤回状态流转）、c25（替换/撤回回归）+ G-6 已裁决真人/既定自动化通过；`npm test` 全绿 |
 | 版本矩阵 | BASELINE.md 附录 B（本轮追加，§8） |
 
+> **后续更正（v0.3.1-apo）**：上表「`settings.plugins.tab` / `settings.plugin.item` 双版本各挂一次，宿主只声明自己认识的那一个」在当时的 dsh 0.1.x / 0.2.0-rc.2 上成立（未声明槽位的注册被**静默忽略**）。DSH 2.0.x 改为**对未声明槽位的注册直接抛错**，同一实现会导致「设置 → 插件列表」出现同步失败报错；现已在各自的 inject 回调内注册（回调被触发即证明该槽位已声明）。此处保留原验收记录不动，更正见 `CHANGELOG.md` v0.3.1-apo。
+
 ## 8. Acceptance 核对
 
 - [x] `npm run build && npm test` 全绿（exit 0）

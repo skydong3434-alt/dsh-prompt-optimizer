@@ -135,7 +135,7 @@ function warnUnknownEnumConfig(cfg: Config): void {
   }
   // promptType:'auto'(默认)或七个策略类型;其余值在使用处按 AUTO 处理。
   // V3 由模型判定用途,该字段只作历史兼容(不再影响流程)。
-  if (cfg.promptType !== 'auto' && !PROMPT_TYPES.includes(cfg.promptType)) {
+  if (cfg.promptType !== 'auto' && !(PROMPT_TYPES as readonly string[]).includes(cfg.promptType)) {
     warnUnknownEnum(cfg.promptType, ['auto', ...PROMPT_TYPES], 'promptType')
   }
 }
@@ -156,6 +156,25 @@ interface OptimizeRequestBody {
    *  - 缺省:全新一次优化(首轮分析)。
    */
   discovery?: unknown
+}
+
+/**
+ * 历史兼容:v2 Discovery 会话的客户端回传形状。
+ *
+ * 原定义随 `src/core/discovery.ts` 在 V3 精简重构中被删除;V3 仍用它读取客户端
+ * 回传的「上一轮回答」(answers)与「上一轮提问」(asked),因此这里保留**最小**
+ * 结构声明,仅覆盖实际被读取的字段。其余字段只作为 unknown 载体透传,不做校验。
+ * 待旧链路 `v3:false` 回退分支整体删除时,本类型一并移除。
+ */
+interface DiscoveryInput {
+  raw_input: string
+  triage: string
+  ledger: unknown[]
+  asked: { question?: string }[]
+  answers: { text?: string }[]
+  questions: unknown[]
+  validationReturns: unknown[]
+  round: number
 }
 
 /** 客户端回传的 Discovery 会话(宽松解析;非法字段静默丢弃)。 */
