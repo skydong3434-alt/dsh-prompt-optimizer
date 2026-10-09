@@ -2,19 +2,22 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-05T20:40:00+08:00
-current_phase: DONE
-current_task: 
-status: DONE
-next_task: NONE
-machine_gate: PASS
-human_review: PASS_DOD
-phase_status: **项目收官（v0.1.0-apo，DoD PASS，2026-10-04 用户最终产品验收通过）**。P00–P09 全部完成，G-1/G-VS/G-2/G-4/G-3/G-5/G-6/G-7 八个人工 Gate + DoD 全部 PASS；正式 desktop 安装落地（link/bundles=21/默认模型 opencode-go 未改/其他插件零改动/备份留存未回滚）；发布产物 v0.1.0-apo（NOTICE/CHANGELOG/README/check-dod/check-license-contamination/tag）。KNOWLEDGE：KNOWN_NON_BLOCKING_HARNESS_LIMITATION（research phrasing regex false positive）为已记录非阻塞已知限制。**Post-v0.1.0 backlog（不阻塞 DONE，未经用户开启不得自动执行）**：① 配置 origin 后决定是否推送远端 release/tag；② 以独立未参与 P07 调参的新语料做 evaluator 人工标注与正式阈值校准（R-2）；③ 后续单独治理 phrasing-sensitive deterministic regex。Runner 已停止（BLOCKING_DOD 后不再 resume）；launchd job com.apo.devrunner 保持安装但处于 not running（不自动启动）。
-v2_track: **用户明确授权的 v2 升级轨道（与已收官的 v0.1.0-apo 发布范围相互独立）**。目标：从「固定模板式 Prompt 扩写器」升级为「意图保真自适应提示词编辑器」。基线：docs/PLAN-v2-adaptive-editor.md（含现状测绘 / 复用与重构清单 / 四个 Phase / 风险 / 测试计划）。进展：**Phase 1 DONE**（分析阶段 + 阻塞门；385 断言）、**Phase 2 DONE**（信息责任 + Target-aware 路由 + Agent/Image/Video 契约 + 未决项处置契约：`[待补充:]` 退役；411 断言全绿；正式契约 docs/phase2-contract.md、报告 docs/phase2-report.md）。**Phase 3 DONE**（Requirement Discovery 完整闭环：取舍型 prerequisite + 环境事实反向保护 + Question Planner/Answer Resolver/Sufficiency/Confirmation + 盲授权纪律 + 宿主 fail-closed + 最小 UI 闭环；436 断言全绿；报告 docs/phase3-report.md，演示 scripts/phase3-trace.mjs）。**Phase 4 DONE**（产品收口：Validator 可控回流 + 六态 UI + 主界面移除模式选择器 + 「调整判断」高级 override + general 迁入 v2 契约 + legacy 全部不可达 + 再优化 Ledger 对账 + Triage 语义审计；468 断言全绿；报告 docs/phase4-report.md，证据 scripts/phase4-trace.mjs）。**v2 四个 Phase 全部完成**；未发布、未 push、tag 未动。本轨道不经 Runner 自动续跑（auto_continue=false），由用户逐阶段驱动；不触碰 v0.1.0-apo tag、不做 release/push。
-latest_commit: (v2 Phase 1 提交,见 git log)
+last_updated: 2026-10-09T12:05:00+08:00
+current_phase: V3_SINGLE_CALL_REFACTOR
+current_task:
+status: IN_PROGRESS
+next_task: V3 真实模型复跑与最终验收(用户 DSH UI 实测)
+machine_gate: PASS (npm test 101 断言 / build exit 0 / smoke all passed)
+human_review: PENDING_USER_UI_ACCEPTANCE
+phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 101 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
+v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底,真实输出不再追加「给出可行方案」);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs,20 例 19/20);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续;⑥最终验收 待用户 DSH UI 实测;⑦最终报告 待出。
+latest_commit: 435b643 refactor(v3): 删除旧多阶段链路,只保留单次调用流程
 auto_continue: false
-stop_reason: completed: DoD PASS（user final acceptance 2026-10-04）
+stop_reason: awaiting user confirmation: V3 真实体验(G-8)
 ```
+
+> 注:`docs/PLAN-v1.md`、`docs/phase{1,2,3,4}-report.md`、`tasks/P0*` 描述的是**已删除的旧多阶段架构**,
+> 仅作历史记录保留,不再反映当前实现;当前实现见 `src/core/v3.ts` 与 `docs/v3-test-migration.md`。
 
 > ⚠️ 状态字段纪律：`stop_reason` 不得包含 Runner 的 BLOCKING_STOP_REASONS 任何标记词
 > （blocking / merge conflict / schema breaking / contract breaking / architecture change /
@@ -61,6 +64,7 @@ stop_reason: completed: DoD PASS（user final acceptance 2026-10-04）
 | V2-P1 | DONE | v2 升级 Phase 1：分析阶段（意图/目标/分诊/缺失解析）+ 阻塞门（discovery_required，零编译调用）+ KEEP 零改写；385 断言全绿（docs/PLAN-v2-adaptive-editor.md、docs/phase1-report.md） | — |
 | V2-P4 | DONE | v2 升级 Phase 4:产品收口 —— Validator 可控回流(有界+reason code)、六态 UI、主界面移除模式选择器 + 低优先级「调整判断」、general 迁入 v2 契约、legacy 全部不可达、再优化 Ledger 对账、Triage 语义审计(PATCH 需可保留内容);468 断言全绿(docs/phase4-report.md、scripts/phase4-trace.mjs) | — |
 | V2-P3 | DONE | v2 升级 Phase 3:Requirement Discovery 完整闭环（blocking → 提问 → 回答 → 重新分析 → 台账更新 → 确认 → 首次编译）;取舍型 → USER_REQUIRED+blocking、环境事实不升格、盲授权不产 CONFIRMED、confirm fail-closed;436 断言全绿（docs/phase3-report.md、docs/phase3-prerequisites.md、scripts/phase3-trace.mjs） | — |
+| V3 | DONE | V3 单次调用重构:默认路径一次模型调用完成优化;意图扩展拦截、特殊用途模板漂移拦截、协议信封泄漏防护、超时终态修复;旧链路 13.7k 行 + 38 测试文件删除;101 断言全绿(130458d/c0f741c/435b643) | **G-8(用户实测)** |
 | V2-P2 | DONE | v2 升级 Phase 2（用户裁决选项 A）：`informationResponsibilities` + Target-aware Router + Agent/Image/Video 契约（图像视频不再套 Goal/Phase/Task/Tests）+ 未决项五处置（`[待补充:]` 退役）；412 断言全绿（docs/phase2-contract.md、docs/phase2-report.md、docs/phase3-prerequisites.md） | — |
 
 Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 → G-3 语料集（阈值 DEFERRED_TO_P07_CALIBRATION）→ G-4 UI 预览 → G-5 回归报告 → G-6 隔离体验 → G-7 正式安装许可（唯一动正式 profile 的开关）→ **DoD 终检（当前）：用户声明 PASS 即项目完成**（详见 docs/dod.md；AI 不代过）。

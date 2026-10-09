@@ -69,18 +69,19 @@ A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the com
 | **Keep as-is** (KEEP) | your draft is already good → kept **verbatim**, no rewriting at all |
 | **Light patch** (PATCH) | structure and wording stand → only a few gaps filled; no reordering, no new sections |
 | **Restructure** (RESTRUCTURE) | information is complete but messy → dedupe and reorganize, **adding nothing** you did not ask for |
-| **Rebuild** (REBUILD) | only a vague goal → key trade-offs are asked first, then the prompt is built from scratch (still only what the task truly needs) |
+| **Rebuild** (REBUILD) | only a vague goal → the prompt is built from scratch (still only what the task truly needs) |
 
 ### What it will and will not ask you
 
-- If information **truly needs your decision and would significantly change the plan**
-  (scope trade-offs, one-off validation vs long-term automation, analysis-only vs real
-  execution, permission to modify/delete, irreversible actions …), it asks **a few key
-  questions first** (1–3 per round) and **does not generate** a prompt before you answer.
-- If the information **can be investigated by the executing agent from the environment,
-  code, files, APIs or the project** (versions, paths, endpoint addresses, project
-  structure, dependencies, current implementation, config file locations …), you are
-  **never asked to fill it in** — the agent is told to investigate it.
+- **Ordinary requests finish in one pass**: it returns the optimized prompt directly,
+  without a multi-round interrogation to "complete the spec".
+- **It asks exactly one question, and only for semantic ambiguity**: when the input uses
+  a dangling reference ("that old one", "this") with no antecedent anywhere in the
+  conversation, it asks **one** key question; once you answer it continues immediately
+  and **never re-confirms**.
+- **It does not ask about implementation details**: paths, endpoints, versions, tech
+  choices, workflows, test commands, MVP vs production — things the executing agent can
+  confirm itself — are never turned into questions for you.
 - Decisions you answered are kept in a requirement ledger: if you later re-optimize after
   a wording-only edit, **confirmed requirements are retained** and not asked again.
 
