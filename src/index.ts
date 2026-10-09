@@ -739,7 +739,10 @@ export function apply(ctx: Context, config: Config) {
           let output = stripProtocolMarkers(v3.output)
           // 机械纠偏(本地,无额外模型调用):优化稿不得擅自扩展任务方向
           // (目标描述→规划任务 / 想法交流→执行任务)。命中则保守退回用户原文。
-          const v3Expansion = detectIntentExpansion(text, output)
+          // m03336 六:用户回答了「你想先讨论思路 / 制定方案 / 直接实施」之后,
+          // 这个方向就是**用户授权的**,输出里出现「方案 / 实现方式 / 思路」不再算擅自扩展。
+          // 因此把回答一并纳入「原文」再做机械判据(未回答时行为不变)。
+          const v3Expansion = detectIntentExpansion(v3Answer ? `${text}\n${v3Answer}` : text, output)
           if (v3Expansion.expanded) {
             console.warn(
               `[dsh-prompt-optimizer] V3 意图扩展已拦截:${v3Expansion.phrases.join(',')} → 保守回退原文`,

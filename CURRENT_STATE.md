@@ -2,14 +2,15 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-09T14:26:00+08:00
-current_phase: V3_RULE_TUNING_AND_DOCS
-current_task: 落实用户 m03069 五项决定(忠实优化模式 / AGENT 判定 / 文档整理 / 模型路由核对 / 不加模块)
+last_updated: 2026-10-09T15:40:00+08:00
+current_phase: V3_PROMPT_QUALITY_UPGRADE
+current_task: 落实用户 m03336「专业提示词优化能力修正」(原意保护 + 合理专业化完善 / IMAGE / VIDEO+子类型 / GENERAL / 质量验收)
 status: DONE_AWAITING_USER_UI_ACCEPTANCE
 next_task: 用户重启 DSH Desktop 后做人工 UI 验收(G-8)
-machine_gate: PASS (npm test 104 断言 / build exit 0 / v3-real-check 真实 UI 模型 28 例硬失败 0)
+machine_gate: PASS (npm test 104 断言 / build exit 0 / v3-real-check 真实 UI 模型全量硬失败 0)
 human_review: PENDING_USER_UI_ACCEPTANCE
-rule_tuning_m03069: **①忠实优化模式**:IMAGE/VIDEO/AUDIO 默认只改善表达/动作顺序/画面连续性/描述准确度,不得凭空增加服装/外貌/道具/场景元素/光影色调/动作/情节;仅用户明确要求「丰富细节/增强创意/自由发挥」时才扩写;中英提示词各加一段(含逐字反例「深色外套」)。**②AGENT 判定**:不得靠代码/仓库/bug/函数/接口/测试/脚本等关键词判定,「优化一下这段代码」→ GENERAL(提示词反例 + 新增用例 `GENERAL-代码关键词不得判 AGENT`)。**③文档整理**:新增 `docs/README.md`(当前有效 / 历史已过时清单)与 `tasks/README.md`;23 份旧架构文档顶部加「已过时」横幅保留为历史。**④模型路由**:UI 用会话模型 `opencode-go/deepseek-v4.1-flash`,`scripts/v3-real-check.mjs` 默认模型与 provider 对齐(见下节)。**⑤未新增任何架构模块**,正常请求仍 1 次模型调用。
+quality_upgrade_m03336: **核心原则从「忠实改写」升级为「原意保护 + 合理专业化完善」**。三层:①原文明确要求必须保留;②对已有要求的专业化细化(表达结构/逻辑关系/分析维度/已有动作的过程/时间与空间关系/构图与光影/连续性约束/有助于执行的通用要求)允许并鼓励;③新增独立目标或改变核心创作设定默认禁止(用户明确要求丰富细节/增强创意时可在原目标内扩写);原文已足够优秀时允许**最小必要修改**,不机械要求变长。新增 `# GENERAL:任务提示词的专业优化`(细化评估维度,不是把问句写正式)、`# IMAGE:生图提示词的专业优化`(完善主体与背景关系/空间层次/自然光影/构图视角/风格表达;仍不得增加服装/发型/新人物/新动作/无关道具,不强制填满全部元素)、`# VIDEO:视频提示词的专业优化`(必须写清已有动作的起点/发展过程/结束状态,不能只做同义词替换)、`# VIDEO 子类型`(文生/图生/首尾帧/多参考图/多镜头/延长/编辑)、`# AUDIO`、`# 优化质量`(7 条自检)。`# 不得扩展任务方向` → `# 不得改变任务方向`(同一件事的细化 vs 换一件事);`# 关键歧义` 补「只有目标描述时可问一个方向问题,不得替用户选择」。**未新增任何模块,普通请求仍 1 次模型调用。**
+rule_tuning_m03069: **①忠实优化模式**:IMAGE/VIDEO/AUDIO 默认只改善表达/动作顺序/画面连续性/描述准确度,不得凭空增加服装/外貌/道具/场景元素/光影色调/动作/情节;仅用户明确要求「丰富细节/增强创意/自由发挥」时才扩写;中英提示词各加一段(含逐字反例「深色外套」)。**②AGENT 判定**:不得靠代码/仓库/bug/函数/接口/测试/脚本等关键词判定,「优化一下这段代码」→ GENERAL(提示词反例 + 新增用例 `GENERAL-代码关键词不得判 AGENT`)。**③文档整理**:新增 `docs/README.md`(当前有效 / 历史已过时清单)与 `tasks/README.md`;23 份旧架构文档顶部加「已过时」横幅保留为历史。**④模型路由**:UI 用会话模型 `opencode-go/deepseek-v4.1-flash`,`scripts/v3-real-check.mjs` 默认模型与 provider 对齐(见下节)。**⑤未新增任何架构模块**,正常请求仍 1 次模型调用。注:m03336 已在 ① 之上放宽 —— 光影/色调/画面连续性现属**允许的专业化完善**,仅「新增独立创作设定(新人物/新情节/新服装)」仍禁止。
 phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 102 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
 v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续。
 ui_acceptance_fix: **用户真实 UI 验收失败修复(m02408)DONE(待人工验收)**。①擅自扩展任务:根因是运行中宿主为旧构建(`lib/` 12:37 构建 vs 宿主 10:59 启动)+ 机械兜底短语不全 → 提示词硬规则 + 补齐 `实现方式/控制流程/实施限制/方案或指南/整体思路/覆盖以下要点/列出优劣`;真实模型复测 3/3 只输出原句理顺版(1 次调用,~6s)。②不必要澄清:根因是提示词未区分「妨碍优化这句话」与「执行时才知道」→ 新增「缺一个名字/标识不算歧义」+ 逐字反例;复测 3/3 直接整理为分析请求(1 次调用,~6s),真歧义仍会提问。③特殊用途:模型识别正确(VIDEO),机械纠正层补 `优化|润色|改进` 动词;UI 旧字段(任务类型/把握度/提示词目标/编辑分诊)造成误读 → 移除。④UI 精简:结果面板默认只有「优化后的提示词 + 替换/复制/重新优化/关闭」,判断依据收进默认折叠的「优化说明」,澄清页只留问题与继续操作。**⑤复测另发现两个真实缺陷(已修)**:推理模型 `minimax-m3` 把思考直接写进 `content`(reasoning_content 为空),思考里的 `{...}` 片段被旧解析当成协议信封 → 「严格 JSON 输出 agent 任务指令」稳定空产出(`VF_EMPTY_OUTPUT`);修法 = `stripThinking` + `extractProtocolEnvelope`(只认 `status` 为 optimized/needs_clarification 的平衡 JSON)。宿主原样转发模型增量 → 快速模式预览泄漏思考与内部协议;修法 = 只下发 `previewableText`(剥思考 + 协议处截断)。测试:`test/v3.test.mjs` 第 9 组 + `test/smoke.mjs` 1b。**⑥另两个真实缺陷**:中文提示词被改写成英文(IMAGE 连续 2 次输出 `anime style illustration…`;提示词缺「与输入同语言」规则 → 中英提示词新增「输出语言」段,复测 4/4 中文);协议 `output` 给成对象时交付 `[object Object]`(严格 JSON 用例;修法 = `asText` 序列化非字符串 output/question)。

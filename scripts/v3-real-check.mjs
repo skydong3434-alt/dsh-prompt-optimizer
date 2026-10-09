@@ -212,18 +212,36 @@ function intentKept(text, output) {
 
 const CASES = [
   {
-    label: 'GENERAL-目标描述(核心回归)',
+    // m03336 §八 案例 A(原 UI真实失败①):用户只描述目标,没说希望 AI 做什么。
+    // 正确行为:可以问**一个**影响任务方向的关键问题(讨论思路/制定方案/直接实施),
+    // 但不得擅自替用户选择方向,也不得把目标句扩写成规划/执行任务。
+    label: '案例A-目标描述(UI真实失败①)',
     text: '我想用DSH控制ComfyUI生成视频。',
     expectUsage: 'GENERAL',
-    mustNotContain: ['可行方案', '制定计划', '请执行', '实施方案'],
-    maxLen: 120,
+    optionalClarification: true,
+    answer: '先讨论实现思路。',
+    mustNotContain: [
+      '可行的实现方式',
+      '实现方式',
+      '控制流程',
+      '实施限制',
+      '方案或指南',
+      '整体思路',
+      '覆盖以下要点',
+      '列出优劣',
+      '可行方案',
+      '制定计划',
+      '实施方案',
+      '请执行',
+    ],
+    maxLen: 200,
   },
   {
     label: 'GENERAL-想法讨论',
     text: '我想做一个本地知识库工具，先聊聊思路。',
     expectUsage: 'GENERAL',
     mustNotContain: ['请实现', '请部署', '给出可行方案'],
-    maxLen: 260,
+    maxLen: 400,
   },
   {
     label: 'GENERAL-清晰提示词最小修改',
@@ -234,19 +252,61 @@ const CASES = [
     maxLen: 900,
   },
   {
-    label: 'IMAGE-生图提示词',
-    text: '帮我写一个二次元女孩的生图提示词，海边黄昏。',
+    // m03336 §八 案例 D:IMAGE 必须具备生图提示词的专业优化能力。
+    // 可以完善:主体与背景关系 / 空间层次 / 黄昏自然光影 / 构图视角 / 风格表达。
+    // 不得凭空增加:具体服装 / 未指定的发型 / 新人物 / 新动作 / 无关场景道具。
+    label: '案例D-IMAGE生图提示词',
+    text: '帮我优化生图提示词：二次元女孩站在海边，背景是黄昏。',
     expectUsage: 'IMAGE',
-    mustContain: ['二次元'],
-    mustNotContain: ['裙', '外套'], // 忠实优化模式:不得凭空给人物加服装
+    mustContain: ['二次元', '女孩', '海边', '黄昏'],
+    mustNotContain: ['裙', '外套', '发型', '新人物', '男孩'],
+    improveGroups: [
+      ['构图', '视角', '画面', '中景', '前景', '后景', '层次', '站位'],
+      ['光影', '光线', '夕阳', '逆光', '侧光', '打光', '色调', '暖色'],
+      ['风格', '插画', '写实', '氛围', '质感'],
+    ],
+    improveMin: 2,
     maxLen: 1400,
   },
   {
-    label: 'VIDEO-文生视频提示词',
-    text: '帮我写一段可灵文生视频提示词:一只猫在窗台上打哈欠。',
+    // m03336 §八 案例 C:VIDEO 必须写清已有动作的起点、发展过程与结束状态,
+    // 不能只做同义词替换,不得增加新情节;用户指定的平台(可灵)必须保留。
+    label: '案例C-VIDEO文生视频提示词',
+    text: '帮我优化一段可灵文生视频提示词：一只猫在窗台上打哈欠。',
     expectUsage: 'VIDEO',
-    mustContain: ['猫'],
+    mustContain: ['猫', '可灵'],
+    improveGroups: [
+      ['窗台', '窗边', '窗台上'],
+      ['张开', '张大', '打哈欠'],
+      ['逐渐', '慢慢', '缓缓', '逐步'],
+      ['合上', '闭合', '收起', '结束'],
+    ],
+    improveMin: 3,
     maxLen: 1400,
+  },
+  {
+    // m03336 §八 案例 E:首尾帧视频 = 识别子类型,侧重从首帧到尾帧的合理运动过程。
+    label: '案例E-VIDEO首尾帧',
+    text: '根据首尾帧生成视频，人物从站立状态缓慢转身。',
+    expectUsage: 'VIDEO',
+    mustContain: ['站立', '转身', ['首尾帧', '首帧', '尾帧']],
+    improveGroups: [
+      ['缓慢', '逐渐', '慢慢', '匀速'],
+      ['过程', '过渡', '中间', '逐步', '依次'],
+      ['姿态', '姿势', '身体', '朝向', '角度'],
+    ],
+    improveMin: 2,
+    maxLen: 1400,
+  },
+  {
+    // m03336 §八 案例 F:原文已经写得很完整 → 允许最小必要修改,不机械要求变长。
+    // 判据:所有明确设定(人物/服装/机位/时长/风格)必须保留,不得改设定、不得加新内容。
+    label: '案例F-已完整的专业视频提示词(最小必要修改)',
+    text: '帮我优化一段视频提示词，它已经写得比较完整了：场景是黄昏的海边礁石上，一名穿白色连衣裙的女孩背对镜头站立；镜头为中景固定机位，景别不变；动作是她缓慢转身面向镜头，海风吹动裙摆和发梢；时长约 5 秒，动作匀速，起止状态清晰；风格是写实电影感，暖色夕阳侧逆光。约束：不要改变人物、服装、机位、时长和风格，只做必要的专业化完善。',
+    expectUsage: 'VIDEO',
+    mustContain: ['白色连衣裙', '中景', ['固定机位', '机位固定'], ['5 秒', '5秒', '五秒'], ['写实', '电影感']],
+    mustNotContain: ['新人物', '第二个女孩', '男主', '奔跑', '下雨'],
+    maxLen: 900,
   },
   {
     label: 'AUDIO-配音提示词',
@@ -284,47 +344,35 @@ const CASES = [
     blindTrust: true,
     maxLen: 600,
   },
-  // ── 以下三例来自真实 DSH UI 人工验收失败(m02408),固定为回归用例 ──
   {
-    // 失败①:用户只描述目标,模型擅自追加「请说明可行的实现方式…」以及接口/控制流程/实施限制等要求。
-    // 原则:用户只描述目标时,不得擅自决定下一步是讨论、研究、规划还是实施。
-    label: 'UI真实失败①-目标描述不得扩展任务',
-    text: '我想用DSH控制ComfyUI生成视频。',
-    expectUsage: 'GENERAL',
-    mustNotContain: [
-      '可行的实现方式',
-      '实现方式',
-      '控制流程',
-      '实施限制',
-      '方案或指南',
-      '整体思路',
-      '覆盖以下要点',
-      '列出优劣',
-      '可行方案',
-      '制定计划',
-      '实施方案',
-      '请执行',
-    ],
-    maxLen: 120,
-  },
-  {
-    // 失败②:优化器因「未来执行任务需要的信息」追问软件名称/版本/截图。
-    // 正确行为:直接整理为清晰的分析请求。判断缺失信息是否妨碍**优化提示词本身**,
-    // 而不是未来执行任务是否需要;执行 Agent 能自行调查的不应成为强制澄清条件。
-    label: 'UI真实失败②-软件评估不得追问',
-    text: '帮我看看这个软件哪里不好用还有什么地方可以改怎么弄比较好。',
+    // m03336 §八 案例 B:软件评估不是「把问句写正式」,而是整理出明确的评估维度与改进建议要求。
+    label: '案例B-软件评估(GENERAL 专业化)',
+    text: '帮我看看这个软件哪里不好用，还有什么地方可以改。',
     expectUsage: 'GENERAL',
     mustContain: [['分析', '梳理', '整理', '评估', '看看'], ['改进', '优化', '建议', '可以改', '怎么改']],
-    maxLen: 400,
+    improveGroups: [
+      ['评估维度', '分析维度', '几个方面', '哪些方面', '维度', '方面'],
+      ['改进建议', '优化建议', '改进方向', '改进点', '可改进'],
+      ['优先级', '优先', '排序', '重要程度'],
+    ],
+    improveMin: 2,
+    maxLen: 700,
   },
   {
-    // 失败③:可灵图生视频必须识别为 VIDEO(不是 General),且要素逐项保留。
+    // m03336 §八 案例 C 的用途保护:可灵图生视频必须识别为 VIDEO,要素逐项保留。
     label: 'UI真实失败③-可灵图生视频用途',
     text: '帮我优化一段可灵图生视频提示词：一个女孩在雨夜街道上缓慢行走，镜头从侧面跟拍。',
     expectUsage: 'VIDEO',
     mustContain: ['女孩', '雨夜', ['侧面', '跟拍']],
-    // 忠实优化模式(m03069 ①):可以理顺表达,不得凭空增加服装 / 神情 / 场景元素 / 光影风格
-    mustNotContain: ['外套', '神情', '忧郁', '霓虹', '冷色调'],
+    // m03336 一:光影/色调/画面连续性属于**允许的专业化完善**;
+    // 只保留真正越界的项(凭空增加服装 / 神情 / 新情节)。
+    mustNotContain: ['外套', '新人物', '新情节'],
+    improveGroups: [
+      ['缓慢', '慢慢', '匀速', '放慢'],
+      ['跟拍', '跟随', '跟随拍摄', '平移'],
+      ['连续', '连贯', '保持一致', '衔接'],
+    ],
+    improveMin: 2,
     maxLen: 1400,
   },
   {
@@ -352,7 +400,7 @@ for (const c of selected) {
   for (let i = 1; i <= RUNS; i += 1) {
     let r
     try {
-      r = await runOne(routes, c.text, { blindTrust: c.blindTrust === true })
+      r = await runOne(routes, c.text, { blindTrust: c.blindTrust === true, answer: c.answer })
     } catch (e) {
       report.push({ label: c.label, run: i, ok: false, reason: `抛错: ${e.message}` })
       hardFail += 1
@@ -365,6 +413,10 @@ for (const c of selected) {
     if (c.expectClarification) {
       // 歧义用例:可以提问后继续,也可以直接交付(不问更好);但绝不能问完不交付。
       if (!output) problems.push(r.askedQuestion ? '回答后仍无输出' : '既未提问也无输出')
+    } else if (c.optionalClarification) {
+      // 目标描述类输入(m03336 六):允许问一个方向性问题后继续,也允许直接交付;
+      // 两种情况都必须有终态输出。
+      if (!output) problems.push(r.askedQuestion ? '回答后仍无输出' : '既未提问也无输出')
     } else {
       if (r.askedQuestion) problems.push(`不该提问却问了:「${r.askedQuestion}」`)
       if (!output) problems.push('无输出')
@@ -372,18 +424,39 @@ for (const c of selected) {
     if (output) {
       const accepted = c.acceptUsage ?? [c.expectUsage]
       if (!accepted.includes(usage)) problems.push(`用途=${usage} 期望=${accepted.join('/')}`)
-      for (const bad of c.mustNotContain ?? []) {
-        if (output.includes(bad)) problems.push(`擅自增加:「${bad}」`)
+      // m03336 六:目标描述类输入允许先问**一个**任务方向问题。
+      // 一旦用户回答了方向(如「先讨论实现思路」),输出里出现「思路 / 方案」是**用户授权的**,
+      // 不能再按「擅自改变任务方向」判失败;此时改为检查「问的确实是方向问题」+「输出跟随了答案」。
+      const directionChosen = c.optionalClarification === true && !!r.askedQuestion
+      if (directionChosen) {
+        const q = String(r.askedQuestion)
+        if (!/思路|方案|实施|执行|讨论|计划/.test(q)) problems.push(`提问不是任务方向问题:「${q}」`)
+        if (!/思路|讨论|方案|计划|实施/.test(output)) problems.push('回答方向后输出未跟随用户选择')
+      } else {
+        for (const bad of c.mustNotContain ?? []) {
+          if (output.includes(bad)) problems.push(`擅自增加:「${bad}」`)
+        }
+        const exp = detectIntentExpansion(c.text, output)
+        if (exp.expanded) problems.push(`意图扩展:${exp.phrases.join('/')}`)
       }
-      const exp = detectIntentExpansion(c.text, output)
-      if (exp.expanded) problems.push(`意图扩展:${exp.phrases.join('/')}`)
       if (looksLikeProtocolEnvelope(output)) problems.push('协议信封泄漏到正文')
       for (const must of c.mustContain ?? []) {
         // 数组 = 同义替代(如「女声 / 女性声音」),语义保真即可,不要求逐字相同。
         const alts = Array.isArray(must) ? must : [must]
         if (!alts.some((m) => output.includes(m))) problems.push(`丢失原意要素:「${alts[0]}」`)
       }
-      if (output.length > c.maxLen) problems.push(`过度重写:${output.length} 字 > 上限 ${c.maxLen}`)
+      if (!directionChosen && output.length > c.maxLen) problems.push(`过度重写:${output.length} 字 > 上限 ${c.maxLen}`)
+      // m03336 七:优化质量。只检查「有没有真正专业化完善」——
+      // 每个组是同义替代集合,命中该组任一词即算命中;至少命中 improveMin 组才算通过。
+      // 这直接对应「不能只做同义词替换 / 不能只改成更正式的问句」。
+      const groups = c.improveGroups ?? []
+      if (groups.length) {
+        const hits = groups.filter((g) => g.some((m) => output.includes(m)))
+        const need = c.improveMin ?? groups.length
+        if (hits.length < need) {
+          problems.push(`未体现专业化完善:命中 ${hits.length}/${groups.length} 组(需 ≥${need})`)
+        }
+      }
     }
     // 澄清用例的原意保留:提问前原文是「把它改成第二种」这类指代句,
     // 回答后输出会承载**答案**的内容,再比对原文只会得到假失败。
@@ -403,7 +476,7 @@ for (const c of selected) {
     } else if (keptBasis && c.keepMin !== undefined && output && intentKept(c.text, output) < c.keepMin) {
       problems.push(`原意保留率 ${(intentKept(c.text, output) * 100).toFixed(0)}% < ${(c.keepMin * 100).toFixed(0)}%`)
     }
-    const expectedCalls = c.expectClarification ? (r.askedQuestion ? 2 : 1) : 1
+    const expectedCalls = c.expectClarification || c.optionalClarification ? (r.askedQuestion ? 2 : 1) : 1
     if (r.calls !== expectedCalls) problems.push(`模型调用 ${r.calls} 次(期望 ${expectedCalls})`)
     if (r.totalMs > 150000) problems.push(`耗时异常 ${(r.totalMs / 1000).toFixed(1)}s`)
     // 模型侧空产出:产品已如实下发技术错误(error 终态),这是模型端方差,

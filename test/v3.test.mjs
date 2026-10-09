@@ -85,7 +85,24 @@ import {
   const empty = parseV3Output('', '帮我写个方案')
   assert.equal(empty.status, 'optimized')
   assert.equal(empty.output, '', '空输出交给上层报技术错误')
-  console.log('✓ v3-3 协议解析:JSON / 围栏 / 非 JSON 兜底 / 空')
+
+  // 真实缺陷 A(实测 deepseek-v4.1-flash):output 正文里自带代码围栏(```python … ```)。
+  // 旧实现先把 ``` 围栏内容当外层围栏取出 → 只拿到那段代码 → 找不到协议信封 →
+  // 整条结果被判成空产出(VF_EMPTY_OUTPUT)。必须先扫全文。
+  const fencedBody = '{"status":"optimized","usage":"GENERAL","structured":false,"output":"请优化这段代码：\\n\\n```python\\ndef f(x): return x + 1\\n```\\n\\n要求：保持行为不变。"}'
+  const inBody = parseV3Output(fencedBody, '优化一下这段代码：def f(x): return x + 1')
+  assert.equal(inBody.usage, 'GENERAL')
+  assert.ok(inBody.output.includes('保持行为不变'), '★ 正文自带代码围栏时不得被判成空产出')
+  assert.ok(inBody.output.includes('def f(x)'), '★ 正文里的代码必须原样交付')
+
+  // 真实缺陷 B(实测):字符串值里出现**未转义的裸换行**(多行正文直接写进 JSON 字符串),
+  // JSON.parse 整体失败 → 空产出。必须能修复后再解析,绝不因格式问题丢掉结果。
+  const rawNewline = '{"status":"optimized","usage":"IMAGE","structured":false,"output":"第一行\n第二行\n第三行"}'
+  const repaired = parseV3Output(rawNewline, '写个生图提示词')
+  assert.equal(repaired.usage, 'IMAGE')
+  assert.ok(repaired.output.includes('第一行') && repaired.output.includes('第三行'), '★ 裸换行的 JSON 必须修复后交付,不得判空')
+
+  console.log('✓ v3-3 协议解析:JSON / 围栏 / 非 JSON 兜底 / 空 / 正文自带围栏 / 裸换行修复')
 }
 
 // ── 4. 宿主端到端(mock 模型,验证调用次数与状态机) ──────────────────────────
@@ -274,6 +291,22 @@ async function call(routes, body) {
     false,
     '★ 原文在聊思路时「整体思路」不算新增任务方向',
   )
+  // m03336 六:用户回答了「先讨论实现思路」之后,方向是**用户授权的** ——
+  // 宿主把回答并入「原文」再做判据,因此输出里的「方案 / 实现方式」不算擅自扩展。
+  assert.equal(
+    detectIntentExpansion(
+      '我想用DSH控制ComfyUI生成视频。\n先讨论实现思路。',
+      '我想用 DSH 控制 ComfyUI 生成视频,请先和我讨论实现思路,并说明可行的实现方式与方案。',
+    ).expanded,
+    false,
+    '★ 用户已选择「先讨论思路」后,方案/实现方式不得再判为擅自扩展',
+  )
+  // 未回答时行为不变:目标描述仍不得被扩写成方案
+  assert.equal(
+    detectIntentExpansion('我想用DSH控制ComfyUI生成视频。', '请说明可行的实现方式与方案。').expanded,
+    true,
+    '★ 未澄清时目标描述仍不得被扩写成方案',
+  )
   console.log('✓ v3-6 意图扩展检测:目标描述/想法交流不得被改成规划或执行任务')
 }
 
@@ -284,10 +317,10 @@ async function call(routes, body) {
   const zhText = String(zh)
   const enText = String(en)
 
-  // ① 不得扩展任务方向:硬规则 + 逐字反例必须在提示词里
-  assert.ok(zhText.includes('不得扩展任务方向'), '★ 中文提示词必须保留「不得扩展任务方向」硬规则')
+  // ① 不得改变任务方向:硬规则 + 逐字反例必须在提示词里
+  assert.ok(zhText.includes('不得改变任务方向'), '★ 中文提示词必须保留「不得改变任务方向」硬规则')
   assert.ok(zhText.includes('请围绕这个目标给出可行方案'), '★ 必须保留逐字反例')
-  assert.ok(enText.includes('NEVER expand the task direction'), '★ 英文提示词必须保留同规则')
+  assert.ok(enText.includes('Never change the task direction'), '★ 英文提示词必须保留同规则')
 
   // ② 缺名字不算歧义:真实失败样本「这个软件」必须作为反例写在提示词里
   assert.ok(zhText.includes('缺一个名字/标识不算歧义'), '★ 中文提示词必须写明「缺名字不算歧义」')
@@ -301,20 +334,55 @@ async function call(routes, body) {
   assert.ok(enText.includes('SAME language as the user'), '★ 英文提示词同样必须要求同语言')
   assert.ok(zhText.includes('把它改成第二种'), '★ 必须保留真歧义反例')
 
-  // 忠实优化模式(m03069 ①):可改表达,不得凭空增加创作内容
-  assert.ok(zhText.includes('生成提示词的忠实优化模式'), '★ 提示词必须写明 IMAGE/VIDEO/AUDIO 默认忠实优化模式')
-  assert.ok(zhText.includes('不可以加'), '★ 必须写明不得增加的内容')
-  assert.ok(zhText.includes('深色外套'), '★ 必须保留真实失败反例(深色外套/霓虹灯光/冷色调)')
-  assert.ok(zhText.includes('丰富细节'), '★ 必须保留唯一例外:用户明确要求丰富细节时才可扩写')
-  assert.ok(zhText.includes('不是让你少改'), '★ 必须写明该规则不降低优化能力')
-  assert.ok(enText.includes('Faithful optimization mode'), '★ 英文提示词必须保留同规则')
-  assert.ok(enText.includes('dark coat'), '★ 英文反例同样保留')
+  // ②b 只有目标描述时允许问一个方向性问题,但不得替用户选(m03336 六)
+  assert.ok(zhText.includes('不要擅自替用户选择任务方向'), '★ 目标描述类输入:可问方向,但不得替用户选择')
+  assert.ok(zhText.includes('先讨论实现思路'), '★ 必须保留方向性提问示例')
+  assert.ok(enText.includes('NEVER choose the direction for the user'), '★ 英文同规则')
+
+  // ③ 专业化优化(m03336 一):原意保护 + 合理专业化完善,不得只做同义词替换
+  assert.ok(zhText.includes('原意保护 + 合理专业化完善'), '★ 提示词必须写明三层原则')
+  assert.ok(zhText.includes('专业化优化**,不是同义词替换'), '★ 必须写明不是同义词替换')
+  assert.ok(zhText.includes('原文明确要求'), '★ 必须写明第一层:原文明确要求必须保留')
+  assert.ok(zhText.includes('对已有要求的专业化细化'), '★ 必须写明第二层:专业化细化允许')
+  assert.ok(zhText.includes('新增独立目标或改变核心创作设定'), '★ 必须写明第三层:新增独立目标禁止')
+  assert.ok(zhText.includes('丰富细节'), '★ 必须保留例外:用户明确要求丰富细节时才可扩写')
+  assert.ok(zhText.includes('不机械要求所有提示词变长'), '★ 不得机械要求变长')
+  assert.ok(enText.includes('PROFESSIONAL optimization, not synonym replacement'), '★ 英文同规则')
+
+  // ④ IMAGE 专业优化能力(m03336 二)
+  assert.ok(zhText.includes('IMAGE:生图提示词的专业优化'), '★ 必须有 IMAGE 专业优化规则')
+  assert.ok(zhText.includes('不得凭空增加:具体服装'), '★ IMAGE 不得增加服装/发型/新人物/新动作/无关道具')
+  assert.ok(zhText.includes('二次元插画风格'), '★ 必须保留 IMAGE 专业化示例')
+  assert.ok(zhText.includes('不要求强制填满全部元素'), '★ 不强制填满全部元素')
+  assert.ok(enText.includes('IMAGE: professional image-prompt optimization'), '★ 英文 IMAGE 规则')
+
+  // ⑤ VIDEO 专业优化能力 + 子类型(m03336 三/四)
+  assert.ok(zhText.includes('VIDEO:视频提示词的专业优化'), '★ 必须有 VIDEO 专业优化规则')
+  assert.ok(zhText.includes('起点、发展过程与结束状态'), '★ VIDEO 必须写清动作起点/过程/结束')
+  assert.ok(zhText.includes('不能只做同义词替换'), '★ VIDEO 不得只做同义词替换')
+  assert.ok(zhText.includes('一只猫在窗台上打哈欠'), '★ 必须保留 VIDEO 专业化示例')
+  assert.ok(zhText.includes('VIDEO 子类型'), '★ 必须识别 VIDEO 子类型')
+  assert.ok(zhText.includes('首尾帧视频'), '★ 子类型须含首尾帧视频')
+  assert.ok(zhText.includes('视频编辑'), '★ 子类型须含视频编辑')
+  assert.ok(zhText.includes('不要因为出现「视频」这个词就误判为 VIDEO'), '★ 不得因关键词误判 VIDEO')
+  assert.ok(enText.includes('VIDEO: professional video-prompt optimization'), '★ 英文 VIDEO 规则')
+
+  // ⑥ GENERAL 不是简单润色(m03336 五)
+  assert.ok(zhText.includes('GENERAL:任务提示词的专业优化'), '★ 必须有 GENERAL 专业优化规则')
+  assert.ok(zhText.includes('评估维度'), '★ GENERAL 必须细化评估维度')
+  assert.ok(zhText.includes('只改成一句更正式的问句'), '★ 必须禁止只做正式化改写')
+
+  // ⑦ 优化质量验收(m03336 七)
+  assert.ok(zhText.includes('优化质量'), '★ 必须有优化质量自检')
+  assert.ok(zhText.includes('是否只是**简单替换同义词**'), '★ 质量自检须含同义词替换项')
+  assert.ok(zhText.includes('是否与目标平台及生成模式适配'), '★ 质量自检须含平台/模式适配项')
+  assert.ok(enText.includes('Optimization quality'), '★ 英文同规则')
 
   // AGENT 不得靠关键词判定(m03069 ②)
   assert.ok(zhText.includes('不得靠关键词判定 AGENT'), '★ 提示词必须写明 AGENT 不靠关键词判定')
   assert.ok(zhText.includes('优化一下这段代码'), '★ 必须保留「优化一下这段代码 → GENERAL」反例')
   assert.ok(enText.includes('NEVER judge AGENT by keywords'), '★ 英文提示词必须保留同规则')
-  console.log('✓ v3-6b 提示词规则防线:不得扩展任务方向 / 缺名字不算歧义(真实 UI 失败 ①②) / 忠实优化模式 / AGENT 不靠关键词')
+  console.log('✓ v3-6b 提示词规则防线:专业化优化(三层原则/IMAGE/VIDEO+子类型/GENERAL/质量自检) + 不得改变任务方向 + AGENT 不靠关键词')
 }
 
 // ── 7. 迁移自旧版的关键用户行为(V3 保护) ──────────────────────────────────
@@ -340,13 +408,13 @@ async function call(routes, body) {
   const imgMsg = buildV3Messages({ rawInput: '帮我写一个二次元女孩的生图提示词,海边黄昏。' })
   const sys = imgMsg.find((m) => m.role === 'system').content
   const usr = imgMsg.find((m) => m.role === 'user').content
-  assert.match(sys, /IMAGE:主体/, '★ 系统规则须含图片用途适配')
+  assert.match(sys, /IMAGE:生图提示词的专业优化/, '★ 系统规则须含图片用途适配')
   assert.match(sys, /IMAGE \/ VIDEO \/ AUDIO 的输出不得出现执行任务章节/, '★ 系统规则须禁止特殊用途写成任务书')
   assert.match(sys, /不得把 AI 推断写作用户的明确要求/, '★ 防止 AI 建议冒充用户要求')
-  assert.match(sys, /不得扩展任务方向/, '★ 防止擅自扩展任务方向')
+  assert.match(sys, /不得改变任务方向/, '★ 防止擅自改变任务方向')
   assert.ok(usr.includes('二次元女孩'), '★ 原意必须在用户消息中原样传递')
   const vidMsg = buildV3Messages({ rawInput: '帮我写一段可灵文生视频提示词:一只猫在窗台上打哈欠。' })
-  assert.match(vidMsg.find((m) => m.role === 'system').content, /VIDEO:动作/, '★ 系统规则须含视频用途适配')
+  assert.match(vidMsg.find((m) => m.role === 'system').content, /VIDEO:视频提示词的专业优化/, '★ 系统规则须含视频用途适配')
   assert.ok(vidMsg.find((m) => m.role === 'user').content.includes('猫'), '★ 视频原意原样传递')
 
   // (c) 防止反复确认:V3 流程不存在确认状态(结构上不可能出现)
