@@ -20,6 +20,8 @@ import {
   detectSpecialUsageTemplateDrift,
   looksLikeProtocolEnvelope,
   conservativeOutput,
+  stripThinking,
+  previewableText,
 } from '../lib/core/v3.js'
 
 // ── 1. 用途判定严格性(机械兜底 + 提示词约束) ────────────────────────────────
@@ -36,6 +38,13 @@ import {
     ['帮我写一段图片编辑提示词', 'IMAGE'],
     ['帮我写一段配音音频提示词', 'AUDIO'],
     ['帮我写给 Codex 的代码修复任务', 'AGENT'],
+    // ★ 真实 UI 人工验收失败样本(m02408 ③):「优化一段…提示词」也是对该生成提示词的明确诉求
+    ['帮我优化一段可灵图生视频提示词：一个女孩在雨夜街道上缓慢行走，镜头从侧面跟拍。', 'VIDEO'],
+    // ★ 反向保护:只是提到「优化」+ 代码/流程,不是在要生成提示词 → 仍是 GENERAL
+    ['帮我优化一下这段代码', 'GENERAL'],
+    ['帮我优化这个流程', 'GENERAL'],
+    // ★ 真实 UI 人工验收失败样本(m02408 ②):不得因为缺名字而改变用途
+    ['帮我看看这个软件哪里不好用还有什么地方可以改怎么弄比较好。', 'GENERAL'],
   ]
   for (const [text, expected] of cases) {
     assert.equal(inferUsageMechanically(text), expected, `★ 用途判定:「${text}」应为 ${expected}`)
@@ -237,7 +246,61 @@ async function call(routes, body) {
   assert.equal(detectIntentExpansion('请给出可行方案', '请给出可行方案。').expanded, false)
   // 空输出不误判
   assert.equal(detectIntentExpansion('随便聊聊', '').expanded, false)
+
+  // ★ 真实 UI 人工验收失败样本(m02408 ①):运行中的旧构建把
+  //   「我想用DSH控制ComfyUI生成视频。」扩展成了下面这段(含接口 / 控制流程 / 实施限制)。
+  const realBad =
+    '我想用 DSH 作为控制端，去驱动本地或远程的 ComfyUI 来生成视频。\n\n' +
+    '请说明可行的实现方式，覆盖以下要点：\n' +
+    '1. 整体思路：DSH 如何与 ComfyUI 建立连接（API / WebSocket / 自定义节点等）。\n' +
+    '2. 视频生成所依赖的 ComfyUI 工作流组成。\n' +
+    '3. 接口与控制流程：在 DSH 中如何下发任务。\n' +
+    '4. 实施限制：依赖安装、显存要求、首次加载耗时。\n\n' +
+    '如果某个环节存在多种方案，请简要列出优劣。'
+  const hit = detectIntentExpansion(raw, realBad)
+  assert.equal(hit.expanded, true, '★ 真实失败样本(可行的实现方式 / 控制流程 / 实施限制)必须判为扩展')
+  for (const p of ['实现方式', '控制流程', '实施限制', '整体思路', '覆盖以下要点', '列出优劣']) {
+    assert.ok(hit.phrases.includes(p), `★ 必须命中扩展短语「${p}」`)
+  }
+  // 同一段文本,若原文本来就要求这些(思路 / 要点 / 方案)→ 不算扩展,避免误伤
+  assert.equal(
+    detectIntentExpansion('帮我梳理整体思路，覆盖以下要点', realBad).expanded,
+    false,
+    '★ 原文已要求思路/要点时不得误判为扩展',
+  )
+  // 想法讨论里出现「思路」→ 不得误判
+  assert.equal(
+    detectIntentExpansion('我想做一个本地知识库工具，先聊聊思路。', '我想做一个本地知识库工具，先聊聊整体思路。').expanded,
+    false,
+    '★ 原文在聊思路时「整体思路」不算新增任务方向',
+  )
   console.log('✓ v3-6 意图扩展检测:目标描述/想法交流不得被改成规划或执行任务')
+}
+
+// ── 6b. 提示词规则不得被静默移除(真实 UI 失败 ①②的根因防线) ──────────────
+{
+  const zh = buildV3Messages({ rawInput: '测试', language: 'zh' }).find((m) => m.role === 'system').content
+  const en = buildV3Messages({ rawInput: 'test', language: 'en' }).find((m) => m.role === 'system').content
+  const zhText = String(zh)
+  const enText = String(en)
+
+  // ① 不得扩展任务方向:硬规则 + 逐字反例必须在提示词里
+  assert.ok(zhText.includes('不得扩展任务方向'), '★ 中文提示词必须保留「不得扩展任务方向」硬规则')
+  assert.ok(zhText.includes('请围绕这个目标给出可行方案'), '★ 必须保留逐字反例')
+  assert.ok(enText.includes('NEVER expand the task direction'), '★ 英文提示词必须保留同规则')
+
+  // ② 缺名字不算歧义:真实失败样本「这个软件」必须作为反例写在提示词里
+  assert.ok(zhText.includes('缺一个名字/标识不算歧义'), '★ 中文提示词必须写明「缺名字不算歧义」')
+  assert.ok(zhText.includes('这个软件'), '★ 必须保留「这个软件」这一逐字反例')
+  assert.ok(zhText.includes('请分析这个软件目前存在哪些不好用的地方'), '★ 必须给出期望输出示例')
+  assert.ok(enText.includes('MISSING NAME IS NOT AMBIGUITY'), '★ 英文提示词必须保留同规则')
+
+  // 真正无法确定用户意图时仍然要能提问(不得因修②而取消澄清能力)
+  assert.ok(zhText.includes('要做的**动作/方向**本身无法确定'), '★ 必须保留真歧义的提问条件')
+  assert.ok(zhText.includes('与用户输入保持同一语言'), '★ 提示词必须要求与输入同语言(中文进→英文出是真实缺陷)')
+  assert.ok(enText.includes('SAME language as the user'), '★ 英文提示词同样必须要求同语言')
+  assert.ok(zhText.includes('把它改成第二种'), '★ 必须保留真歧义反例')
+  console.log('✓ v3-6b 提示词规则防线:不得扩展任务方向 / 缺名字不算歧义(真实 UI 失败 ①②)')
 }
 
 // ── 7. 迁移自旧版的关键用户行为(V3 保护) ──────────────────────────────────
@@ -308,6 +371,60 @@ async function call(routes, body) {
   assert.equal(looksLikeProtocolEnvelope('请审查并重构订单服务模块。'), false)
   assert.equal(looksLikeProtocolEnvelope('{"状态":"ok"}'), false)
   console.log('✓ v3-8 协议信封泄漏防护:截断 JSON 不得作为优化结果交付')
+}
+
+// ── 9. 推理模型的思考不得混进结果(真实模型实测缺陷) ────────────────────────
+{
+  // 实测 minimax-m3:reasoning_content 为空,思考以思考标签(见下方 T_OPEN/T_CLOSE)直接出现在正文里,
+  // 且思考里会出现 `{...}` 片段(含系统提示词里的协议示例)。按「第一个 JSON 对象」解析
+  // 会取到思考里的片段 → 正常结果被判成空产出(VF_EMPTY_OUTPUT)。
+  // 注:标签用字符码拼出 —— 字面标签会被工具链当成思考块吃掉。
+  const T_OPEN = String.fromCharCode(60) + 'think' + String.fromCharCode(62)
+  const T_CLOSE = String.fromCharCode(60) + '/think' + String.fromCharCode(62)
+  const think =
+    `${T_OPEN}The user wants strict JSON. Example: {"status":"optimized"|"needs_clarification"} ` +
+    `so I will output {"title":"待确认"}.${T_CLOSE}`
+  const envelope = JSON.stringify({
+    status: 'optimized',
+    usage: 'AGENT',
+    structured: true,
+    output: '{"title":"待确认","steps":["待确认"],"verify":"待确认"}',
+  })
+  const parsed = parseV3Output(`${think}${envelope}`, '严格 JSON 格式输出一个 agent 任务指令，字段固定为 title/steps/verify。')
+  assert.equal(parsed.usage, 'AGENT', '★ 思考在前时仍须正确解析用途')
+  assert.equal(parsed.structured, true)
+  assert.ok(parsed.output.includes('"title"'), '★ 思考里的 JSON 片段不得导致空产出')
+  assert.ok(!parsed.output.includes('status'), '★ 思考内容不得进入交付结果')
+
+  // 只有思考、没有信封 → 不得把思考当优化结果交付
+  assert.equal(parseV3Output(`${T_OPEN}正在推理,还没有结果`, '帮我优化一下').output, '', '★ 思考不得当正文交付')
+  // 未闭合的思考(被截断)→ 其后的协议信封仍须可用
+  assert.equal(
+    parseV3Output(`${T_OPEN}被截断的推理…${envelope}`, '严格 JSON 格式输出一个 agent 任务指令').output.includes('"title"'),
+    true,
+    '★ 未闭合思考之后的结果仍须解析出来',
+  )
+  assert.equal(stripThinking(`${T_CLOSE}结果`).trim(), '结果', '★ 思考块剥离后保留正文')
+  assert.equal(stripThinking('没有思考块').trim(), '没有思考块', '★ 无思考块时原样返回')
+
+  // 实时预览:思考与内部协议都不得进入界面
+  assert.equal(previewableText('我正在思考'), '我正在思考', '★ 普通文本照常预览')
+  assert.equal(previewableText(`${T_OPEN}推理中`), '', '★ 未闭合思考不得预览')
+  assert.equal(previewableText('结果在这里'), '结果在这里')
+  assert.equal(
+    previewableText('结果在这里{"status":"optimized","usage":"AGENT","output":"…"}'),
+    '结果在这里',
+    '★ 协议信封起不得进入预览',
+  )
+  // 协议里 output 给成对象/数组时,必须呈现为 JSON 文本,绝不能是 "[object Object]"
+  // (实测 minimax-m3:严格 JSON 用例返回 `"output":{"title":"待确认"}`)
+  const objOut = parseV3Output(
+    JSON.stringify({ status: 'optimized', usage: 'AGENT', structured: true, output: { title: '待确认', steps: ['待确认'] } }),
+    '严格 JSON 格式输出一个 agent 任务指令，字段固定为 title/steps/verify。',
+  )
+  assert.ok(objOut.output.includes('"title"'), '★ 对象形态的 output 必须序列化为 JSON 文本')
+  assert.ok(!objOut.output.includes('[object Object]'), '★ 不得交付 [object Object]')
+  console.log('✓ v3-9 推理模型思考剥离:思考里的 JSON 片段不得导致空产出,协议不得进入预览')
 }
 
 console.log('v3.test.mjs: ALL PASS')

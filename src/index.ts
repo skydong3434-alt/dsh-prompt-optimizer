@@ -8,6 +8,7 @@ import {
   conservativeOutput,
   stripProtocolMarkers,
   reconcileUsage,
+  previewableText,
 } from './core/v3.js'
 import { mechanicalTriage } from './core/triage.js'
 import Schema from '@deepseek-ai/schemastery'
@@ -660,8 +661,20 @@ export function apply(ctx: Context, config: Config) {
               ...(effort ? { reasoningEffort: effort as NonNullable<GenerateOptions['reasoningEffort']> } : {}),
               signal: abort.signal,
             }
+            // 实时预览只下发**用户可看的内容**:剥掉模型思考,并在协议信封开始处截断。
+            // 实测 minimax-m3 的思考直接混在 content 里(reasoning_content 为空),且整段
+            // 正文就是内部协议 JSON —— 原样转发会让用户在「快速模式」预览里看到它们。
+            // 预览为空时界面只显示加载态。
+            let v3Preview = ''
+            let v3LastSafe = ''
             const collected = await collectText(ctx.llm.stream(v3Options), (delta) => {
-              send({ type: 'delta', text: delta })
+              v3Preview += delta
+              const safe = previewableText(v3Preview)
+              if (safe.length > 0 && safe !== v3LastSafe) {
+                const add = safe.startsWith(v3LastSafe) ? safe.slice(v3LastSafe.length) : safe
+                v3LastSafe = safe
+                if (add) send({ type: 'delta', text: add })
+              }
             })
             v3Raw = collected.text
             if (collected.truncated) v3Failure = 'truncated'

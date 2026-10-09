@@ -118,8 +118,9 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   const res = await call(handler, { text: '帮我看看这段代码。约束:只检查,不修改文件。', provider: 'session-p', model: 'session-m' })
   const events = sseEvents(res)
   const data = doneOf(res)
-  // V3 单次调用:模型增量在调用期实时下发,判断结论(meta)在产物确定后才发。
-  assert.equal(events[0].type, 'delta', 'V3 先推送模型增量')
+  // V3 单次调用:模型增量只下发**用户可看的内容**;判断结论(meta)在产物确定后才发。
+  // 该模型的输出本身就是内部协议 JSON(实测 minimax-m3 亦然)→ 不得有任何增量泄漏到界面。
+  assert.ok(!events.some((e) => e.type === 'delta'), '内部协议不得作为增量推送到界面')
   assert.ok(events.some((e) => e.type === 'meta'), '应有 meta 事件')
   assert.ok(events.some((e) => e.type === 'validating'), '应有 validating 事件')
   assert.equal(events[events.length - 1].type, 'done', 'done 必须是最后一个事件')
@@ -128,7 +129,32 @@ async function setup({ config = {}, llmOverrides = {} } = {}) {
   assert.equal(data.provider, 'session-p')
   assert.equal(data.model, 'session-m')
   assert.ok(!data.optimized.includes('"status"'), '产物不得包含内部协议信封')
-  console.log('✓ 1 正常路径:meta→validating→done')
+  console.log('✓ 1 正常路径:meta→validating→done(内部协议不进预览)')
+}
+
+// 1b. 实时预览:思考与内部协议不得下发,真实内容照常下发(真实模型实测缺陷)
+{
+  const { handler } = await setup({
+    llmOverrides: {
+      stream: async function* () {
+        yield { type: 'text-delta', index: 0, text: `<think>用户想优化这段代码,先分析一下。` }
+        yield { type: 'text-delta', index: 0, text: `推理结束。` }
+        yield { type: 'text-delta', index: 0, text: `</think>请审查这段代码,只检查、不修改文件。` }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    },
+  })
+  const res = await call(handler, { text: '帮我看看这段代码。约束:只检查,不修改文件。', provider: 'session-p', model: 'session-m' })
+  const deltas = sseEvents(res)
+    .filter((e) => e.type === 'delta')
+    .map((e) => String(e.text ?? ''))
+  const joined = deltas.join('')
+  assert.ok(joined.includes('请审查这段代码'), '真实内容应实时下发')
+  assert.ok(!joined.includes('think'), '思考标记不得下发')
+  assert.ok(!joined.includes('推理'), '思考内容不得下发')
+  assert.ok(!joined.includes('"status"'), '内部协议不得下发')
+  assert.equal(doneOf(res).optimized, '请审查这段代码,只检查、不修改文件。', '思考不得进入交付结果')
+  console.log('✓ 1b 实时预览:思考与内部协议不泄漏,真实内容照常下发')
 }
 
 // 2. 设置里固定模型('provider/model')覆盖会话模型

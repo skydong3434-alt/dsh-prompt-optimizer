@@ -30,13 +30,6 @@ const TYPE_LABEL_KEY: Record<string, MessageKey> = {
   general: 'panel.type.general',
 }
 
-/** 置信度档位 → i18n key(内部数值一律不展示)。 */
-const CONFIDENCE_KEY: Record<'High' | 'Medium' | 'Low', MessageKey> = {
-  High: 'panel.confidence.high',
-  Medium: 'panel.confidence.medium',
-  Low: 'panel.confidence.low',
-}
-
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text)
@@ -249,13 +242,10 @@ export function createResultDock(controller: OptimizerController) {
     const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
     const t = useT()
     const [copied, setCopied] = useState(false)
-    // U5:分析诊断段折叠态(默认展开)——长分析可收起,聚焦优化稿本身。
-    // Phase 4:分析诊断**默认折叠**(普通用户先看到结果与一句摘要)
-    const [analysisOpen, setAnalysisOpen] = useState(false)
+    // 默认面板只留「优化后的提示词」与操作;判断依据/台账/分析全部收进**默认折叠**的「优化说明」。
+    const [notesOpen, setNotesOpen] = useState(false)
     // 「调整判断」高级入口默认收起(低优先级,不进主流程)
     const [adjustOpen, setAdjustOpen] = useState(false)
-    // 「可选建议」弱化 + 默认折叠
-    const [suggestionsOpen, setSuggestionsOpen] = useState(false)
     // O6:撤回后的正向反馈——头部短暂显示「已撤回 ✓」,避免用户以为没生效。
     const [undoneFlash, setUndoneFlash] = useState(false)
     // v2 Phase 3:Discovery 答题草稿(question.key → {optionId, text})
@@ -367,6 +357,8 @@ export function createResultDock(controller: OptimizerController) {
     // 只显示中文标签,不暴露 KEEP/PATCH/RESTRUCTURE/REBUILD 英文术语(内部枚举只在展开后出现)
     const targetLabel = targetText ? t(`panel.target.${targetText}` as never) : ''
     const summaryLine = [triageText, targetLabel, engineText].filter(Boolean).join(' · ')
+    // V3 真实用途:旧版头部「提示词目标」徽章显示的就是它,现在只在「优化说明」里如实呈现。
+    const usageText = result?.usage ? t(`panel.usage.${result.usage}` as never) : ''
     // ── Phase 4:结果页的四类信息(全部来自真实 Requirement Ledger / Missing Resolution)──
     const resultLedger = result?.ledger ?? []
     const confirmedLedger = resultLedger.filter(
@@ -687,46 +679,9 @@ export function createResultDock(controller: OptimizerController) {
         <div style={styles.header}>
           <SparkleIcon size={15} />
           <span style={styles.title}>{t('panel.title')}</span>
-          {/* 任务类型徽章 + 把握度(高/中/低):loading 时用 meta,完成后用 result。 */}
-          {(result || state.meta) && (
-            <span style={styles.typeBadge}>
-              {t('panel.type')}: {t(TYPE_LABEL_KEY[(result?.promptType ?? state.meta?.promptType) ?? 'general'] ?? 'panel.type.general')}
-            </span>
-          )}
-          {(result || state.meta) && (
-            <span style={styles.confidenceBadge}>
-              {t(CONFIDENCE_KEY[(result?.confidenceLevel ?? state.meta?.confidenceLevel) ?? 'Low'])}
-            </span>
-          )}
-          {(() => {
-            const contract = result?.contract ?? state.meta?.contract
-            return contract ? (
-              <span style={styles.modelBadge}>
-                {t('panel.contract')}: {t(`panel.contract.${contract}` as never)}
-              </span>
-            ) : null
-          })()}
-          {v2 && (
-            <span style={styles.modelBadge} title={v2.target.rationale}>
-              {t('panel.target')}: {v2.target.target}
-              {v2.target.engine ? ` · ${v2.target.engine}` : ''}
-            </span>
-          )}
-          {v2 && (
-            <span style={styles.modelBadge} title={v2.triage.reasons.join(';')}>
-              {t('panel.triage')}: {triageLabel(v2.triage.triage)}
-            </span>
-          )}
-          {result && (
-            <span
-              style={styles.modelBadge}
-              title={result.fallbackUsed && result.fallbackReason ? `${t('panel.fallback')}: ${result.fallbackReason}` : undefined}
-            >
-              {result.provider} / {result.model}
-              {result.fallbackUsed ? ` · ${t('panel.fallback')}` : ''}
-              {typeof result.durationMs === 'number' ? ` · ${t('panel.duration')} ${(result.durationMs / 1000).toFixed(1)}s` : ''}
-            </span>
-          )}
+          {/* 头部只留标题与关闭。任务类型/把握度/提示词目标/编辑分诊等旧字段已从默认面板移除:
+              V3 下它们要么恒为同一值(任务类型始终 general),要么属于内部术语,不构成用户需要的信息。
+              真实用途与判断依据收进正文的「优化说明」(默认折叠)。 */}
           {/* U7/O6:头部状态条——已替换常驻;撤回动作短暂反馈。 */}
           {applied && <span style={styles.statusChip}>{t('panel.appliedShort')}</span>}
           {!applied && undoneFlash && <span style={styles.statusChip}>{t('panel.undoneShort')}</span>}
@@ -787,21 +742,10 @@ export function createResultDock(controller: OptimizerController) {
         {state.status === 'discovery' && discovery && discovery.questions.length > 0 && (
           <>
             <div style={styles.body}>
-              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>
-                {t('panel.discovery.remaining', { count: String(discovery.analysis.gate.blockingItems.length) })}
-              </div>
-              <div style={styles.optimizedBox}>
-                {t('panel.discovery.hint')}
-                <div style={{ opacity: 0.6, marginTop: 4 }}>{t('panel.discovery.envNote')}</div>
-              </div>
-              {discovery.stoppedBy ? (
-                <div style={styles.warnBanner}>
-                  <span aria-hidden>ℹ</span>
-                  <span>{t(`panel.discovery.stopped.${discovery.stoppedBy}` as never)}</span>
-                </div>
-              ) : null}
+              {/* 澄清页只呈现「要回答的问题」与回答操作。
+                  V3 只会在关键歧义时提问(一次一个问题),不显示阻塞项计数 / 内部状态术语。 */}
+              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.discovery.askTitle')}</div>
               {discovery.questions.map((question) => renderQuestion(question))}
-              {discovery.agentResearches.length > 0 ? renderAgentResearches(discovery.agentResearches) : null}
             </div>
             <div style={styles.actions}>
               <button
@@ -925,60 +869,54 @@ export function createResultDock(controller: OptimizerController) {
               </div>
             )}
             <div style={styles.body}>
-              {/* Phase 4:一句结果摘要(内部术语不喧宾夺主) */}
-              {summaryLine ? (
-                <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{summaryLine}</div>
-              ) : null}
-
-              {/* 已确认需求:数据来自**真实 Requirement Ledger**(不从编译器输出反推),
-                  只含 USER_EXPLICIT / CONTEXT_EXPLICIT 且当前状态有效。 */}
-              {renderLedgerConfirmed(t('panel.confirmedLedger'), confirmedLedger)}
-              {/* Agent 自行调查(弱显示) */}
-              {renderPlainGroup(t('panel.agentWillCheck'), agentResearchTexts, true)}
-              {/* 暂定 / 条件(仅存在时) */}
-              {renderPlainGroup(
-                t('panel.provisional'),
-                provisionalTexts,
-                false,
+              {/* 默认面板只呈现结果本身:优化后的提示词在最前,判断依据收进下方折叠。 */}
+              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.optimized')}</div>
+              <div style={styles.optimizedBox}>
+                <pre style={styles.pre}>{result.optimized}</pre>
+              </div>
+              {result.truncated && (
+                <div style={styles.warnBanner}>
+                  <span aria-hidden>⚠</span>
+                  <span>{t('panel.truncated')}</span>
+                </div>
               )}
 
-              {/* 分析诊断默认折叠(调试价值保留,但不铺满界面) */}
-              <button className="dsh-po-btn" type="button" style={styles.sectionTitle} onClick={() => setAnalysisOpen((v) => !v)} aria-expanded={analysisOpen}>
-                <span style={{ ...styles.chevron, transform: analysisOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
-                {t('panel.analysis')}
+              {/* 优化说明:默认折叠。本次真实判断摘要 + 台账 + 分析 + 建议,需要时才展开。 */}
+              <button className="dsh-po-btn" type="button" style={styles.sectionTitle} onClick={() => setNotesOpen((v) => !v)} aria-expanded={notesOpen}>
+                <span style={{ ...styles.chevron, transform: notesOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
+                {t('panel.notes')}
               </button>
-              {analysisOpen && (
+              {notesOpen && (
                 <div style={styles.analysisBody}>
-                  {v2 ? (
-                    <>
-                      <div style={styles.groupItem}>
-                        {t('panel.auto.intent')}:{v2.intent.primary}
-                      </div>
-                      <div style={styles.groupItem}>
-                        {t('panel.auto.supporting')}:{v2.intent.supporting.join(', ') || '(无)'}
-                      </div>
-                      <div style={styles.groupItem}>
-                        {t('panel.auto.promptType')}:
-                        {result?.contract
-                          ? t(`panel.contract.${result.contract}` as never)
-                          : t('panel.type.auto')}
-                      </div>
-                      <div style={styles.groupItem}>
-                        {t('panel.auto.targetModel')}:{v2.target.target}
-                        {engineText ? ` · ${engineText}` : ''}
-                      </div>
-                      <div style={styles.groupItem}>
-                        {t('panel.auto.editScope')}:{triageText}({v2.triage.triage})
-                      </div>
-                      {v2.resolution.length > 0 ? (
-                        <div style={styles.groupItem}>
-                          {t('panel.auto.dispositions')}:
-                          {v2.resolution.map((item) => `${item.text}[${item.classification}]`).join(' / ')}
-                        </div>
-                      ) : null}
-                    </>
+                  {/* Phase 4:一句结果摘要(内部术语不喧宾夺主) */}
+                  {summaryLine ? <div style={styles.groupItem}>{summaryLine}</div> : null}
+                  {/* V3 真实用途——旧版「提示词目标」字段的真身,只在说明里出现。 */}
+                  {usageText ? (
+                    <div style={styles.groupItem}>
+                      {t('panel.auto.usage')}:{usageText}
+                    </div>
                   ) : null}
+                  {/* 已确认需求:数据来自**真实 Requirement Ledger**(不从编译器输出反推),
+                      只含 USER_EXPLICIT / CONTEXT_EXPLICIT 且当前状态有效。 */}
+                  {renderLedgerConfirmed(t('panel.confirmedLedger'), confirmedLedger)}
+                  {/* Agent 自行调查(弱显示) */}
+                  {renderPlainGroup(t('panel.agentWillCheck'), agentResearchTexts, true)}
+                  {/* 暂定 / 条件(仅存在时) */}
+                  {renderPlainGroup(
+                    t('panel.provisional'),
+                    provisionalTexts,
+                    false,
+                  )}
                   {result.analysis ? <pre style={styles.pre}>{result.analysis}</pre> : null}
+                  {/* 可选建议:弱化(绝不与用户要求视觉等权) */}
+                  {result.suggestedRequirements.length > 0 ? (
+                    <div style={{ opacity: 0.75 }}>
+                      {renderGroup(t('panel.suggestions'), result.suggestedRequirements, 'suggested')}
+                    </div>
+                  ) : null}
+                  {/* 暂不影响 / 仍需你决定的清单 */}
+                  {renderPlainGroup(t('panel.needsDecision'), needsDecisionTexts, false)}
+                  {renderPlainGroup(t('panel.notBlocking'), notBlockingTexts, true)}
                   {/* 低优先级「调整判断」:手动 override 不再是主流程前置步骤 */}
                   <button
                     className="dsh-po-btn"
@@ -1007,34 +945,6 @@ export function createResultDock(controller: OptimizerController) {
                       </select>
                     </>
                   ) : null}
-                </div>
-              )}
-
-              {/* 可选建议:弱化 + 默认折叠(绝不与用户要求视觉等权) */}
-              {result.suggestedRequirements.length > 0 ? (
-                <>
-                  <button className="dsh-po-btn" type="button" style={{ ...styles.sectionTitle, opacity: 0.75 }} onClick={() => setSuggestionsOpen((v) => !v)} aria-expanded={suggestionsOpen}>
-                    <span style={{ ...styles.chevron, transform: suggestionsOpen ? 'rotate(90deg)' : 'none' }}>▸</span>
-                    {t('panel.suggestions')}({result.suggestedRequirements.length})
-                  </button>
-                  {suggestionsOpen ? (
-                    <div style={{ opacity: 0.75 }}>
-                      {renderGroup('', result.suggestedRequirements, 'suggested')}
-                    </div>
-                  ) : null}
-                </>
-              ) : null}
-              {/* 暂不影响 / 仍需你决定的清单(Phase 4:拆分为语义清楚的分类,不再是大杂烩) */}
-              {renderPlainGroup(t('panel.needsDecision'), needsDecisionTexts, false)}
-              {renderPlainGroup(t('panel.notBlocking'), notBlockingTexts, true)}
-              <div style={{ ...styles.sectionTitle, cursor: 'default' }}>{t('panel.optimized')}</div>
-              <div style={styles.optimizedBox}>
-                <pre style={styles.pre}>{result.optimized}</pre>
-              </div>
-              {result.truncated && (
-                <div style={styles.warnBanner}>
-                  <span aria-hidden>⚠</span>
-                  <span>{t('panel.truncated')}</span>
                 </div>
               )}
             </div>

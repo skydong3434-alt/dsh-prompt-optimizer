@@ -275,6 +275,47 @@ const CASES = [
     blindTrust: true,
     maxLen: 600,
   },
+  // ── 以下三例来自真实 DSH UI 人工验收失败(m02408),固定为回归用例 ──
+  {
+    // 失败①:用户只描述目标,模型擅自追加「请说明可行的实现方式…」以及接口/控制流程/实施限制等要求。
+    // 原则:用户只描述目标时,不得擅自决定下一步是讨论、研究、规划还是实施。
+    label: 'UI真实失败①-目标描述不得扩展任务',
+    text: '我想用DSH控制ComfyUI生成视频。',
+    expectUsage: 'GENERAL',
+    mustNotContain: [
+      '可行的实现方式',
+      '实现方式',
+      '控制流程',
+      '实施限制',
+      '方案或指南',
+      '整体思路',
+      '覆盖以下要点',
+      '列出优劣',
+      '可行方案',
+      '制定计划',
+      '实施方案',
+      '请执行',
+    ],
+    maxLen: 120,
+  },
+  {
+    // 失败②:优化器因「未来执行任务需要的信息」追问软件名称/版本/截图。
+    // 正确行为:直接整理为清晰的分析请求。判断缺失信息是否妨碍**优化提示词本身**,
+    // 而不是未来执行任务是否需要;执行 Agent 能自行调查的不应成为强制澄清条件。
+    label: 'UI真实失败②-软件评估不得追问',
+    text: '帮我看看这个软件哪里不好用还有什么地方可以改怎么弄比较好。',
+    expectUsage: 'GENERAL',
+    mustContain: [['分析', '梳理', '整理', '评估'], ['改进', '优化', '建议']],
+    maxLen: 400,
+  },
+  {
+    // 失败③:可灵图生视频必须识别为 VIDEO(不是 General),且要素逐项保留。
+    label: 'UI真实失败③-可灵图生视频用途',
+    text: '帮我优化一段可灵图生视频提示词：一个女孩在雨夜街道上缓慢行走，镜头从侧面跟拍。',
+    expectUsage: 'VIDEO',
+    mustContain: ['女孩', '雨夜', ['侧面', '跟拍']],
+    maxLen: 1400,
+  },
 ]
 
 const selected = ONLY ? CASES.filter((c) => c.label.includes(ONLY)) : CASES
@@ -349,7 +390,7 @@ for (const c of selected) {
     if (r.totalMs > 150000) problems.push(`耗时异常 ${(r.totalMs / 1000).toFixed(1)}s`)
     // 模型侧空产出:产品已如实下发技术错误(error 终态),这是模型端方差,
     // 不是产品缺陷 —— 记录但不计硬失败(硬失败只针对「产品行为不对」)。
-    const modelSideEmpty = !output && /模型没有产出可用内容/.test(String(r.errorText ?? ''))
+    const modelSideEmpty = !output && /模型没有产出可用内容/.test(String(r.error ?? ''))
     const productProblems = problems.filter((p) => !modelSideEmpty || !/无输出|未到终态/.test(p))
     const ok = productProblems.length === 0
     if (!ok) hardFail += 1

@@ -94,6 +94,8 @@ export interface OptimizeResult {
   missing_resolution?: ResolutionView[]
   /** KEEP 分诊:优化稿逐字等于用户输入(未做任何改写)。 */
   keep?: boolean
+  /** V3:实际用途 GENERAL / IMAGE / VIDEO / AUDIO / AGENT(「提示词目标」的真身)。 */
+  usage?: string
 }
 
 /** 一个可选答案(UI 选项)。 */
@@ -1085,6 +1087,7 @@ export function createOptimizerController(
                 ledger: asLedgerViews(event.ledger),
                 missing_resolution: asResolutionViews(event.missing_resolution),
                 keep: event.keep === true,
+                ...(typeof event.usage === 'string' && event.usage ? { usage: event.usage } : {}),
               },
             })
           } else if (event.type === 'error') {

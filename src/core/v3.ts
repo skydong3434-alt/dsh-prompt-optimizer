@@ -36,9 +36,11 @@ export interface V3Result {
  */
 export function inferUsageMechanically(rawInput: string): V3Usage {
   const text = String(rawInput ?? "");
-  // 明确要求「写某个生成模型的提示词」
+  // 明确要求「写/优化某个生成模型的提示词」。
+  // 「优化一段…提示词」同样是对该生成提示词的明确诉求(真实 UI 失败③:
+  // 「帮我优化一段可灵图生视频提示词:一个女孩在雨夜街道上缓慢行走,镜头从侧面跟拍。」)。
   const asksForGenerationPrompt =
-    /(写|生成|做|拟|出一?段|给我)[^。;；\n]{0,12}(提示词|prompt)/i.test(text) ||
+    /(写|生成|做|拟|优化|润色|改进|出一?段|给我)[^。;；\n]{0,12}(提示词|prompt)/i.test(text) ||
     /(提示词|prompt)[^。;；\n]{0,8}(怎么写|如何写)/i.test(text);
   const imageHint = /(生图|文生图|图生图|图片|图像|照片|绘图|插画|midjourney|mj|sd|stable\s*diffusion|dall|flux|二次元|画面|视觉)/i.test(text);
   const videoHint = /(视频|可灵|kling|首帧|尾帧|图生视频|文生视频|运镜|镜头|时长)/i.test(text);
@@ -100,9 +102,17 @@ usage ∈ {GENERAL, IMAGE, VIDEO, AUDIO, AGENT};GENERAL 是默认。
 - 原文确实要求方案/计划/步骤时,才允许保留这类表达。
 
 # 关键歧义(极少发生)
-只有**不回答就不知道用户这句话到底是什么意思**时,才 status="needs_clarification":
-- 指代不明且无法从输入/上下文确定(「帮我把这个优化一下」「把它改成第二种」);
-- 关键对象缺失,导致无法确定要做什么。
+判断标准只有一个:**这个缺失信息是否妨碍你把「这句话」优化得更清楚**,
+而不是「将来执行任务时是否需要它」。执行方能够自行调查的信息,不是你必须问用户的理由。
+只有**不回答就不知道用户这句话到底要做什么**时,才 status="needs_clarification":
+- 要做的**动作/方向**本身无法确定(如「把它改成第二种」——改成什么无法确定);
+- 整句几乎没有可优化的内容(如「帮我把这个优化一下」——既无对象也无要求)。
+**缺一个名字/标识不算歧义**:用户说的「这个 / 那个 X」只缺名称、版本、平台、路径、链接或截图,
+但**要做什么已经很清楚**时,**不要提问** —— 把「这个软件」这类说法**原样保留**在输出里即可,
+具体指什么交给执行方确认。你只负责让表达更清楚,不负责提前把对象查清楚。
+- 例:输入「帮我看看这个软件哪里不好用还有什么地方可以改怎么弄比较好。」→ 直接输出
+  「请分析这个软件目前存在哪些不好用的地方,指出值得改进的问题,并提出具体可行的优化建议。」
+  (**不得**追问软件名称 / 版本 / 平台 / 截图)。
 **不要**问执行期信息:项目路径 / API / 版本 / workflow / 测试命令 / 技术选型 /
 MVP 还是生产化 / 实现路线 / 具体生成内容(题材、时长)。这些**保持未确定**,
 在正文里写明「由执行方自行确认」或「目前尚未确定,后续调研」即可。
@@ -133,6 +143,10 @@ MVP 还是生产化 / 实现路线 / 具体生成内容(题材、时长)。这�
 - STRUCTURED:保留用户指定的格式与字段要求。
 - **IMAGE / VIDEO / AUDIO 的输出不得出现执行任务章节**(目标 / 验收 / 前置条件 / 停止条件 / 任务清单 / 执行步骤);那是「给执行 Agent 的任务书」,不是生成提示词。
 
+# 输出语言
+与用户输入保持同一语言:用户写中文就输出中文(模型名、专有名词、代码标识可保留原文)。
+不得把中文提示词改写成英文,也不得把英文改写成中文。
+
 # 输出格式(严格 JSON,不要任何额外文字)
 {"status":"optimized"|"needs_clarification","usage":"GENERAL|IMAGE|VIDEO|AUDIO|AGENT","structured":true|false,"output":"优化后的提示词(仅 status=optimized)","question":"要问用户的那一个问题(仅 status=needs_clarification)"}`;
 
@@ -154,7 +168,16 @@ usage in {GENERAL, IMAGE, VIDEO, AUDIO, AGENT}; GENERAL is the default.
   (Goal / Acceptance / Preconditions / Stop conditions / Task list / Steps).
 
 # Critical ambiguity (rare)
-Ask only when you cannot tell what the user's sentence means (unresolved reference with no context).
+The only test: does this missing information stop you from making THIS SENTENCE clearer?
+NOT: will the executing agent need it later? Information the agent can investigate itself
+is never a reason to ask the user.
+Ask only when you cannot tell WHAT the user wants done:
+- the action/direction itself is undetermined ("change it to the second one" - to what?);
+- the sentence has almost nothing to optimize (no object, no requirement).
+A MISSING NAME IS NOT AMBIGUITY. If "this/that X" only lacks a name, version, platform, path,
+link or screenshot, while WHAT TO DO is already clear, DO NOT ASK - keep "this software" as-is
+in the output; the executor will resolve it. You make the wording clearer; you do not look the
+object up in advance.
 Never ask for execution details (paths, APIs, versions, workflows, test commands, tech choice,
 MVP vs production, implementation route, specific content/length). Keep them unresolved instead.
 If the message carries <clarification> (you already asked once), you MUST return status="optimized"
@@ -173,6 +196,10 @@ The optimized text must ask for the SAME thing the user asked for.
   the output must not contain "give a plan / outline steps / please implement".
 - Example: input "I want to use DSH to control ComfyUI to generate video." -> output is that sentence
   (lightly smoothed if needed); do NOT append "please propose a feasible approach".
+
+# Language
+Answer in the SAME language as the user's input (model names, proper nouns and code
+identifiers may stay as-is). Never rewrite a Chinese prompt into English or vice versa.
 
 # Output (strict JSON only)
 {"status":"optimized"|"needs_clarification","usage":"GENERAL|IMAGE|VIDEO|AUDIO|AGENT","structured":true|false,"output":"...","question":"..."}`;
@@ -205,31 +232,86 @@ export function buildV3Messages(input: {
   ];
 }
 
-/** 从模型输出里取出第一个平衡的 JSON 对象(容忍 ```json 围栏与前后文字)。 */
-function extractJsonObject(text: string): string | null {
+/** 依次取出文本里所有平衡的顶层 JSON 对象(容忍 ```json 围栏与前后文字)。 */
+function* jsonCandidates(text: string): Generator<string> {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
   const source = fenced ? fenced[1]! : text;
-  const start = source.indexOf("{");
-  if (start < 0) return null;
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < source.length; i += 1) {
-    const ch = source[i]!;
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
+  let i = 0;
+  for (;;) {
+    const start = source.indexOf("{", i);
+    if (start < 0) return;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let j = start; j < source.length; j += 1) {
+      const ch = source[j]!;
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === "\\") escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
     }
-    if (ch === '"') inString = true;
-    else if (ch === "{") depth += 1;
-    else if (ch === "}") {
-      depth -= 1;
-      if (depth === 0) return source.slice(start, i + 1);
+    if (end < 0) return; // 未闭合:后续都不可能成对,直接结束
+    yield source.slice(start, end + 1);
+    i = end + 1;
+  }
+}
+
+/**
+ * 取出真正的**协议信封**:`status` 必须精确等于 optimized / needs_clarification。
+ *
+ * 不能用「第一个 JSON 对象」:推理模型会把思考写进正文(有的模型 reasoning_content
+ * 为空、思考直接混在 content 里),思考里常出现 `{...}` 片段或系统提示词里的协议示例
+ * (`"status":"optimized"|"needs_clarification"`)。按第一个 `{` 取会取到这些片段,
+ * 导致解析失败甚至把正常结果判成空产出。
+ */
+function extractProtocolEnvelope(text: string): string | null {
+  for (const candidate of jsonCandidates(text)) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      if (parsed.status === "optimized" || parsed.status === "needs_clarification") return candidate;
+    } catch {
+      /* 不是合法 JSON,继续找下一个 */
     }
   }
   return null;
+}
+
+/**
+ * 剥掉思考块。推理模型会把思考当正文输出(实测 minimax-m3 的 reasoning_content 为空,
+ * 思考标签直接出现在 content 里),这些内容绝不能当成优化结果交付。
+ * 未闭合的思考标签(被截断或忘了闭合)同样整段丢弃,但保留其后的协议信封。
+ */
+export function stripThinking(text: string): string {
+  // 残留的孤立标记也要清掉:任何思考标记都不该出现在交付结果里。
+  const stray = /<\s*\/?\s*think\s*>/gi;
+  const out = String(text ?? "").replace(/<\s*think\s*>[\s\S]*?<\s*\/\s*think\s*>/gi, "");
+  const open = out.search(/<\s*think\s*>/i);
+  if (open < 0) return out.replace(stray, "");
+  const tail = out.slice(open).replace(/<\s*think\s*>/i, "");
+  const envelope = extractProtocolEnvelope(tail);
+  return (out.slice(0, open) + (envelope ?? "")).replace(stray, "");
+}
+
+/**
+ * 供界面实时预览的安全文本:剥思考块,并在协议信封开始处截断。
+ * 内部协议(`{"status":…}`)与模型思考都不是用户内容,绝不能进入界面。
+ */
+export function previewableText(full: string): string {
+  const stripped = stripThinking(String(full ?? ""));
+  const at = stripped.search(/\{\s*"status"\s*:/);
+  return (at >= 0 ? stripped.slice(0, at) : stripped).trimEnd();
 }
 
 /**
@@ -237,9 +319,28 @@ function extractJsonObject(text: string): string | null {
  * 容错:JSON 不可用时,把整段文本当作优化结果(usage 由机械兜底推断)——
  * 绝不因为格式问题把用户挡在门外。
  */
+/**
+ * 协议里的 output / question 应当是字符串,但模型有时直接给对象或数组
+ * (实测 minimax-m3:严格 JSON 用例返回 `"output":{...}`)。按 JSON 文本呈现,
+ * 绝不把 `[object Object]` 当优化结果交付。
+ */
+function asText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return "";
+    }
+  }
+  return String(value).trim();
+}
+
 export function parseV3Output(text: string, rawInput: string): V3Result {
-  const raw = String(text ?? "").trim();
-  const json = extractJsonObject(raw);
+  // 先剥思考块:思考里的 JSON 片段不能参与解析,思考本身更不能当成优化结果。
+  const raw = stripThinking(String(text ?? "").trim());
+  const json = extractProtocolEnvelope(raw);
   if (json) {
     try {
       const parsed = JSON.parse(json) as Record<string, unknown>;
@@ -248,8 +349,8 @@ export function parseV3Output(text: string, rawInput: string): V3Result {
       const usage = (V3_USAGES as readonly string[]).includes(usageRaw)
         ? (usageRaw as V3Usage)
         : inferUsageMechanically(rawInput);
-      const question = String(parsed.question ?? "").trim();
-      const output = String(parsed.output ?? "").trim();
+      const question = asText(parsed.question);
+      const output = asText(parsed.output);
       if (status === "needs_clarification" && question) {
         return { status, usage, structured: parsed.structured === true, output: "", question };
       }
@@ -320,11 +421,23 @@ const EXPANSION_PHRASES = [
   "请部署",
   "请排查",
   "完成这个任务",
+  // ↓ 真实 UI 人工验收失败样本里出现的扩展表达(m02408):
+  //   用户只写「我想用DSH控制ComfyUI生成视频。」,模型却追加了
+  //   「请说明可行的实现方式……」以及接口 / 控制流程 / 实施限制等要求;
+  //   运行中的旧构建还产出过「…的方案或指南…1. 整体思路…覆盖以下要点…列出优劣」。
+  //   这些短语只在**原文没有**对应说法时才算扩展(见下方 src.includes 过滤)。
+  "实现方式",
+  "控制流程",
+  "实施限制",
+  "方案或指南",
+  "整体思路",
+  "覆盖以下要点",
+  "列出优劣",
 ] as const;
 
-/** 原文本身就在要方案/计划/步骤/怎么做 → 这类表达不算扩展。 */
+/** 原文本身就在要方案/计划/步骤/怎么做/聊思路 → 这类表达不算扩展。 */
 const ASKS_FOR_PLAN_RE =
-  /(方案|计划|规划|步骤|流程|路线|怎么做|如何做|怎么实现|how\s+to|plan|steps|approach)/i;
+  /(方案|计划|规划|步骤|流程|路线|思路|怎么做|如何做|怎么实现|how\s+to|plan|steps|approach)/i;
 
 export function detectIntentExpansion(
   rawInput: string,

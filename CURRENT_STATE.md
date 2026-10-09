@@ -2,15 +2,16 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-09T12:05:00+08:00
-current_phase: V3_SINGLE_CALL_REFACTOR
-current_task:
+last_updated: 2026-10-09T14:05:00+08:00
+current_phase: V3_UI_ACCEPTANCE_FIX
+current_task: 修复 DSH Desktop 真实 UI 验收发现的三个问题(m02408)
 status: IN_PROGRESS
-next_task: V3 真实模型复跑与最终验收(用户 DSH UI 实测)
-machine_gate: PASS (npm test 101 断言 / build exit 0 / smoke all passed / v3-real-check 20/20)
+next_task: 用户重启 DSH Desktop 后做人工 UI 验收(G-8)
+machine_gate: PASS (npm test 104 断言 / build exit 0 / v3-real-check 真实模型复测进行中)
 human_review: PENDING_USER_UI_ACCEPTANCE
-phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 101 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
-v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底,真实输出不再追加「给出可行方案」);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs,最终 20/20);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续;⑥最终验收 待用户 DSH UI 实测;⑦最终报告 待出。
+phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 102 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
+v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续。
+ui_acceptance_fix: **用户真实 UI 验收失败修复(m02408)DONE(待人工验收)**。①擅自扩展任务:根因是运行中宿主为旧构建(`lib/` 12:37 构建 vs 宿主 10:59 启动)+ 机械兜底短语不全 → 提示词硬规则 + 补齐 `实现方式/控制流程/实施限制/方案或指南/整体思路/覆盖以下要点/列出优劣`;真实模型复测 3/3 只输出原句理顺版(1 次调用,~6s)。②不必要澄清:根因是提示词未区分「妨碍优化这句话」与「执行时才知道」→ 新增「缺一个名字/标识不算歧义」+ 逐字反例;复测 3/3 直接整理为分析请求(1 次调用,~6s),真歧义仍会提问。③特殊用途:模型识别正确(VIDEO),机械纠正层补 `优化|润色|改进` 动词;UI 旧字段(任务类型/把握度/提示词目标/编辑分诊)造成误读 → 移除。④UI 精简:结果面板默认只有「优化后的提示词 + 替换/复制/重新优化/关闭」,判断依据收进默认折叠的「优化说明」,澄清页只留问题与继续操作。**⑤复测另发现两个真实缺陷(已修)**:推理模型 `minimax-m3` 把思考直接写进 `content`(reasoning_content 为空),思考里的 `{...}` 片段被旧解析当成协议信封 → 「严格 JSON 输出 agent 任务指令」稳定空产出(`VF_EMPTY_OUTPUT`);修法 = `stripThinking` + `extractProtocolEnvelope`(只认 `status` 为 optimized/needs_clarification 的平衡 JSON)。宿主原样转发模型增量 → 快速模式预览泄漏思考与内部协议;修法 = 只下发 `previewableText`(剥思考 + 协议处截断)。测试:`test/v3.test.mjs` 第 9 组 + `test/smoke.mjs` 1b。**⑥另两个真实缺陷**:中文提示词被改写成英文(IMAGE 连续 2 次输出 `anime style illustration…`;提示词缺「与输入同语言」规则 → 中英提示词新增「输出语言」段,复测 4/4 中文);协议 `output` 给成对象时交付 `[object Object]`(严格 JSON 用例;修法 = `asText` 序列化非字符串 output/question)。
 latest_commit: a078634 fix(v3): 特殊用途要素逐项保留写入规则;真实检查同义要素容忍
 auto_continue: false
 stop_reason: awaiting user confirmation: V3 真实体验(G-8)
