@@ -2,13 +2,14 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-10T10:25:00+08:00
-current_phase: IDENTITY_MIGRATION_P01_6
-current_task: v0.3.2-apo 独立插件身份迁移 —— 阶段①②③④ 已完成(分支 phase/p01.6-identity,WIP 提交 36fc9a9),阶段⑤ 迁移脚本 scripts/migrate-desktop-identity.mjs 已就绪并通过副本验证与回归测试,阶段⑥ 等待用户完全退出 DSH Desktop 后执行**一条**迁移命令,阶段⑦ 真实 UI 验收待用户执行
-status: IN_PROGRESS_IDENTITY_MIGRATION(未发布:未 push / 未打 tag / 未建 Release;**禁止提前宣布 READY_FOR_RELEASE**)
-next_task: 用户执行迁移命令 → 完整重启 DSH Desktop → 完成 9 项真实 UI 验收 → 授权后才可发布 v0.3.2-apo
-machine_gate: PASS (npm run build exit 0 / npm run typecheck exit 0 / npm test 9 套全绿含 identity 6 项与 migrate-desktop-identity mg1–mg6 / check-license-contamination PASS;check-dod 在未打 tag 前预期唯一 FAIL=「annotated tag v0.3.2-apo 不存在」;隔离 profile apo-isomig 运行验证 17 PASS——组合树+宿主加载+路由契约+client bundle 新 id 且旧名零残留。**未验证项:真实 Desktop UI**(必须由用户人工验收;CLI/隔离加载成功不得冒充真实 Desktop UI 通过)
-human_review: PENDING_USER (2026-10-10;需用户执行 Desktop 迁移 + 9 项真实 UI 验收;本轮不 push/tag/Release)
+last_updated: 2026-10-10T11:25:00+08:00
+current_phase: RELEASED_V0_3_2_APO
+current_task: v0.3.2-apo 正式发布已完成(独立插件身份迁移 + 安装/文档统一 + 隔离验证);Desktop 身份迁移已由用户在本机完成并通过真实 UI 人工验收
+status: RELEASED(v0.3.2-apo 已 push main + annotated tag + 创建 GitHub Release;工作区干净)
+next_task: 无(等待下一轮需求)。可选后续独立问题:设置卡 5 个死开关(回退模型 / 提示词类型 / 分类模型 / 优化模式(完整·快速)/ 输出上限自适应 在当前单次调用流程中不生效)
+machine_gate: PASS(最终门禁在 e6bf58f 上重跑:npm run build exit 0 / npm run typecheck exit 0 / npm test 9 套 119 断言全绿 / check-dod 47 PASS 0 FAIL(含 annotated tag v0.3.2-apo)/ check-license-contamination PASS 48 文件 15 指纹 / identity id1–id6 / migrate-desktop-identity mg1–mg6 / 隔离 profile 从 GitHub 源码安装并加载 17 PASS)
+human_review: PASSED_BY_USER(2026-10-10;用户在 DSH Desktop 完成身份迁移并人工验收:正常启动 / 插件显示新包名 / 无重复旧插件 / 设置页正常 / 优化按钮与模型调用正常 / 原有重要设置保留)
+release_v0_3_2_apo: **已发布**。main = e6bf58f(发布提交 6ac2b17 + 发布后文档更新 e6bf58f);annotated tag `v0.3.2-apo` → 6ac2b17;GitHub Release https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/tag/v0.3.2-apo ;CI 成功;未 push 上游、未 npm publish、未改动 v0.3.0-apo / v0.3.1-apo tag、未修改 desktop profile(用户自建 link 保持不变)
 ui_acceptance_m03813_final: **最终真实 UI 人工验收 5/5 PASS**(T04 无约束校验误报 / T08 无擅自增加中景·海平线构图 / T29 只读约束保留且无误报 / T30 禁止编造约束保留且无误报 / T32 优先询问目标用户与核心问题)。此前一次「UI 复现修复前行为」的根因已定位为**宿主模块代际未更新**(DSH Desktop Host 只在进程启动时 import 一次插件模块:修复构建 20:41:42、上一次宿主启动 18:58:33 → 内存里仍是修复前模块;22:35:33 重启后换代),**不是代码回归**;该次诊断未改任何 Prompt 规则、仓库 0 改动。完整证据与口径见 `docs/ui-acceptance-m03813.md` §5。
 ui_acceptance_m03813: **35 项真实 UI 人工测试的台账、根因与最小范围修复**。台账见 `docs/ui-acceptance-m03813.md`(35 行逐项:原始输入/人工观察/预期行为/初步分类/证据来源/完整程度/需复现/最终根因;人工观察一律标注「仅有人工作为证据的摘要」)。**已确认代码缺陷 3 类**:①`assessV3Safety` 硬约束校验用整串逐字比对 → 语义等价的正确输出被判「约束缺失」(T29/T30),且 `HARD_CONSTRAINT_RE` 的单字「别」把「有什么区别」误当否定词(T04)→ 已重写(单字「别」只在子句开头算否定 + 中文 2 字滑窗 shingle 覆盖率 ≥0.5);②UI 文案 `panel.provenanceFail` 是 v2 遗留措辞(「显式要求缺少用户原话证据」,V3 已无此概念)→ 改为「约束核对未通过:输入里的硬性约束…」;③IMAGE 逐字示例本身含「女孩位于画面中景 / 海平线横贯后景」,与同段「不得擅自增加未指定景别」自相矛盾 → 示例中英同步替换并把旧写法写成反例(T08 实测逐字复现了该示例)。**规则缺项 4 类**:GENERAL 缺比例原则(T04/T06/T07/T13/T26 过度扩写);边界段缺「初始朝向/起始姿态/动作次数时长/新增动态画面事件/结构化字段用建议填充」(T10/T17/T18/T31);缺格式作用域规则(T30/T31);澄清优先级(T32 对象未明时问方向菜单)。**未新增模块、未新增分类器、未恢复多阶段流程、未引入二次 Validator、未为 35 案例写特殊规则、正常优化仍 1 次模型调用。** 测试新增 `test/v3.test.mjs` 6d 组(规则防线)与 6e 组(`assessV3Safety` 单元回归)。
 creation_boundary_m03556: **收紧「专业化完善」与「擅自创作」的边界**。新增 `# 专业化完善与创作扩写的边界(IMAGE / VIDEO 重点)`:允许 6 项(已有元素之间的关系/已有动作的自然过程/时间顺序与运动连续性/**已有**镜头要求的表达/已有环境所隐含的自然特征/清晰度与可控性);默认禁止 8 项(擅自指定摄影机角度、擅自决定固定或运动镜头、擅自增加未指定景别、擅自添加具体布光方案、擅自增加景深虚化、擅自设计服装发型身份、擅自增加新人物道具动作情节、无参考帧时确定可能冲突的运动路径);用户明确要求丰富细节/创意发挥/设计镜头时允许在原有约束内创作;**原文明确指定**景别/机位/布光/镜头运动时必须保留并专业化完善。`# 优化原则` 第 2 层「构图与光影」→「已有环境的自然光影」。`# IMAGE` 改为「重点提升」5 项(主体描述/主体与背景空间关系/已有风格表达/环境自然特征/画面信息组织与清晰度)+「不要为了补齐模板强行加入景别、机位、布光和构图方案」,示例删除「侧后方打光」。`# VIDEO` 改为「重点提升」5 项(动作起点过程结束/动作时间关系/**已有**镜头运动描述/角色与场景连续性/首尾帧过渡)+「不要把专业优化理解为重新导演一段视频」。`# VIDEO 子类型` 首尾帧补「没有实际参考帧时,不得假定具体的身体姿态和运动路径」。`# 优化质量` 第 7 条明确「平台名/模式名是否逐字还在」+ 新增「平台与生成模式必须逐字保留……写丢平台名 = 不合格」(案例C #1 真实丢了「可灵」)。**未新增模块、未恢复多阶段流程、未新增机械拦截系统,普通请求仍 1 次模型调用。** 测试新增 `test/v3.test.mjs` 第 6c 组;`scripts/v3-real-check.mjs` 新增 `mustNotMatch` 判据 + 案例 G(用户已指定景别/镜头/布光必须保留)。
@@ -18,9 +19,9 @@ rule_tuning_m03069: **①忠实优化模式**:IMAGE/VIDEO/AUDIO 默认只改善�
 phase_status: **V3 单次调用架构已落地并完成精简(方案 B 分批执行)**。历史:v0.1.0-apo 已收官(annotated tag `v0.1.0-apo` → c88e922,不得移动);v2 四个 Phase 全部完成但**未发布**。当前:`src/core/v3.ts` 单次模型调用完成优化(默认路径),旧多阶段链路(Analysis/Compiler/Discovery/Validator/Strategy,约 13.7k 行)与 `v3:false` 回退分支已删除,`src/core/` 只剩 v3.ts / triage.ts / types.ts;`npm test` = 102 断言全绿,`node scripts/check-dod.mjs` 仅剩「v0.2.0-apo tag 未创建」(打标签由用户执行)。
 v3_track: **用户 7 步令(m01789)驱动的精简重构,方案 B 分批执行**。①意图扩展修复 DONE(提示词硬规则 + `detectIntentExpansion` 机械兜底);②测试迁移 DONE(44 文件 A/B/C 分类,见 docs/v3-test-migration.md;commit c0f741c);③真实行为验证 DONE(scripts/v3-real-check.mjs);④旧架构删除 DONE(commit 435b643);⑤执行保护 持续。
 ui_acceptance_fix: **用户真实 UI 验收失败修复(m02408)DONE(待人工验收)**。①擅自扩展任务:根因是运行中宿主为旧构建(`lib/` 12:37 构建 vs 宿主 10:59 启动)+ 机械兜底短语不全 → 提示词硬规则 + 补齐 `实现方式/控制流程/实施限制/方案或指南/整体思路/覆盖以下要点/列出优劣`;真实模型复测 3/3 只输出原句理顺版(1 次调用,~6s)。②不必要澄清:根因是提示词未区分「妨碍优化这句话」与「执行时才知道」→ 新增「缺一个名字/标识不算歧义」+ 逐字反例;复测 3/3 直接整理为分析请求(1 次调用,~6s),真歧义仍会提问。③特殊用途:模型识别正确(VIDEO),机械纠正层补 `优化|润色|改进` 动词;UI 旧字段(任务类型/把握度/提示词目标/编辑分诊)造成误读 → 移除。④UI 精简:结果面板默认只有「优化后的提示词 + 替换/复制/重新优化/关闭」,判断依据收进默认折叠的「优化说明」,澄清页只留问题与继续操作。**⑤复测另发现两个真实缺陷(已修)**:推理模型 `minimax-m3` 把思考直接写进 `content`(reasoning_content 为空),思考里的 `{...}` 片段被旧解析当成协议信封 → 「严格 JSON 输出 agent 任务指令」稳定空产出(`VF_EMPTY_OUTPUT`);修法 = `stripThinking` + `extractProtocolEnvelope`(只认 `status` 为 optimized/needs_clarification 的平衡 JSON)。宿主原样转发模型增量 → 快速模式预览泄漏思考与内部协议;修法 = 只下发 `previewableText`(剥思考 + 协议处截断)。测试:`test/v3.test.mjs` 第 9 组 + `test/smoke.mjs` 1b。**⑥另两个真实缺陷**:中文提示词被改写成英文(IMAGE 连续 2 次输出 `anime style illustration…`;提示词缺「与输入同语言」规则 → 中英提示词新增「输出语言」段,复测 4/4 中文);协议 `output` 给成对象时交付 `[object Object]`(严格 JSON 用例;修法 = `asText` 序列化非字符串 output/question)。
-latest_commit: 36fc9a9 wip(identity): v0.3.2-apo 独立插件身份迁移(工作区保护)——分支 phase/p01.6-identity;main 仍为 44ce6b6
+latest_commit: e6bf58f docs(release): v0.3.2-apo 发布后更新安装状态(README×3 + 发布说明)——main = origin/main;发布提交 6ac2b17 已由 annotated tag v0.3.2-apo 固定
 auto_continue: false
-stop_reason: awaiting user action: 需用户**完全退出 DSH Desktop** 后执行 scripts/migrate-desktop-identity.mjs 完成身份迁移,并完成 9 项真实 UI 验收(本轮禁止 push/tag/Release)
+stop_reason: 已发布并收尾(v0.3.2-apo 已 push main + tag + GitHub Release;等待下一轮需求)
 ```
 
 ## v0.3.2-apo 独立身份迁移（2026-10-10，发布准备已完成）
@@ -134,5 +135,5 @@ Gates：G-1 契约+Provenance 定稿 → G-VS 真实体验 → G-2 策略抽审 
 - Human Gate（G-1/G-VS/G-2…）命中时：status 置 GATE_PENDING、human_review 置 BLOCKING_<门禁名>，stop_reason 用 "awaiting user confirmation: <门禁名>"，**不要硬做**。
 - 无人值守：不会有人回答提问；需要人工裁决时写 stop_reason 后结束本轮。
 - 边界（NON-GOAL）：不碰正式 DSH profile / ~/.dsh 正式配置 / PAB / Personal AI Brain / AI 视频工作流；不安装 launchd；不复制任何 AGPL 代码（linshenkx / zhangjiazhi）。
-- 本仓库 git remote：upstream = https://github.com/Y1X1n/dsh-prompt-optimizer.git（只读上游）；origin = https://github.com/skydong3434-alt/dsh-prompt-optimizer.git（本 fork；main 已推 44ce6b6，tag v0.3.0-apo / v0.3.1-apo 已推）。
-- **项目里程碑**：P00–P09 全部 Task DONE；tag v0.1.0-apo 已建（c88e922，不得移动）；v0.3.0-apo（c5db248）与 v0.3.1-apo（2d340d4）已发布；**v0.3.2-apo 独立插件身份迁移进行中（分支 phase/p01.6-identity），未发布**。
+- 本仓库 git remote：upstream = https://github.com/Y1X1n/dsh-prompt-optimizer.git（只读上游，**不 push**）；origin = https://github.com/skydong3434-alt/dsh-prompt-optimizer.git（本 fork；main = e6bf58f，tag v0.3.0-apo / v0.3.1-apo / v0.3.2-apo 均已推）。
+- **项目里程碑**：P00–P09 全部 Task DONE；tag v0.1.0-apo 已建（c88e922，不得移动）；v0.3.0-apo（c5db248）、v0.3.1-apo（2d340d4）、**v0.3.2-apo（6ac2b17，独立插件身份迁移 + 安装/文档统一 + 隔离验证）已发布**（GitHub Release 已创建，CI 成功）。
