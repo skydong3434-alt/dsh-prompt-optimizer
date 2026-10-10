@@ -758,7 +758,7 @@ export function createOptimizerController(
       state.result &&
       state.result.wellFormed &&
       state.last?.sessionId === sessionId &&
-      state.last.text !== draft &&
+      state.last && state.last.text !== draft &&
       (opts.isContextEnabled?.() ?? true)
         ? state.result.optimized
         : undefined

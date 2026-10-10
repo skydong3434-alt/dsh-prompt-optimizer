@@ -1,16 +1,16 @@
 # dsh-prompt-optimizer
 
-> ⭐ **本仓库 = DSH Adaptive Prompt Optimizer**（`@y1x1n/dsh-prompt-optimizer` 的派生增强版，MIT）。
+> ⭐ **本仓库 = DSH Adaptive Prompt Optimizer**（独立发布包 `@skydong3434-alt/dsh-prompt-optimizer`，派生自上游 `@y1x1n/dsh-prompt-optimizer`，MIT）。
 > 从「固定模板式 Prompt 扩写器」升级为**自适应提示词编辑器**：自动判断任务意图、
 > Prompt 类型、目标模型与需要修改多少，只在真正需要你决定时问少量关键问题，
 > 且**不自动发送 / 不自动执行 / 不自动决策**。
-> 发布版本 `v0.3.1-apo`（上一版 `v0.3.0-apo`；`v0.1.0-apo` 为首个可发布版本；`v0.2.0-apo` 的 v2 编辑器架构已由 V3 替换，未发布）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
-> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.3.1-apo.md](docs/release-notes-v0.3.1-apo.md)。
+> 发布版本 `v0.3.2-apo`（上一版 `v0.3.1-apo`、`v0.3.0-apo`；`v0.1.0-apo` 为首个可发布版本；`v0.2.0-apo` 的 v2 编辑器架构已由 V3 替换，未发布）；设计来源与 License 边界见 [NOTICE.md](NOTICE.md)；
+> 变更记录见 [CHANGELOG.md](CHANGELOG.md)；发布说明见 [docs/release-notes-v0.3.2-apo.md](docs/release-notes-v0.3.2-apo.md)。
 
 **中文** | [English](README.en.md) | [🐣 小白版](README.simple.md)
 
 [![CI](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@y1x1n/dsh-prompt-optimizer?label=npm&color=cb3837)](https://www.npmjs.com/package/@y1x1n/dsh-prompt-optimizer)
+[![npm (upstream)](https://img.shields.io/npm/v/@y1x1n/dsh-prompt-optimizer?label=npm%20(upstream)&color=cb3837)](https://www.npmjs.com/package/@y1x1n/dsh-prompt-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/skydong3434-alt/dsh-prompt-optimizer?label=release)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest)
 [![Stars](https://img.shields.io/github/stars/skydong3434-alt/dsh-prompt-optimizer?logo=github)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/stargazers)
@@ -131,53 +131,59 @@ Image Generation（生图提示词）· Video Generation（文生 / 图生 / 首
 
 前提:已安装 `dsh` CLI(`npx @deepseek-ai/dsh web` 可用的环境)。
 
-> **本 fork 的安装方式**:本 fork **未发布到 npm、也未在 Release 中提供 tarball 资产**。
-> 因此下方「从 npm 安装」与「从 Release 安装」装到的是**上游基线代码**(不含本 fork 的
-> V3 单次调用架构与增强)。要安装本 fork,请用 [从 GitHub 安装](#从-github-安装) 并指向
-> `github:skydong3434-alt/dsh-prompt-optimizer`。
+> **装本 fork 的正式方式 = GitHub 源码安装(下方第一小节,推荐)**。
+> 本 fork **未发布到 npm、也未在 Release 中提供 tarball 资产**,因此「上游基线安装」一节
+> 装到的是**上游基线代码**(不含本 fork 的 V3 单次调用架构与增强)——只有在你确实想用
+> 上游版本时才用那一节。
 
-### 从 npm 安装(推荐,最简)
-
-```sh
-dsh plugin --profile web add @y1x1n/dsh-prompt-optimizer
-```
-
-### 从 Release 安装(tarball,免构建)
-
-到 [Releases 页面](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest) 下载 `y1x1n-dsh-prompt-optimizer-<版本号>.tgz`,再安装本地文件:
-
-> **注意**:本 fork 的 Release 目前**不含 tarball 资产**(只有版本说明),所以这一步实际取到的是上游发布产物。安装本 fork 请用下方的 [从 GitHub 安装](#从-github-安装)。
+### 从 GitHub 安装(推荐,装本 fork)
 
 ```sh
-dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
+dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-apo
 ```
 
-### 本地源码安装(tarball)
+Git 安装拉取的是源码,本包通过 `prepare` 脚本在安装时自包含构建(只需 Node,不依赖 monorepo
+环境)。pnpm ≥10 首次会拒绝运行构建脚本,按终端提示把包名加入该 profile 的
+`pnpm-workspace.yaml` 的 `allowBuilds` 后重试即可。建议锁定正式 Release Tag(如上面的
+`#v0.3.2-apo`);开发期也可锁定分支或 commit:`github:skydong3434-alt/dsh-prompt-optimizer#<sha>`。
+
+### 本地源码安装(开发本 fork)
 
 ```sh
 cd dsh-prompt-optimizer
-npm install --legacy-peer-deps   # prepare 钩子会自动构建 lib/
-npm pack                          # 产出 y1x1n-dsh-prompt-optimizer-<version>.tgz
-dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<version>.tgz
+npm install --legacy-peer-deps           # prepare 钩子会自动构建 lib/
+dsh plugin --profile web add /绝对路径/dsh-prompt-optimizer   # 目录形式(macOS/Linux)
+# 或:先 npm pack 再装 tarball(Windows 推荐)
+npm pack                                  # 产出 skydong3434-alt-dsh-prompt-optimizer-0.3.2.tgz
+dsh plugin --profile web add ./skydong3434-alt-dsh-prompt-optimizer-0.3.2.tgz
 ```
 
 然后(重新)启动 `dsh web`,打开 Web UI 即可在发送栏旁看到按钮。
 
-> **Windows 注意**:`dsh plugin add ./目录` 走 pnpm 的 `link:`,目前会把盘符冒号错解析成协议分隔符,生成失效符号链接(`node_modules/<pkg>` 指向不存在的路径),表现为插件不加载。本地安装请用上面的 tarball 形式;目录链接形式在 macOS/Linux 正常。
+> **Windows 注意**:`dsh plugin add ./目录` 走 pnpm 的 `link:`,目前会把盘符冒号错解析成协议
+> 分隔符,生成失效符号链接(`node_modules/<pkg>` 指向不存在的路径),表现为插件不加载。
+> Windows 本地安装请用上面的 **tarball 形式**;目录链接形式在 macOS/Linux 正常。
 
-### 从 GitHub 安装
+### 上游基线安装(非本 fork)
+
+以下命令装到的是**上游 `@y1x1n/dsh-prompt-optimizer`**,不含本 fork 的任何增强;仅需要
+上游基线时使用。
 
 ```sh
-dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer
-```
+# 从 npm 安装(上游基线)
+dsh plugin --profile web add @y1x1n/dsh-prompt-optimizer
 
-Git 安装拉取的是源码,本包通过 `prepare` 脚本在安装时自包含构建(只需 Node,不依赖 monorepo 环境)。pnpm ≥10 首次会拒绝运行构建脚本,按终端提示把包名加入该 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 后重试即可。建议锁定 commit:`github:skydong3434-alt/dsh-prompt-optimizer#<sha>`。
+# 从 Releases 下载上游 tarball(文件名形如 y1x1n-dsh-prompt-optimizer-<版本号>.tgz)后安装(上游基线)
+dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
+```
 
 ### 卸载
 
 ```sh
-dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
+dsh plugin --profile web remove @skydong3434-alt/dsh-prompt-optimizer
 ```
+
+> 注:如果此前装过**上游基线**(`@y1x1n/dsh-prompt-optimizer`),它与本包互不隶属,需分别卸载。
 
 ## 兼容性
 

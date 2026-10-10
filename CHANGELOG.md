@@ -1,8 +1,84 @@
 # CHANGELOG
 
-本项目 = **DSH Adaptive Prompt Optimizer**（@y1x1n/dsh-prompt-optimizer 派生增强）。
-版本号采用 fork 发行线 `v0.x.y-apo`；`package.json` 名义版本沿用上游 `0.4.0`
-（派生包名不变，详见 NOTICE §3）。
+本项目 = **DSH Adaptive Prompt Optimizer**（派生自上游 @y1x1n/dsh-prompt-optimizer）。
+版本号采用 fork 发行线 `v0.x.y-apo`；自 `v0.3.2-apo` 起使用**独立包名**
+`@skydong3434-alt/dsh-prompt-optimizer`，且 `package.json version` 与发行线对齐
+（`0.3.2`），不再沿用上游 `0.4.0`（详见 NOTICE §3）。
+
+## [v0.3.2-apo] — 2026-10-10（独立插件身份迁移 + 安装/文档统一 + 隔离验证）
+
+把本 fork 从「沿用上游同名派生包」升级为**独立插件身份**，并把安装/文档统一到本 fork
+自己的仓库与发行线。**未改动优化器核心逻辑**（V3 仍是一次模型调用；`src/core/v3.ts`
+未动），运行时服务名 / 路由 / 配置命名空间全部保持不变，因此**既有配置可无损迁移**。
+
+### 独立身份（运行身份与安装地址）
+
+- **包名**：`package.json name` / `cordis.patch.yml` 插入行 / 构建产物 `lib/client.js`
+  的 client-modules loader id 由 `@y1x1n/dsh-prompt-optimizer` 统一改为
+  **`@skydong3434-alt/dsh-prompt-optimizer`**（三处必须一致：宿主按包名校验客户端注册）。
+- **版本号**：`package.json version` 由沿用的上游 `0.4.0` 改为 **`0.3.2`**，与 fork 发行线
+  `v0.3.x-apo` 对齐，避免与 GitHub Release 版本号混淆（`package-lock.json` 已再生）。
+- **保持不变**：Host 插件服务名 `dsh-prompt-optimizer`、设置命名空间 `prompt-optimizer`、
+  路由 `/dsh-prompt-optimizer/optimize` 与 `/dsh-prompt-optimizer/test-model`、客户端
+  `SETTINGS_ENTRY_ID = 'prompt-optimizer'` —— 这些是**运行时契约**，与包名无关，因此
+  插件级配置（设置卡里的模型/模式/超时等）在新包名下继续有效。
+- 上游署名与 MIT 许可原样保留（见 NOTICE §1 / §3）；`@y1x1n/*` 命令只作为「上游基线」
+  保留在 README 中并明确标注，不再是本 fork 的推荐安装方式。
+
+### 安装与文档统一
+
+- **README{,.en,.simple}.md**：安装章节重排为「GitHub 安装（推荐，装本 fork，锁定正式
+  Release Tag）→ 本地源码安装 → 上游基线安装（非本 fork，npm / tarball 明确标注）」；
+  卸载命令改为新包名；npm 徽章标注为上游基线；兼容性段落的版本号改为本 fork 发行线
+  （`v0.3.2-apo`）；`--dump-config` 组合层示例改为新包名。
+- **NOTICE.md**：包名/版本策略更新；上游署名与基线记录保持不变。
+- **安装必须真可用**：`dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-apo`
+  为目标命令；本地**隔离 profile 实测**见下（GitHub 源码安装路径在推送后按同一流程复验）。
+
+### 类型与测试
+
+- `npm install` 重新解析依赖后，客户端类型包（`@deepseek-ai/dsh-client-*`）被剪枝导致
+  `tsc` 报 TS2307 —— 补齐 devDependencies 并固定到与运行中 DSH Desktop 一致的
+  **`0.2.0-rc.2`**（`dsh-client-connection` / `dsh-client-ui-conversation` /
+  `dsh-client-ui-renderer` / `dsh-client-ui-settings-plugins` / `dsh-client-ui-slots`）。
+- `src/client/controller.ts` 增加一处显式空值守卫（`state.last && …`）：新版类型面里
+  `SessionId` 可为 `null`，`state.last?.sessionId === sessionId` 不再把 `state.last`
+  窄化为非空 —— 语义不变，仅恢复真 null 安全。
+- **新增 `test/identity.test.mjs`**（6 项）：断言新包名已贯穿 `package.json` / lock /
+  `cordis.patch.yml` / 构建产物，且 `src` 与产物里不再出现旧包名；同时锁定
+  `NS` / `ROUTE_PATH` / `SETTINGS_ENTRY_ID` 等运行时契约不变（配置可迁移）。已挂入
+  `npm test` 链尾。
+
+### 隔离验证（独立 profile `apo-isomig`，link 安装路径）
+
+- 安装：`dsh plugin --profile apo-isomig add /…/dsh-adaptive-prompt-optimizer` 后，
+  profile 的 `dependencies` 与 `dsh.profile.bundles` 均为新包名，`node_modules` 内
+  symlink 指向本仓库，**无 `@y1x1n` 目录**。
+- 组合层：`dsh --profile apo-isomig --dump-config` 出现 `# == @skydong3434-alt/dsh-prompt-optimizer`
+  层与 `- id: prompt-optimizer, name: '@skydong3434-alt/dsh-prompt-optimizer'`。
+- 宿主：启动日志 `[dsh-prompt-optimizer] loaded, POST /dsh-prompt-optimizer/optimize`；
+  `POST …/optimize {}` → 400 `提示词内容为空`；`{"text":"…"}` → 200 SSE 且模型错误经
+  `error` 事件回传（隔离 profile 未配 API Key，故为 `MISSING_CREDENTIAL`）——
+  路由 → handler → V3 管线 → 模型路由解析全链路存活。
+- 客户端：页面 boot manifest 与 `/plugins/??…` 组合 bundle 均以**新 id** 收录本插件
+  （`__ModuleLoader__.load({ id: "@skydong3434-alt/dsh-prompt-optimizer" …}`），
+  设置卡与发送栏槽位代码在 bundle 内，**全页/全 bundle 旧包名 0 次**。
+- 无双加载：隔离 profile 只有一份新包名依赖与一个 bundle 条目。
+
+**发布门禁**：`npm run build` exit 0 · `npm run typecheck` exit 0 · `npm test` 全绿
+（含新增 identity 6 项）· 隔离 profile 运行验证（上节）。
+
+### 待用户执行（本版发布前）
+
+- **desktop 迁移**：本地开发用 `link:` 指向本仓库即可（当前 desktop 仍以旧包名加载）。
+  迁移时先备份 profile 配置，再 `remove` 旧包名 → `add` 新包名 → 完全重启 DSH Desktop，
+  并确认运行时实际加载新包名与新构建；旧包名与新包名**不得在同一 profile 同时启用**。
+- **GitHub 源码安装路径验证**：需先把本次新身份提交推送到 `origin`，再用独立隔离
+  profile 执行 `dsh plugin --profile <p> add github:skydong3434-alt/dsh-prompt-optimizer#<tag|sha>`
+  复验（本地 link 成功 ≠ GitHub 源码安装成功）。
+- **真实 UI 验收**：插件列表显示新包名、无旧包名已启用实例、设置页无 Slot 同步错误、
+  输入框只有一个优化按钮、优化功能正常、完整重启后仍正常。验收通过后再发布本版
+  （本提交不含 push / tag / Release）。
 
 ## [v0.3.1-apo] — 2026-10-10（设置卡槽位注册修复 + 安装与溯源说明）
 

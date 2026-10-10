@@ -1,9 +1,10 @@
 # NOTICE — dsh-adaptive-prompt-optimizer
 
-版本：v0.3.1-apo（2026-10-10）
+版本：v0.3.2-apo（2026-10-10）
 
 本项目是 [@y1x1n/dsh-prompt-optimizer](https://github.com/Y1X1n/dsh-prompt-optimizer)
-的派生增强（DSH Adaptive Prompt Optimizer，MIT）。本文件按 PLAN-v1 §3/§16 记录
+的派生增强（DSH Adaptive Prompt Optimizer，MIT），自 `v0.3.2-apo` 起以**独立包名**
+`@skydong3434-alt/dsh-prompt-optimizer` 发布。本文件按 PLAN-v1 §3/§16 记录
 **设计来源与 License 边界**，保证 License 清洁（DoD 第 9 项）。
 
 ## 1. 派生与署名（MIT 保留）
@@ -36,10 +37,12 @@
 
 ## 3. 发布版本与仓库
 
-- 发布版本：`v0.3.1-apo`（当前；V3 单次调用自适应优化器 + 设置卡槽位注册修复）· 上一版 `v0.3.0-apo`（V3 单次调用架构首发）· 首个可发布版本 `v0.1.0-apo`
+- 发布版本：`v0.3.2-apo`（当前；独立插件身份迁移 + 安装/文档统一）· 上一版 `v0.3.1-apo`（V3 单次调用自适应优化器 + 设置卡槽位注册修复）· `v0.3.0-apo`（V3 单次调用架构首发）· 首个可发布版本 `v0.1.0-apo`
 - `v0.2.0-apo`（v2 自适应编辑器）：其多阶段架构已由 V3 整体替换，**从未打 tag / 从未发布**，仅保留为历史记录
-- 包名：沿用派生包 `@y1x1n/dsh-prompt-optimizer`（`package.json name`，上游同名，
-  便于既有安装链路无缝替换；如需更名按新契约流程另行决定）
+- 包名：**独立包名** `@skydong3434-alt/dsh-prompt-optimizer`（`package.json name`，自 `v0.3.2-apo` 起；
+  此前沿用上游同名派生包 `@y1x1n/dsh-prompt-optimizer` 以便旧安装链路无缝替换）
+- 版本号：`package.json version` 自 `v0.3.2-apo` 起与 fork 发行线对齐（`0.3.2`），
+  不再沿用上游 `0.4.0`（避免与 GitHub Release 的 `-apo` 版本号混淆；上游基线版本号见 §1）
 - upstream（`Y1X1n/dsh-prompt-optimizer`）：**只读，不 push**（保留为上游参照与署名来源）
 - origin（自有仓库）：`https://github.com/skydong3434-alt/dsh-prompt-optimizer`（Public；本 fork 的发布目标）
 

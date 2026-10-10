@@ -2,13 +2,13 @@
 
 ```
 project: dsh-adaptive-prompt-optimizer
-last_updated: 2026-10-10T02:20:00+08:00
-current_phase: RELEASED
-current_task: (空)——v0.3.1-apo 已发布:设置卡槽位注册修复(DSH 2.0.x 设置页同步失败)+ 安装/溯源说明对齐本 fork
-status: RELEASED
-next_task: (空)——无下一任务;等待下一轮需求
-machine_gate: PASS (npm test 107 组 / build exit 0 / typecheck exit 0 / check-dod PASS / check-license-contamination PASS)
-human_review: PASSED_BY_USER_UI_ACCEPTANCE (2026-10-10;真实 UI 人工验收:刷新后设置页不再出现 Slot 同步错误、Prompt Optimizer 设置卡片正常、优化功能正常)
+last_updated: 2026-10-10T09:10:00+08:00
+current_phase: RELEASE_PREP_V032
+current_task: (空)——v0.3.2-apo 发布准备:独立插件身份迁移(@skydong3434-alt/dsh-prompt-optimizer)+ 安装/文档统一 + 隔离验证,已完成(未 push / 未打 tag / 未建 Release)
+status: READY_FOR_RELEASE
+next_task: 等待用户——①desktop 迁移(改依赖键+完整重启+UI 验收 9 项)②GitHub 源码安装路径验证(推送后,独立隔离 profile)③真实 UI 验收通过后授权发布 v0.3.2-apo
+machine_gate: PASS (npm test 全绿含 identity 6 项 / build exit 0 / typecheck exit 0 / 隔离 profile 运行验证:组合树+宿主加载+路由契约+client bundle 新 id 且旧名零残留;check-dod 在发布时跑,未打 tag 前预期 1 FAIL=tag 项)
+human_review: PENDING_USER (2026-10-10;发布授权=用户真实 UI 验收通过后;本轮不 push/tag/Release)
 ui_acceptance_m03813_final: **最终真实 UI 人工验收 5/5 PASS**(T04 无约束校验误报 / T08 无擅自增加中景·海平线构图 / T29 只读约束保留且无误报 / T30 禁止编造约束保留且无误报 / T32 优先询问目标用户与核心问题)。此前一次「UI 复现修复前行为」的根因已定位为**宿主模块代际未更新**(DSH Desktop Host 只在进程启动时 import 一次插件模块:修复构建 20:41:42、上一次宿主启动 18:58:33 → 内存里仍是修复前模块;22:35:33 重启后换代),**不是代码回归**;该次诊断未改任何 Prompt 规则、仓库 0 改动。完整证据与口径见 `docs/ui-acceptance-m03813.md` §5。
 ui_acceptance_m03813: **35 项真实 UI 人工测试的台账、根因与最小范围修复**。台账见 `docs/ui-acceptance-m03813.md`(35 行逐项:原始输入/人工观察/预期行为/初步分类/证据来源/完整程度/需复现/最终根因;人工观察一律标注「仅有人工作为证据的摘要」)。**已确认代码缺陷 3 类**:①`assessV3Safety` 硬约束校验用整串逐字比对 → 语义等价的正确输出被判「约束缺失」(T29/T30),且 `HARD_CONSTRAINT_RE` 的单字「别」把「有什么区别」误当否定词(T04)→ 已重写(单字「别」只在子句开头算否定 + 中文 2 字滑窗 shingle 覆盖率 ≥0.5);②UI 文案 `panel.provenanceFail` 是 v2 遗留措辞(「显式要求缺少用户原话证据」,V3 已无此概念)→ 改为「约束核对未通过:输入里的硬性约束…」;③IMAGE 逐字示例本身含「女孩位于画面中景 / 海平线横贯后景」,与同段「不得擅自增加未指定景别」自相矛盾 → 示例中英同步替换并把旧写法写成反例(T08 实测逐字复现了该示例)。**规则缺项 4 类**:GENERAL 缺比例原则(T04/T06/T07/T13/T26 过度扩写);边界段缺「初始朝向/起始姿态/动作次数时长/新增动态画面事件/结构化字段用建议填充」(T10/T17/T18/T31);缺格式作用域规则(T30/T31);澄清优先级(T32 对象未明时问方向菜单)。**未新增模块、未新增分类器、未恢复多阶段流程、未引入二次 Validator、未为 35 案例写特殊规则、正常优化仍 1 次模型调用。** 测试新增 `test/v3.test.mjs` 6d 组(规则防线)与 6e 组(`assessV3Safety` 单元回归)。
 creation_boundary_m03556: **收紧「专业化完善」与「擅自创作」的边界**。新增 `# 专业化完善与创作扩写的边界(IMAGE / VIDEO 重点)`:允许 6 项(已有元素之间的关系/已有动作的自然过程/时间顺序与运动连续性/**已有**镜头要求的表达/已有环境所隐含的自然特征/清晰度与可控性);默认禁止 8 项(擅自指定摄影机角度、擅自决定固定或运动镜头、擅自增加未指定景别、擅自添加具体布光方案、擅自增加景深虚化、擅自设计服装发型身份、擅自增加新人物道具动作情节、无参考帧时确定可能冲突的运动路径);用户明确要求丰富细节/创意发挥/设计镜头时允许在原有约束内创作;**原文明确指定**景别/机位/布光/镜头运动时必须保留并专业化完善。`# 优化原则` 第 2 层「构图与光影」→「已有环境的自然光影」。`# IMAGE` 改为「重点提升」5 项(主体描述/主体与背景空间关系/已有风格表达/环境自然特征/画面信息组织与清晰度)+「不要为了补齐模板强行加入景别、机位、布光和构图方案」,示例删除「侧后方打光」。`# VIDEO` 改为「重点提升」5 项(动作起点过程结束/动作时间关系/**已有**镜头运动描述/角色与场景连续性/首尾帧过渡)+「不要把专业优化理解为重新导演一段视频」。`# VIDEO 子类型` 首尾帧补「没有实际参考帧时,不得假定具体的身体姿态和运动路径」。`# 优化质量` 第 7 条明确「平台名/模式名是否逐字还在」+ 新增「平台与生成模式必须逐字保留……写丢平台名 = 不合格」(案例C #1 真实丢了「可灵」)。**未新增模块、未恢复多阶段流程、未新增机械拦截系统,普通请求仍 1 次模型调用。** 测试新增 `test/v3.test.mjs` 第 6c 组;`scripts/v3-real-check.mjs` 新增 `mustNotMatch` 判据 + 案例 G(用户已指定景别/镜头/布光必须保留)。
@@ -22,6 +22,27 @@ latest_commit: c0b6f97 fix(client): 设置卡槽位按宿主声明各自注入�
 auto_continue: false
 stop_reason: none——v0.3.1-apo 已发布(tag 已推 origin, GitHub Release 已创建);等待下一轮需求
 ```
+
+## v0.3.2-apo 独立身份迁移（2026-10-10，发布准备已完成）
+
+- **身份**：`package.json name` / `cordis.patch.yml` 插入行 / `lib/client.js` loader id 全部改为
+  **`@skydong3434-alt/dsh-prompt-optimizer`**；`package.json version` 由上游 `0.4.0` 改为 **`0.3.2`**
+  （与 `-apo` 发行线对齐）。运行时服务名 / 路由 / 配置命名空间不变 → 配置可无损迁移。
+- **源码改动**：`src/client/controller.ts` 增加一处显式 `state.last &&` 空值守卫（新版类型面
+  `SessionId` 可空，语义不变）；`src/index.ts` / `src/core/*` 核心逻辑未动；`cordis.patch.yml`
+  更新插入名；`package.json` 补 devDeps（`@deepseek-ai/dsh-client-*` @0.2.0-rc.2，与运行中
+  DSH Desktop 一致）。
+- **测试**：新增 `test/identity.test.mjs`（id1..id6：包名/lock/cordis/产物/无旧名/契约不变式）；
+  `npm test` 全绿（smoke→v3→prompt→controller→compat-settings→settings-i18n→triage→identity），
+  `npm run typecheck` exit 0，`npm run build` exit 0。
+- **隔离运行验证（profile apo-isomig，link 路径）**：安装写入新包名（dependencies+bundles+symlink），
+  `--dump-config` 组合树为新名；宿主日志 `[dsh-prompt-optimizer] loaded, POST /dsh-prompt-optimizer/optimize`；
+  路由契约 400（空提示）/ 200-SSE（`MISSING_CREDENTIAL` error 事件，profile 未配 Key）；boot manifest
+  与组合 bundle 以新 id 收录（`__ModuleLoader__.load({id:"@skydong3434-alt/…"`），旧包名 0 次；无双插件。
+- **待用户（发布授权前）**：①desktop 迁移（备份 profile → `remove` 旧包名 → `add` 新包名 link:
+  或 GitHub → 完全重启 → 运行时确认真加载新包名新构建）②GitHub 源码安装路径验证（推送后、独立
+  隔离 profile）③真实 UI 验收 9 项（列表新名/无旧实例/设置页无 Slot 错误/设置可开/单按钮/优化正常/
+  模型调用正常/设置保留/重启后正常）。全部通过后才发布 v0.3.2-apo（push/tag/Release 由用户授权）。
 
 ## 模型路由（真实 UI 用的是哪个模型）— m03069 ④ 已核对
 

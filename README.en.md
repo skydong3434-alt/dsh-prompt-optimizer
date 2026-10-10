@@ -1,18 +1,19 @@
 # dsh-prompt-optimizer
 
-> ⭐ **This repository = DSH Adaptive Prompt Optimizer** (a derived, enhanced fork of
+> ⭐ **This repository = DSH Adaptive Prompt Optimizer** (published independently as
+> `@skydong3434-alt/dsh-prompt-optimizer`, a derived, enhanced fork of
 > `@y1x1n/dsh-prompt-optimizer`, MIT). It upgrades the fork from a fixed-template prompt
 > *expander* into an **adaptive prompt editor**: it detects the task intent, prompt type,
 > target model and how much to change, asks only the few decisions that truly need you,
-> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.3.1-apo`
-> (previous: `v0.3.0-apo`; `v0.1.0-apo` was the first publishable version; `v0.2.0-apo`'s v2 editor architecture was replaced by V3 and never released); design provenance & license boundaries in
+> and it **never auto-sends / auto-executes / auto-decides**. Release `v0.3.2-apo`
+> (previous: `v0.3.1-apo`, `v0.3.0-apo`; `v0.1.0-apo` was the first publishable version; `v0.2.0-apo`'s v2 editor architecture was replaced by V3 and never released); design provenance & license boundaries in
 > [NOTICE.md](NOTICE.md); changelog in [CHANGELOG.md](CHANGELOG.md); release notes in
-> [docs/release-notes-v0.3.1-apo.md](docs/release-notes-v0.3.1-apo.md).
+> [docs/release-notes-v0.3.2-apo.md](docs/release-notes-v0.3.2-apo.md).
 
 [中文](README.md) | **English** | 🐣 [Beginner guide (中文)](README.simple.md)
 
 [![CI](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@y1x1n/dsh-prompt-optimizer?label=npm&color=cb3837)](https://www.npmjs.com/package/@y1x1n/dsh-prompt-optimizer)
+[![npm (upstream)](https://img.shields.io/npm/v/@y1x1n/dsh-prompt-optimizer?label=npm%20(upstream)&color=cb3837)](https://www.npmjs.com/package/@y1x1n/dsh-prompt-optimizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/skydong3434-alt/dsh-prompt-optimizer?label=release)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest)
 [![Stars](https://img.shields.io/github/stars/skydong3434-alt/dsh-prompt-optimizer?logo=github)](https://github.com/skydong3434-alt/dsh-prompt-optimizer/stargazers)

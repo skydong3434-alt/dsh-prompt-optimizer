@@ -121,7 +121,7 @@ function main() {
     }
   }
 
-  console.log(`[apo] check-license-contamination  v0.3.1-apo  扫描文件数: ${files.length}  指纹数: ${FINGERPRINTS.length}`);
+  console.log(`[apo] check-license-contamination  v0.3.2-apo  扫描文件数: ${files.length}  指纹数: ${FINGERPRINTS.length}`);
   console.log(`[apo] 扫描范围: ${all ? 'src+test+scripts+docs+tasks+根文件' : 'src+test+scripts+根文件（代码区）'}`);
   if (hits.length === 0) {
     console.log('[apo] 结果: PASS —— 未发现任何 AGPL 仓库（linshenkx / zhangjiazhi）特征串。');
