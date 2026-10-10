@@ -7,12 +7,12 @@
   "main": "lib/index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Y1X1n/dsh-prompt-optimizer.git"
+    "url": "git+https://github.com/skydong3434-alt/dsh-prompt-optimizer.git"
   },
   "bugs": {
-    "url": "https://github.com/Y1X1n/dsh-prompt-optimizer/issues"
+    "url": "https://github.com/skydong3434-alt/dsh-prompt-optimizer/issues"
   },
-  "homepage": "https://github.com/Y1X1n/dsh-prompt-optimizer#readme",
+  "homepage": "https://github.com/skydong3434-alt/dsh-prompt-optimizer#readme",
   "keywords": [
     "deepseek",
     "dsh",
