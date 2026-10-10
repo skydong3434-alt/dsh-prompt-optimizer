@@ -40,7 +40,7 @@
     "prepare": "node scripts/build.mjs",
     "sync:types": "node scripts/sync-types.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/v3.test.mjs && node test/prompt.test.mjs && node test/controller.test.mjs && node test/compat-settings.test.mjs && node test/settings-i18n.test.mjs && node test/triage.test.mjs && node test/identity.test.mjs"
+    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/v3.test.mjs && node test/prompt.test.mjs && node test/controller.test.mjs && node test/compat-settings.test.mjs && node test/settings-i18n.test.mjs && node test/triage.test.mjs && node test/identity.test.mjs && node test/migrate-desktop-identity.test.mjs"
   },
   "dsh": {
     "bundle": {

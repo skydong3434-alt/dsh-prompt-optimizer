@@ -63,14 +63,17 @@ A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the com
 | Target model | who consumes the result (e.g. ComfyUI, Kling, a coding agent, a DSH agent) |
 | How much to change | see the four levels below |
 
-### How much to change (four levels)
+### How much to change
 
-| Level | Meaning |
+| Case | Handling |
 |---|---|
-| **Keep as-is** (KEEP) | your draft is already good → kept **verbatim**, no rewriting at all |
-| **Light patch** (PATCH) | structure and wording stand → only a few gaps filled; no reordering, no new sections |
-| **Restructure** (RESTRUCTURE) | information is complete but messy → dedupe and reorganize, **adding nothing** you did not ask for |
-| **Rebuild** (REBUILD) | only a vague goal → the prompt is built from scratch (still only what the task truly needs) |
+| Your draft is already good | **Leave it mostly alone**: minimal edits are allowed; longer is not mechanically required |
+| Structure and wording stand | Fill only a few gaps; **no reordering, no new sections** |
+| Information complete but messy | Dedupe and reorganize, **adding nothing** you did not ask for |
+| Only a vague goal | Build from scratch — still only what the task truly needs |
+
+> How much to change is the model's own judgement under the principle above; the panel shows
+> "usage + this run's summary", not a level badge.
 
 ### What it will and will not ask you
 
@@ -83,8 +86,9 @@ A DeepSeek Harness plugin that adds an **Optimize** button (✨) next to the com
 - **It does not ask about implementation details**: paths, endpoints, versions, tech
   choices, workflows, test commands, MVP vs production — things the executing agent can
   confirm itself — are never turned into questions for you.
-- Decisions you answered are kept in a requirement ledger: if you later re-optimize after
-  a wording-only edit, **confirmed requirements are retained** and not asked again.
+- **There is no requirement ledger any more**: the previous version's ledger / confirmation
+  machinery was removed together with the multi-round chain. The single-call flow asks once
+  (at most) and then continues.
 
 ### Typical supported tasks
 
@@ -98,35 +102,38 @@ Image Generation · Video Generation (text-to-video / image-to-video / first-las
 
 ### Retained guarantees
 
-- **Provenance red line**: explicit requirements need verbatim user evidence; optimizer
-  suggestions are labelled separately and never mixed into requirements; assistant
-  messages are never treated as user intent; **no constraints are invented for you**.
-- The old **`[待补充:]` placeholder mechanism is retired from the normal production path**:
-  open items are expressed as before-acting instructions / conditional branches, or
-  omitted — you no longer face blank fields to fill.
+- **Hard-constraint check**: before delivering, the plugin locally checks that the hard
+  constraints in your input ("do not / must not / never / read-only / do not modify" …) are
+  still present in the result; anything missing is flagged as "provenance check failed" for
+  you to review. **No constraints are invented for you**, and the optimizer's own suggestions
+  are never mixed into your requirements.
 - **No auto-send / auto-execute / auto-decide**: the panel lets you review and replace;
   sending is still your action.
 
 ## Features
 
-- An **Optimize** button on the right of the composer tool row (disabled while empty, breathing animation while working). During the wait the panel shows the live stage (waiting for model / analyzing / writing the rewrite) with an elapsed-seconds readout; on completion the model badge shows the total duration.
-- Reads the current session's provider/model on every click; **analysis and rewrite stream onto the panel** above the input card — no staring at a spinner for the whole generation.
-- **Dual optimization strategies**: with no conversation context (fresh session, or context disabled) it rewrites with a **structured template** (role / task / constraints / output format); with context it switches to **distill-intent + polish** — reads the recent conversation, keeps the draft's original framing instead of forcing a template, never re-asks what the context already answers, and never resurfaces **directions you already rejected** (the do-not-enter set).
-- **Fidelity discipline** (inspired by Fishsb/dsh-prompt-enhancer): semantic-equivalence floor, traceability (inferences are marked "unless otherwise specified / by default"), a pre-output element-by-element **fidelity self-check** against drift, with the self-check explicitly outranking the length discipline (target under 800 characters for simple tasks — a missing element is worse than verbosity), and few-shot examples to stabilize output style.
-- **Lightweight memory chain**: edit our optimized text and click Optimize again, and the previous round's result rides along as a continuity reference (accepted decisions carry over, only your changes are worked on). Same-text retries, cross-session calls, and degraded (non-wellFormed) results never ride (degradation is only judged in full mode — fast mode always counts as compliant); the chain resets the moment you send or close the panel, and it follows the "include context" switch.
+- An **Optimize** button on the right of the composer tool row (disabled while empty, breathing animation while working). On completion the model badge shows the actual route and total duration.
+- Reads the current session's provider/model on every click; **one model call completes the optimization** (the multi-round "analyze → compile" chain is gone), and the result streams onto the panel above the input card.
+- **Usage is detected automatically**: general task prompt / image prompt / video prompt / audio prompt / instructions for an executing agent; strict JSON when you ask for it. A special usage is entered only when the input **explicitly** asks for that kind of prompt — a keyword alone does not count.
+- **It asks only when there is real ambiguity**: only for dangling references ("this", "that old one") that neither the input nor the context resolves, **at most one question per round and at most two rounds**; you can click "keep it undecided and optimize now" to continue. Implementation details (endpoints / versions / workflows / test commands / tech choices) are never turned into questions.
+- **It does not expand your task direction**: a goal statement is not rewritten into "draft a plan / start implementing", and special-usage templates are applied only when explicitly requested.
 - **Slash-command safe**: input like `/goal help me …` optimizes only the body; the command prefix is re-attached on replace — the command word is never rewritten. A bare command with no body (just `/goal`) is rejected up front with a notice instead of being "optimized" into garbage.
-- **Context aware**: by default carries the session's recent conversation as reference (**user messages are guaranteed a floor** — agentic sessions produce far more assistant step fragments than user input, and naive recency sampling would crowd out what you actually asked), capped at 8 turns / 1600 chars; the meta-prompt explicitly forbids answering or continuing the context. Empty sessions fall back to the template strategy. Can be disabled in the settings card.
-- Result panel: **five-dimension diagnosis** (goal clarity / context / constraints / structure / output spec) + the **full optimized prompt**; actions: **replace the input box** (with **undo**, which auto-invalidates once you edit the replaced text) / copy / re-optimize / close. **The panel closes itself after you send the message or clear the input.**
+- **Context aware**: by default carries the session's recent conversation as reference (**user messages are guaranteed a floor** — agentic sessions produce far more assistant step fragments than user input, and naive recency sampling would crowd out what you actually asked), capped at 8 turns / 1600 chars; the context is only used to understand intent and never replaces the draft itself. Can be disabled in the settings card.
+- Result panel: **the full optimized prompt** + **this run's summary** (usage: GENERAL / IMAGE / VIDEO / AUDIO / AGENT, plus "structured" when applicable); actions: **replace the input box** (with **undo**, which auto-invalidates once you edit the replaced text) / copy / re-optimize / close. **The panel closes itself after you send the message or clear the input.**
 - **Cancel keeps the content**: press Esc while optimizing and the panel freezes in a cancelled state showing everything generated so far — review it, hit "re-optimize" to continue, or close. In any other state Esc just closes the panel. A client-side **timeout watchdog** (settings timeout + 5s margin) turns a hung Host or black-holed network into an explicit timeout error instead of an endless spinner.
 - Panels are session-scoped: switching sessions never leaks an old result into another session's view or input box.
 - **Auto-follow scrolling while streaming**: the live view sticks to the bottom as content grows, pauses when you scroll up, and resumes when you return near the bottom.
 - All panel styling uses official Harness design tokens (`--dsw-alias-*`); follows light/dark theme automatically.
-- Long-draft friendly: the output cap rises with estimated input length by default (full mode ×2 / fast mode ×1.5, capped at 32768); on real truncation the partial result is still shown with a clear notice instead of disappearing.
-- Format tolerance: marker variants (e.g. `<<< ANALYSIS >>>`) parse correctly; in full mode, outright non-compliant output degrades gracefully with a warning; in fast mode the result is a single section, so it always counts as compliant whether or not the model emits markers (no warning, memory chain unaffected) — friendly to third-party/free models that skip the marker format — their raw stream is previewed live, character by character, until a marker appears.
-- Settings → Plugins → "Prompt Optimizer" card (collapsed by default, click the header to expand; the collapsed header shows a "model · mode" summary; every change can be reverted in one step via "Undo last change" at the bottom — an in-memory stack of the last 20):
-  - **Model**: optimization model (**follow the current session** (default), or pin one from the model catalog, provider/model dropdown with manual refresh) / fallback model (automatic failover when the primary route fails before producing anything — the panel badge shows "· fallback", hover to see why) / connectivity ("Test connection", 32-token / 20s capped probe showing the actual route and latency)
-  - **Generation parameters**: output language (中文 / English); mode: full (analysis + rewrite) / **fast** (rewrite only, roughly half the output tokens); reasoning effort: clamp to lowest tier (default — dramatically shortens the pre-first-token stall on reasoning models) / follow session; max output tokens (default 8192), timeout (default 120s), temperature (default 0.2, hover for the rationale); auto output-cap toggle (default on)
+- On real truncation the partial result is still shown with a clear notice instead of disappearing.
+- **Protocol and format tolerance**: the model's thinking and the internal protocol envelope **never** appear in the live preview or in the result (the preview is cut at the start of the envelope); if the model ignores the internal protocol the text is shown as-is, and an empty response becomes an explicit technical error instead of being disguised as "needs clarification".
+- Settings → Plugins → "Prompt Optimizer" card (collapsed by default, click the header to expand; every change can be reverted in one step via "Undo last change" at the bottom — an in-memory stack of the last 20):
+  - **Model**: optimization model (**follow the current session** (default), or pin one from the model catalog, provider/model dropdown with manual refresh) / connectivity ("Test connection", 32-token / 20s capped probe showing the actual route and latency)
+  - **Generation parameters**: output language (中文 / English); reasoning effort: clamp to lowest tier (default — dramatically shortens the pre-first-token stall on reasoning models) / follow session; max output tokens (default 8192), timeout (default 120s), temperature (default 0.2, hover for the rationale)
   - **Context**: include-context toggle (default on): when off, only the draft itself is read — no session history
+  - ⚠️ **Known inconsistency (to be cleaned up in a later release)**: the card still carries
+    switches from the previous architecture — **fallback model**, **prompt type**,
+    **classifier model**, **mode (full / fast)** and **auto output cap**. The current
+    single-call flow **does not read** them; changing them has no effect on the result.
 
 ## Installation
 
@@ -137,7 +144,20 @@ Prerequisite: the `dsh` CLI (an environment where `npx @deepseek-ai/dsh web` wor
 > baseline** (without this fork's V3 single-call architecture and enhancements). To install this
 > fork, use [From GitHub](#from-github) with `github:skydong3434-alt/dsh-prompt-optimizer`.
 
-### From npm (recommended, simplest)
+### From GitHub (recommended — installs *this* fork)
+
+> ⚠️ **`v0.3.2-apo` is not released yet**: the tagged form below will not work until that tag is
+> created. Until then, install this fork with the "From source (tarball)" step above.
+
+```sh
+dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-apo
+```
+
+Git installs pull the source; this package self-builds at install time via its `prepare` script (only Node needed, no monorepo). pnpm ≥10 refuses to run build scripts on first install — add the package name to `allowBuilds` in that profile's `pnpm-workspace.yaml` as the terminal prompt suggests, then retry. Pinning the release tag (as above) is recommended; during development you can also pin a branch or commit: `github:skydong3434-alt/dsh-prompt-optimizer#<sha>`.
+
+### From npm (upstream baseline — NOT this fork)
+
+> This installs the **upstream** `@y1x1n/dsh-prompt-optimizer`; it is not this fork.
 
 ```sh
 dsh plugin --profile web add @y1x1n/dsh-prompt-optimizer
@@ -145,9 +165,9 @@ dsh plugin --profile web add @y1x1n/dsh-prompt-optimizer
 
 ### From a Release (tarball, no build)
 
-Download `y1x1n-dsh-prompt-optimizer-<version>.tgz` from the [Releases page](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/latest), then install the local file:
+Download `y1x1n-dsh-prompt-optimizer-<version>.tgz` from the [upstream Releases page](https://github.com/Y1X1n/dsh-prompt-optimizer/releases/latest), then install the local file:
 
-> **Note**: this fork's Releases currently contain **no tarball asset** (release notes only), so this step actually pulls the upstream artifact. To install this fork, use [From GitHub](#from-github) below.
+> **Note**: this fork's Releases currently contain **no tarball asset** (release notes only), so this step actually pulls the upstream artifact. To install this fork, use [From GitHub](#from-github) above.
 
 ```sh
 dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<version>.tgz
@@ -158,34 +178,29 @@ dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<version>.tgz
 ```sh
 cd dsh-prompt-optimizer
 npm install --legacy-peer-deps   # the prepare hook builds lib/ automatically
-npm pack                          # produces y1x1n-dsh-prompt-optimizer-<version>.tgz
-dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<version>.tgz
+npm pack                          # produces skydong3434-alt-dsh-prompt-optimizer-0.3.2.tgz
+dsh plugin --profile web add ./skydong3434-alt-dsh-prompt-optimizer-0.3.2.tgz
 ```
 
 Then (re)start `dsh web` and open the Web UI — the button appears next to the composer.
 
 > **Windows note**: `dsh plugin add ./directory` goes through pnpm `link:`, which currently misparses the drive-letter colon as a protocol separator and produces a broken symlink (`node_modules/<pkg>` points nowhere), so the plugin never loads. Use the tarball form for local installs; the directory-link form works on macOS/Linux.
 
-### From GitHub
-
-```sh
-dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer
-```
-
-Git installs pull the source; this package self-builds at install time via its `prepare` script (only Node needed, no monorepo). pnpm ≥10 refuses to run build scripts on first install — add the package name to `allowBuilds` in that profile's `pnpm-workspace.yaml` as the terminal prompt suggests, then retry. Pinning a commit is recommended: `github:skydong3434-alt/dsh-prompt-optimizer#<sha>`.
-
 ### Uninstall
 
 ```sh
-dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
+dsh plugin --profile web remove @skydong3434-alt/dsh-prompt-optimizer
 ```
+
+> Note: if you previously installed the **upstream baseline** (`@y1x1n/dsh-prompt-optimizer`), it is a separate package and must be uninstalled separately.
 
 ## Compatibility
 
-> **This version (v0.3.17) targets DeepSeek Harness**:
+> **This release line (v0.3.2-apo; upstream nominal version 0.4.0) targets DeepSeek Harness**:
 >
 > | dsh version | Optimize route / model calls | Settings page (incl. GitHub link) | Composer button / result panel |
 > |---|---|---|---|
+> | **0.2.0-rc.2 (Web + official desktop)** | ✅ verified | ✅ verified (volatile config + native-style settings card) | ✅ verified |
 > | **0.1.5-rc.2** | ✅ verified | ✅ verified | ✅ verified |
 > | **0.1.5-rc.1** | ✅ verified | ✅ verified | ✅ verified |
 > | **0.1.2-rc.1 / 0.1.2-alpha.5** | ✅ verified | ✅ verified | ✅ verified |
@@ -210,7 +225,7 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 - **Clicked "Optimize" and nothing happened?** Open the browser console and look for logs starting with `[dsh-prompt-optimizer]`; common causes are no model configured (set up a provider under Settings → Models first), or the upstream slot the panel needs is not ready yet (refresh the page).
 - **"No usable model found"?** The session has no routable model selected and no model is pinned in the settings card; fix either one. You can also expand the settings card and hit "Test connection" to confirm the route works.
 - **The settings card says the model catalog failed to load?** Since v0.3.17 the catalog goes through the host's `session/modelCatalog` RPC and should list every provider and model; if it still fails, the notice includes the concrete reason (hit "Refresh" to retry). Note that "follow the session" depends on the host's per-session model directory service (`ctx.modelDirectories`); on host forms without it, optimization falls back to the Host's first available route (a matching Console warning appears).
-- **Result truncated?** The panel shows a truncation notice; the auto output cap (on by default) already rises with draft length — if it is still not enough, raise "Max output tokens" in the settings card.
+- **Result truncated?** The panel shows a truncation notice; raise "Max output tokens" in the settings card (the previous version's "auto output cap" is not active in the current single-call flow).
 - **Session model change not taking effect?** Every click re-queries the session's current model; if it still looks wrong, check the console for a `session model query failed` warning (the first available route is used as a fallback then). Note: a model pinned in the settings card overrides the session selection.
 - **Occasional timeout / RATE_LIMIT failures on optimization?** Transient-error retries are handled by the host at the **provider layer** (dsh 0.1.1+ provider config ships a retry policy covering `RATE_LIMIT / SERVER / TIMEOUT / TRANSPORT / EMPTY_RESPONSE` by default). Tune retry count and backoff under Settings → Models → the provider in question — not the plugin's "timeout" setting, which only bounds a single call's total duration.
 - **Can't find the card on the settings page?** 0.3.0's strict enum schema could clash with older settings documents and stop the card from rendering; fixed in 0.3.1 (unknown enum values fall back to defaults). Make sure you are on ≥0.3.1 and refresh.
@@ -218,9 +233,16 @@ dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
 
 ## Verification status
 
+> The entries below are the **upstream** verification history (kept verbatim for reference).
+> **Anything before `v0.3.0-apo` describes the previous chain that the V3 single-call
+> architecture replaced wholesale** (multi-round "analyze + compile", dual strategies, memory
+> chain, fast mode, `[TODO]` placeholders, …) — historical reference only, not current
+> behaviour. The pre-release acceptance record for this fork's current version is
+> [docs/ui-acceptance-m03813.md](docs/ui-acceptance-m03813.md) (35-item real-UI manual test log, 5/5 PASS).
+
 Verified in a real environment (dsh 0.1.0-rc.8 tested + 0.1.1-rc.2 re-verified, Windows — see Compatibility); macOS automated verification passed (2026-09-02, macOS 26.5, all 62 tests green, and CI now permanently runs the full suite on macos-latest); **v0.3.16 completed end-to-end verification on the 0.1.2 line** (dsh 0.1.2-rc.1 / 0.1.2-alpha.5: composer button, result panel, settings card, optimize route and SSE); **v0.3.17 completed end-to-end verification on 0.1.5-rc.1** (2026-09-10, Windows, real profile + browser-driven: the composer「Optimize」button enables with input, the panel opens on click and passes the upstream error through SSE, and the settings card shows both the collapsed summary and the full controls), **and a full-chain re-verification on 0.1.5-rc.2** (2026-09-11: composition-layer injection, Host load, route contract, end-to-end SSE, all four strategy paths, client bundle slots and settings-card API — every item passing); v0.3.9–0.3.11 were additionally verified end-to-end on a **third-party free model** (openrouter `minimax/minimax-m3:free`, which emits no marker format): both strategies, element-by-element fidelity, `[TODO]` markers, memory chain, and cancel-keeps-content all behave as designed — and this live testing is what surfaced the fast-mode false-positive fixed in v0.3.10/11.
 
-- Composition-layer load: `--dump-config` shows the `# == @y1x1n/dsh-prompt-optimizer` layer;
+- Composition-layer load: `--dump-config` shows the `# == @skydong3434-alt/dsh-prompt-optimizer` layer (the former identity was `@y1x1n/dsh-prompt-optimizer`);
 - Host: startup log `[dsh-prompt-optimizer] loaded`; both routes behave correctly across their 400/405/409/413 paths; SSE streaming verified live;
 - Client: the bundle is picked up by client-modules and listed in the page boot manifest (from 0.1.5 served through the combined `/plugins/??<ids>&rev=<hash>` URL), with the plugin row present in the module list;
 - End to end: a real `ctx.llm` call (DeepSeek route) completes "analysis + rewrite" with correct marker parsing (`wellFormed: true`).
@@ -233,17 +255,20 @@ Verified in a real environment (dsh 0.1.0-rc.8 tested + 0.1.1-rc.2 re-verified, 
 
 ```
 Click "Optimize"
-  → Client reads the input draft + the session's model selection (session.models RPC, queried
-    live on every click; skipped when a model is pinned in settings — the Host's pinned value wins)
-  → POST /dsh-prompt-optimizer/optimize { text, provider, model, reasoningEffort, context?, previous? }
-  → Host calls ctx.llm.stream() with the system meta-prompt
-    (route resolution: pinned setting → session selection → first available route; an optional
-     fallback route fails over on zero-output failure; the output cap rises with estimated input
-     tokens by default; optional reasoning clamp / low temperature)
-  → text-delta chunks are pushed over SSE and the panel shows "analysis / rewrite" sections live
-    (incrementally parsed on <<<ANALYSIS>>> / <<<OPTIMIZED>>> markers, whitespace variants tolerated)
-  → the done event carries the final parsed result; a max-tokens finish carries a truncated flag; a fallback adds its reason
-  → one click replaces the input box (undoable, slash prefix re-attached) / copy / re-optimize (edits continue from the previous result; same text regenerates fresh)
+  → Client splits any slash-command prefix (only the body is optimized) and in parallel reads
+    the session's model selection (session.models RPC, queried live on every click; skipped when
+    a model is pinned in settings — the Host's pinned value wins) and the recent conversation
+    (session.history RPC, capped at 8 turns / 1600 chars, can be disabled in the settings card)
+  → POST /dsh-prompt-optimizer/optimize { text, provider, model, reasoningEffort, context? }
+  → Host builds one system + one user message and calls ctx.llm.stream() — **one model call
+    completes the optimization** (route resolution: pinned setting → session selection → first
+    available route; language / temperature / max output tokens / reasoning effort come from settings)
+  → the model answers with the internal protocol { status: 'optimized' | 'needs_clarification', usage, structured, output, question }
+  → status = 'needs_clarification': one question is shown (you may "keep it undecided and optimize now"); after your answer one more call runs
+    status = 'optimized': a local hard-constraint check runs, and "task-direction expansion" / "special-usage template drift" are blocked
+  → text-delta chunks are pushed over SSE and shown live (model thinking and the protocol envelope are stripped before preview — never leaked)
+  → the done event carries optimized / usage / structured / provenance_ok; an empty response becomes an error (VF_EMPTY_OUTPUT), never disguised as a clarification
+  → one click replaces the input box (undoable, slash prefix re-attached) / copy / re-optimize
   → Esc while optimizing = cancel (a cancelled state keeps what was generated); a client-side watchdog guards against an unresponsive Host
 ```
 
@@ -253,8 +278,9 @@ Click "Optimize"
 npm install --legacy-peer-deps   # install deps and trigger the build
 npm run sync:types               # sync the client type packages (see below)
 npm run typecheck                # tsc --noEmit
-npm run build                    # produces lib/{index,client,prompt,controller}.js
-npm test                         # smoke + prompt + controller suites
+npm run build                    # produces lib/{index,client,prompt,controller,client/settings-face,core/*}.js
+npm test                         # 9 suites: smoke / v3 / prompt / controller / compat-settings /
+                                 #   settings-i18n / triage / identity / migrate-desktop-identity
 ```
 
 ### About `sync:types`
@@ -273,21 +299,32 @@ dsh-prompt-optimizer/
 ├── package.json          # dsh.bundle + dsh.client dual manifest
 ├── cordis.patch.yml      # composition layer: inserts the Host plugin line
 ├── src/
-│   ├── index.ts          # Host plugin: settings namespace + two HTTP routes + llm call (with fallback chain)
-│   ├── prompt.ts         # meta-prompts, marker parsing, token estimation (pure functions)
+│   ├── index.ts          # Host plugin: settings namespace + two HTTP routes + the V3 single-call flow
+│   ├── prompt.ts         # stream collection, preview sanitizing, token estimation (pure functions)
+│   ├── core/
+│   │   ├── v3.ts         # V3 core: usage detection, system prompts, protocol parsing, safety check, expansion/drift guards
+│   │   ├── triage.ts     # mechanical complexity decision (KEEP / PATCH / RESTRUCTURE / REBUILD)
+│   │   └── types.ts      # shared types
 │   └── client/
 │       ├── index.tsx     # Client entry: slot registrations
 │       ├── controller.ts # shared state machine for button/panel + SSE consumption (standalone artifact, unit-testable)
+│       ├── host-faces.ts # minimal structural faces for host client services (self-defined, version-stable)
+│       ├── settings-face.ts # settings-face adapter (multiple settings APIs)
 │       ├── i18n.ts       # zh/en UI copy, follows the DSH interface language
 │       ├── OptimizeButton.tsx   # composer button
 │       ├── ResultDock.tsx       # result panel above the input card (live streaming + undo)
 │       ├── SettingsCard.tsx     # collapsible settings card
 │       ├── SparkleIcon.tsx      # hand-drawn ✨ icon
 │       └── GitHubIcon.tsx       # GitHub icon (repo link in the settings card header)
-├── scripts/build.mjs     # esbuild: Host ESM + Client lazy-CJS factory + two test artifacts
-├── scripts/sync-types.mjs
-├── scripts/prompt-probe.mjs  # prompt evidence probe: fires real optimize requests at a running instance (PROBE_ROUTE=provider/model to pin a route)
-└── test/                 # smoke.mjs (Host) / prompt.test.mjs / controller.test.mjs
+├── scripts/
+│   ├── build.mjs         # esbuild: Host ESM + Client lazy-CJS factory + client settings-face artifact
+│   ├── sync-types.mjs
+│   ├── migrate-desktop-identity.mjs  # atomic Desktop-profile identity migration (backup / rollback / idempotent)
+│   ├── v3-real-check.mjs # real-model behaviour check (call count / intent kept / no unauthorized additions)
+│   ├── check-dod.mjs / check-license-contamination.mjs
+│   └── prompt-probe.mjs  # prompt evidence probe: fires real optimize requests at a running instance
+└── test/                 # smoke / v3 / prompt / controller / compat-settings / settings-i18n /
+                          #   triage / identity / migrate-desktop-identity
 ```
 
 ## Security notes

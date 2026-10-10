@@ -55,6 +55,11 @@
 > 本 fork 的正式安装方式 = **GitHub 源码安装**(下面这三步)。本 fork **没有发布到 npm、
 > Release 里也没有 `.tgz` 资产**——下方「想装上游基线版本?」小节装到的是**上游基线**,
 > 不是本 fork。
+>
+> ⚠️ **`v0.3.2-apo` 这个 Tag 还没创建**:所以下面第 1 步里带 `#v0.3.2-apo` 的命令**暂时不能用**。
+> 现在要装,请改用本地源码方式(先在该目录跑一次 `npm install --legacy-peer-deps`):
+> `dsh plugin --profile desktop add /你的路径/dsh-adaptive-prompt-optimizer`。
+> Tag 创建之后,下面的 GitHub 命令即可直接使用。
 
 ### 第 1 步:装插件
 
@@ -73,7 +78,7 @@ dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-
 
 ### 第 3 步:验证
 
-输入框旁边是不是多了一个 ✨ **优化**按钮?点一下,等几秒,面板会显示两段内容——「分析诊断」和「优化结果」。设置 → 插件配置 里能看到「提示词优化」卡片。
+输入框旁边是不是多了一个 ✨ **优化**按钮?点一下,等几秒,面板会显示优化后的提示词和一行摘要(用途)。设置 → 插件配置 里能看到「提示词优化」卡片。
 
 **装好了!**
 
@@ -97,7 +102,7 @@ dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
 
 1. **打字**:在输入框里随便写一句话,比如"帮我写周报"
 2. **点按钮**:点 ✨「优化」
-3. **选结果**:等几秒,面板会出现两段内容 ——「分析诊断」和「优化结果」
+3. **选结果**:等几秒,面板会出现优化后的提示词和一行摘要(用途:GENERAL / IMAGE / VIDEO 等)
    - 觉得好 → 点 **「替换输入框」**,你的草稿就变成优化后的版本了
    - 不满意 → 点 **「重新优化」**,再生成一版
    - 点错了?→ 点 **「撤回」**,一键回到替换前
@@ -106,7 +111,7 @@ dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
 
 在 设置 → 插件配置 → 「提示词优化」里:
 
-- **嫌等待久?** 把「优化模式」切到 **快速**,等待时间约减半
+- **嫌等待久?** 换一个更快的会话模型,或把「最大输出 Token」调小一点(上一版的「优化模式」开关在当前单次调用流程中不生效)
 - **想固定用某个模型优化?** 「优化用模型」里选一个,不选就跟随当前会话
 - **优化出来的结果想换英文?** 「输出语言」里切
 
@@ -146,8 +151,10 @@ dsh plugin --profile web add ./y1x1n-dsh-prompt-optimizer-<版本号>.tgz
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove @y1x1n/dsh-prompt-optimizer
+dsh plugin --profile web remove @skydong3434-alt/dsh-prompt-optimizer
 ```
+
+> 如果此前装过**上游基线**(`@y1x1n/dsh-prompt-optimizer`),它是另一个包,需要另外卸载。
 
 然后重启 `dsh web`。
 
