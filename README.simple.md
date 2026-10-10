@@ -56,10 +56,10 @@
 > Release 里也没有 `.tgz` 资产**——下方「想装上游基线版本?」小节装到的是**上游基线**,
 > 不是本 fork。
 >
-> ⚠️ **`v0.3.2-apo` 这个 Tag 还没创建**:所以下面第 1 步里带 `#v0.3.2-apo` 的命令**暂时不能用**。
-> 现在要装,请改用本地源码方式(先在该目录跑一次 `npm install --legacy-peer-deps`):
+> ✅ **`v0.3.2-apo` 已发布**:下面第 1 步里带 `#v0.3.2-apo` 的命令**可以直接用**。
+> 发布页:[GitHub Release v0.3.2-apo](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/tag/v0.3.2-apo)。
+> 想装本地开发版,也可用本地源码方式(先在该目录跑一次 `npm install --legacy-peer-deps`):
 > `dsh plugin --profile desktop add /你的路径/dsh-adaptive-prompt-optimizer`。
-> Tag 创建之后,下面的 GitHub 命令即可直接使用。
 
 ### 第 1 步:装插件
 

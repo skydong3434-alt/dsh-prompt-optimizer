@@ -1,10 +1,10 @@
 # v0.3.2-apo 发布说明
 
-> **发布状态：尚未发布。**
-> 本版代码（独立插件身份迁移）已在仓库侧完成并跑通自动化门禁与隔离 profile 加载验证，
-> 但**尚未打 tag、未推送、未创建 GitHub Release**；正式发布必须在
-> **本地身份迁移成功 + DSH Desktop 真实 UI 人工验收通过**之后单独授权。
-> 因此本文中出现的 `#v0.3.2-apo` 安装命令**在 Tag 创建之前不可用**。
+> **发布状态：已发布（2026-10-10）。**
+> 正式 Release：<https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/tag/v0.3.2-apo>
+> Tag `v0.3.2-apo` → commit `6ac2b17`（main）。
+> 发布前置条件已满足：本地独立插件身份迁移完成、DSH Desktop 真实 UI 由用户人工验收通过。
+> 本文中的 `#v0.3.2-apo` 安装命令**已可用**。
 
 ---
 
@@ -66,7 +66,7 @@ npm install --legacy-peer-deps     # prepare 钩子会构建 lib/
 dsh plugin --profile <你的 profile> add /绝对路径/dsh-adaptive-prompt-optimizer
 ```
 
-**GitHub 源码安装（Tag 创建后才可用）**
+**GitHub 源码安装（正式发布方式，v0.3.2-apo 已发布）**
 
 ```sh
 dsh plugin --profile <你的 profile> add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-apo

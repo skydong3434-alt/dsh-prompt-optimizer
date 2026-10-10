@@ -146,8 +146,8 @@ Prerequisite: the `dsh` CLI (an environment where `npx @deepseek-ai/dsh web` wor
 
 ### From GitHub (recommended — installs *this* fork)
 
-> ⚠️ **`v0.3.2-apo` is not released yet**: the tagged form below will not work until that tag is
-> created. Until then, install this fork with the "From source (tarball)" step above.
+> ✅ **`v0.3.2-apo` is released**: see [GitHub Release v0.3.2-apo](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/tag/v0.3.2-apo)
+> (tag `v0.3.2-apo` → commit `6ac2b17`). The tagged command below works as-is.
 
 ```sh
 dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-apo

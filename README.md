@@ -143,8 +143,8 @@ Image Generation（生图提示词）· Video Generation（文生 / 图生 / 首
 
 ### 从 GitHub 安装(推荐,装本 fork)
 
-> ⚠️ **`v0.3.2-apo` 尚未发布**:该 Tag 创建之前,下面的命令**不可用**(会找不到 tag)。
-> 现在要装本 fork,请用下一节「本地源码安装」;本节的 GitHub 命令在 Tag 创建后即生效。
+> ✅ **`v0.3.2-apo` 已发布**:见 [GitHub Release v0.3.2-apo](https://github.com/skydong3434-alt/dsh-prompt-optimizer/releases/tag/v0.3.2-apo)
+> (tag `v0.3.2-apo` → commit `6ac2b17`)。下面的命令可直接使用。
 
 ```sh
 dsh plugin --profile web add github:skydong3434-alt/dsh-prompt-optimizer#v0.3.2-apo
